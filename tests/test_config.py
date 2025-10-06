@@ -15,42 +15,14 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
 
 from config_manager import ConfigManager, ConfigValidationError
 
-
 @pytest.fixture
-def valid_config():
-    """Fixture providing valid configuration"""
-    return {
-        'vehicle_id': 'vehicle-001',
-        'log_directories': [
-            '/var/log/autoware/bags',
-            '/var/log/autoware/system'
-        ],
-        's3': {
-            'bucket': 'tvm-logs',
-            'region': 'cn-north-1',
-            'credentials_path': '/etc/tvm-upload/.aws'
-        },
-        'upload': {
-            'schedule': '15:00',
-            'file_stable_seconds': 60
-        },
-        'disk': {
-            'reserved_gb': 70,
-            'warning_threshold': 0.90,
-            'critical_threshold': 0.95
-        },
-        'monitoring': {
-            'cloudwatch_enabled': True,
-            'local_log_path': '/var/log/tvm-upload/uploader.log'
-        }
-    }
-
-
-@pytest.fixture
-def temp_config_file(valid_config):
-    """Fixture providing temporary config file"""
+def temp_config_file():
+    """Fixture using actual example config as single source of truth"""
+    example_path = Path(__file__).parent.parent / 'config' / 'config.yaml.example'
+    
     with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
-        yaml.dump(valid_config, f)
+        with open(example_path) as src:
+            f.write(src.read())
         temp_path = f.name
     
     yield temp_path
