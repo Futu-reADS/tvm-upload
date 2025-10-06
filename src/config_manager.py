@@ -118,12 +118,16 @@ class ConfigManager:
                 raise ConfigValidationError(f"Missing s3.{key}")
         
         # Validate region
-        valid_regions = ['cn-north-1', 'cn-northwest-1']
-        if config['s3']['region'] not in valid_regions:
-            raise ConfigValidationError(
-                f"s3.region must be one of {valid_regions}"
-            )
-        
+        # valid_regions = ['cn-north-1', 'cn-northwest-1']
+        # if config['s3']['region'] not in valid_regions:
+        #     raise ConfigValidationError(
+        #         f"s3.region must be one of {valid_regions}"
+        #     )
+    
+        # Validate region exists (allow any AWS region)
+        if not config['s3']['region']:
+            raise ConfigValidationError("s3.region cannot be empty")
+                
         # Validate upload config
         if 'schedule' not in config['upload']:
             raise ConfigValidationError("Missing upload.schedule")

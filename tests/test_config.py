@@ -83,29 +83,29 @@ def test_invalid_vehicle_id():
         Path(temp_path).unlink()
 
 
-def test_invalid_region():
-    """Test validation fails with invalid AWS region"""
-    config = {
-        'vehicle_id': 'test',
-        'log_directories': ['/tmp'],
-        's3': {
-            'bucket': 'test',
-            'region': 'us-east-1',  # Not a China region
-            'credentials_path': '/tmp'
-        },
-        'upload': {'schedule': '15:00'},
-        'disk': {'reserved_gb': 70}
-    }
+# def test_invalid_region():
+#     """Test validation fails with invalid AWS region"""
+#     config = {
+#         'vehicle_id': 'test',
+#         'log_directories': ['/tmp'],
+#         's3': {
+#             'bucket': 'test',
+#             'region': 'us-east-1',  # Not a China region
+#             'credentials_path': '/tmp'
+#         },
+#         'upload': {'schedule': '15:00'},
+#         'disk': {'reserved_gb': 70}
+#     }
     
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
-        yaml.dump(config, f)
-        temp_path = f.name
+#     with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+#         yaml.dump(config, f)
+#         temp_path = f.name
     
-    try:
-        with pytest.raises(ConfigValidationError, match="s3.region"):
-            ConfigManager(temp_path)
-    finally:
-        Path(temp_path).unlink()
+#     try:
+#         with pytest.raises(ConfigValidationError, match="s3.region"):
+#             ConfigManager(temp_path)
+#     finally:
+#         Path(temp_path).unlink()
 
 
 def test_invalid_schedule_format():
