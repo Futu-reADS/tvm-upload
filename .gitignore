@@ -1,8 +1,46 @@
+# Python
 venv/
 __pycache__/
 *.pyc
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Package build files
+*.egg-info/
+dist/
+build/
+*.egg
+
+# Testing
 .pytest_cache/
 .coverage
+htmlcov/
+*.cover
+
+# Logs
 *.log
+
+# Config files
 config/config.yaml
+
+# AWS credentials
 .aws/
+*.pem
+*.key
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Temporary test files
+/tmp/tvm-*
+/tmp/test-*
