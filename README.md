@@ -28,7 +28,7 @@ Automated log upload system for Autoware vehicles in China.
 
 ```bash
 # Clone repository
-git clone <repo_url>
+git clone git@github.com:Futu-reADS/tvm-upload.git
 cd tvm-upload
 
 # Create virtual environment
