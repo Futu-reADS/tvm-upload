@@ -127,20 +127,45 @@ monitoring:
         
         assert "Already running" in caplog.text
     
-    def test_on_file_ready(self, system, temp_log_dir):
-        """Test file ready callback"""
-        # Create test file
+    def test_on_file_ready_within_hours(self, system, temp_log_dir):
+        """Test file ready callback WITHIN operational hours"""
         test_file = temp_log_dir / "test.log"
         test_file.write_text("test data")
         
-        # Mock upload_file to prevent actual S3 calls
-        with patch.object(system.upload_manager, 'upload_file', return_value=True):
-            # Call callback
-            system._on_file_ready(str(test_file))
+        # Mock time to 12:00 (INSIDE 09:00-16:00)
+        with patch('src.main.datetime') as mock_datetime:
+            mock_now = Mock()
+            mock_now.time.return_value = dt_time(12, 0, 0)
+            mock_datetime.now.return_value = mock_now
+            mock_datetime.strptime = datetime.strptime
+            
+            with patch.object(system.upload_manager, 'upload_file', return_value=True):
+                system._on_file_ready(str(test_file))
         
-        # Verify stats updated
+        # Should upload immediately
         assert system.stats['files_detected'] == 1
-        assert system.stats['files_uploaded'] == 1  # Upload was triggered and succeeded
+        assert system.stats['files_uploaded'] == 1  # ← Uploaded!
+
+
+    def test_on_file_ready_outside_hours(self, system, temp_log_dir):
+        """Test file ready callback OUTSIDE operational hours"""
+        test_file = temp_log_dir / "test.log"
+        test_file.write_text("test data")
+        
+        # Mock time to 20:00 (OUTSIDE 09:00-16:00)
+        with patch('src.main.datetime') as mock_datetime:
+            mock_now = Mock()
+            mock_now.time.return_value = dt_time(20, 0, 0)
+            mock_datetime.now.return_value = mock_now
+            mock_datetime.strptime = datetime.strptime
+            
+            with patch.object(system.upload_manager, 'upload_file', return_value=True):
+                system._on_file_ready(str(test_file))
+        
+        # Should queue but NOT upload
+        assert system.stats['files_detected'] == 1
+        assert system.stats['files_uploaded'] == 0  # ← NOT uploaded!
+        assert system.queue_manager.get_queue_size() == 1  # ← Queued instead
     
     @patch('src.main.datetime')
     def test_should_upload_now_within_hours(self, mock_datetime, system):
