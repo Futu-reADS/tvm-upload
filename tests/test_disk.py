@@ -7,13 +7,8 @@ import pytest
 import tempfile
 import shutil
 from pathlib import Path
-import sys
-import os
 
-# Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-
-from disk_manager import DiskManager
+from src.disk_manager import DiskManager
 
 
 @pytest.fixture

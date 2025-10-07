@@ -6,14 +6,9 @@ Tests for Upload Manager
 import pytest
 import tempfile
 from pathlib import Path
-import sys
-import os
 from unittest.mock import Mock, patch, MagicMock
 
-# Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-
-from upload_manager import UploadManager, UploadError
+from src.upload_manager import UploadManager, UploadError
 
 
 @pytest.fixture

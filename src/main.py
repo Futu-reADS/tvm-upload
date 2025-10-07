@@ -25,6 +25,9 @@ from config_manager import ConfigManager
 from file_monitor import FileMonitor
 from upload_manager import UploadManager
 from disk_manager import DiskManager
+from cloudwatch_manager import CloudWatchManager
+from queue_manager import QueueManager
+
 
 logger = logging.getLogger(__name__)
 
@@ -97,6 +100,16 @@ class TVMUploadSystem:
             directories=self.config.get('log_directories'),
             callback=self._on_file_ready,
             stability_seconds=self.config.get('upload.file_stable_seconds', 60)
+        )
+
+        self.cloudwatch = CloudWatchManager(
+            region=self.config.get('s3.region'),
+            vehicle_id=self.config.get('vehicle_id'),
+            enabled=self.config.get('monitoring.cloudwatch_enabled', True)
+        )
+
+        self.queue_manager = QueueManager(
+            queue_file=self.config.get('upload.queue_file', '/var/lib/tvm-upload/queue.json')
         )
         
         # Runtime state
@@ -201,10 +214,8 @@ class TVMUploadSystem:
         
         logger.info(f"File ready: {Path(filepath).name}")
         
-        # Add to upload queue
-        with self._upload_lock:
-            if filepath not in self._upload_queue:
-                self._upload_queue.append(filepath)
+        # Add to persistent queue
+        self.queue_manager.add_file(filepath)
         
         # Check if we should upload now
         if self._should_upload_now():
@@ -224,22 +235,26 @@ class TVMUploadSystem:
             Silently allows upload if operational_hours parsing fails
         """
         now = datetime.now().time()
-        
-        # Get operational hours from config (optional)
+    
+        # Check operational hours
         op_hours = self.config.get('upload.operational_hours')
-        if not op_hours:
-            # No restriction - always upload
-            return True
+        if op_hours and op_hours.get('enabled', True):
+            try:
+                start_time = datetime.strptime(op_hours['start'], '%H:%M').time()
+                end_time = datetime.strptime(op_hours['end'], '%H:%M').time()
+                
+                if not (start_time <= now <= end_time):
+                    logger.debug(f"Outside operational hours ({start_time}-{end_time})")
+                    return False
+            except Exception as e:
+                logger.warning(f"Error parsing operational hours: {e}")
+                # If parsing fails, allow upload
         
-        # Parse operational hours
-        try:
-            start_time = datetime.strptime(op_hours['start'], '%H:%M').time()
-            end_time = datetime.strptime(op_hours['end'], '%H:%M').time()
-            
-            return start_time <= now <= end_time
-        except:
-            # If parsing fails, allow upload
-            return True
+        # Add network check here later
+        # if not self._check_network():
+        #     return False
+        
+        return True
     
     def _schedule_loop(self):
         """
@@ -253,23 +268,30 @@ class TVMUploadSystem:
             Runs in daemon thread, logs errors but continues running
         """
         logger.info("Schedule loop started")
+    
+        last_upload_date = None
         
         while self._running:
             try:
-                # Check if it's the scheduled upload time
-                now = datetime.now().time()
+                now = datetime.now()
                 schedule_time = datetime.strptime(
-                    self.config.get('upload.schedule'), 
+                    self.config.get('upload.schedule'),
                     '%H:%M'
                 ).time()
                 
-                # If within 1 minute of schedule time, trigger upload
-                if self._is_near_schedule_time(now, schedule_time):
-                    logger.info(f"Scheduled upload time reached: {schedule_time}")
-                    self._process_upload_queue()
-                    
-                    # Sleep until next day to avoid multiple triggers
-                    time.sleep(3600)
+                # Check if it's upload time and we haven't uploaded today
+                if self._is_near_schedule_time(now.time(), schedule_time):
+                    if last_upload_date != now.date():
+                        logger.info(f"Scheduled upload time reached: {schedule_time}")
+                        
+                        if self._should_upload_now():
+                            self._process_upload_queue()
+                            last_upload_date = now.date()
+                        else:
+                            logger.info("Upload skipped: outside operational hours")
+                        
+                        # Sleep 1 hour to avoid multiple triggers
+                        time.sleep(3600)
                 
             except Exception as e:
                 logger.error(f"Error in schedule loop: {e}")
@@ -310,16 +332,14 @@ class TVMUploadSystem:
         Note:
             Thread-safe - uses lock to snapshot and clear queue atomically
         """
-        with self._upload_lock:
-            if len(self._upload_queue) == 0:
-                return
-            
-            files_to_upload = list(self._upload_queue)
-            self._upload_queue.clear()
+        batch = self.queue_manager.get_next_batch(max_files=50)
+    
+        if len(batch) == 0:
+            return
         
-        logger.info(f"Processing {len(files_to_upload)} files for upload")
+        logger.info(f"Processing {len(batch)} files for upload")
         
-        for filepath in files_to_upload:
+        for filepath in batch:
             self._upload_file(filepath)
         
         # Check disk space after uploads
@@ -327,12 +347,14 @@ class TVMUploadSystem:
             logger.warning("Low disk space after uploads, running cleanup...")
             deleted = self.disk_manager.cleanup_old_files()
             logger.info(f"Cleanup freed space by deleting {deleted} files")
+
     
     def _upload_file(self, filepath: str):
         """
         Upload single file to S3.
         
         Updates statistics based on success/failure.
+        Record CloudWatch metrics on success/failure.
         Marks file as uploaded in disk manager on success.
         
         Args:
@@ -342,29 +364,34 @@ class TVMUploadSystem:
             Logs warning if file disappeared before upload
         """
         file_path = Path(filepath)
-        
+    
         if not file_path.exists():
             logger.warning(f"File disappeared: {file_path.name}")
+            self.queue_manager.mark_uploaded(filepath)  # Remove from queue
             return
         
-        # Get file size for stats
         file_size = file_path.stat().st_size
-        
-        # Upload
         success = self.upload_manager.upload_file(filepath)
         
         if success:
             self.stats['files_uploaded'] += 1
             self.stats['bytes_uploaded'] += file_size
-            
-            # Mark as uploaded in disk manager
+            self.cloudwatch.record_upload_success(file_size)
             self.disk_manager.mark_uploaded(filepath)
+            
+            # Remove from queue
+            self.queue_manager.mark_uploaded(filepath)
             
             logger.info(f"Upload successful: {file_path.name} ({file_size / (1024**2):.2f} MB)")
         else:
             self.stats['files_failed'] += 1
+            self.cloudwatch.record_upload_failure()
+            
+            # Increment attempt counter
+            self.queue_manager.mark_failed(filepath)
+            
             logger.error(f"Upload failed: {file_path.name}")
-    
+        
     def _print_statistics(self):
         """
         Print system statistics.
@@ -400,6 +427,19 @@ def signal_handler(signum, frame):
         system.stop()
     sys.exit(0)
 
+# Add periodic metric publishing (in _schedule_loop or new thread)
+def _publish_metrics_loop(self):
+    """Publish metrics to CloudWatch every hour."""
+    while self._running:
+        try:
+            usage, _, _ = self.disk_manager.get_disk_usage()
+            self.cloudwatch.publish_metrics(disk_usage_percent=usage * 100)
+            logger.info("Published metrics to CloudWatch")
+        except Exception as e:
+            logger.error(f"Error publishing metrics: {e}")
+        
+        # Sleep 1 hour
+        time.sleep(3600)
 
 def main():
     """

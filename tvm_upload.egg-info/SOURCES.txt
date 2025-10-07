@@ -1,0 +1,16 @@
+README.md
+setup.py
+./src/__init__.py
+./src/cloudwatch_manager.py
+./src/config_manager.py
+./src/disk_manager.py
+./src/file_monitor.py
+./src/main.py
+./src/queue_manager.py
+./src/upload_manager.py
+tvm_upload.egg-info/PKG-INFO
+tvm_upload.egg-info/SOURCES.txt
+tvm_upload.egg-info/dependency_links.txt
+tvm_upload.egg-info/entry_points.txt
+tvm_upload.egg-info/requires.txt
+tvm_upload.egg-info/top_level.txt

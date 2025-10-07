@@ -7,13 +7,8 @@ import pytest
 import time
 import tempfile
 from pathlib import Path
-import sys
-import os
 
-# Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-
-from file_monitor import FileMonitor
+from src.file_monitor import FileMonitor
 
 
 def wait_until(condition, timeout=10, interval=0.1, description="condition"):

@@ -7,13 +7,8 @@ import pytest
 import yaml
 import tempfile
 from pathlib import Path
-import sys
-import os
 
-# Add src to path
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'src'))
-
-from config_manager import ConfigManager, ConfigValidationError
+from src.config_manager import ConfigManager, ConfigValidationError
 
 @pytest.fixture
 def temp_config_file():
