@@ -6,10 +6,13 @@ Watches directories and detects completed log files
 
 import time
 import threading
+import logging
 from pathlib import Path
 from typing import Callable, Dict, Tuple, List
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler, FileCreatedEvent, FileModifiedEvent
+
+logger = logging.getLogger(__name__)
 
 
 class FileMonitor:
@@ -47,20 +50,20 @@ class FileMonitor:
         self._running = False
         self._checker_thread = None
         
-        print(f"[FileMonitor] Initialized monitoring {len(directories)} directories")
-        print(f"[FileMonitor] Stability period: {stability_seconds} seconds")
+        logger.info(f"Initialized monitoring {len(directories)} directories")
+        logger.info(f"Stability period: {stability_seconds} seconds")
     
     def start(self):
         """Start monitoring directories"""
         if self._running:
-            print("[FileMonitor] Already running")
+            logger.warning("Already running")
             return
         
         # Verify directories exist
         for directory in self.directories:
             if not directory.exists():
-                print(f"[FileMonitor] WARNING: Directory does not exist: {directory}")
-                print(f"[FileMonitor] Creating directory: {directory}")
+                logger.warning(f"Directory does not exist: {directory}")
+                logger.info(f"Creating directory: {directory}")
                 directory.mkdir(parents=True, exist_ok=True)
         
         # Start watchdog observer
@@ -74,7 +77,7 @@ class FileMonitor:
         self._checker_thread = threading.Thread(target=self._stability_checker, daemon=True)
         self._checker_thread.start()
         
-        print("[FileMonitor] Started monitoring")
+        logger.info("Started monitoring")
     
     def stop(self):
         """Stop monitoring"""
@@ -91,7 +94,7 @@ class FileMonitor:
         if self._checker_thread:
             self._checker_thread.join(timeout=2)
         
-        print("[FileMonitor] Stopped monitoring")
+        logger.info("Stopped monitoring")
     
     def _on_file_event(self, file_path: str):
         """
@@ -121,31 +124,30 @@ class FileMonitor:
         current_time = time.time()
         self.file_tracker[path] = (size, current_time)
         
-        print(f"[FileMonitor] Tracking: {path.name} ({size} bytes)")
+        logger.debug(f"Tracking: {path.name} ({size} bytes)")
     
     def _stability_checker(self):
         """
         Background thread that checks file stability
         Checks immediately, then every 10 seconds
         """
-        print("[FileMonitor] Stability checker started")
+        logger.info("Stability checker started")
         
         while self._running:
-            self._check_stable_files()  # Check FIRST
+            self._check_stable_files()
             
             # Sleep in small increments so we can stop quickly
-            # Check more frequently during the first few seconds
             sleep_time = min(self.stability_seconds, 10)
             for _ in range(sleep_time):
                 if not self._running:
                     break
                 time.sleep(1)
         
-        print("[FileMonitor] Stability checker stopped")
+        logger.info("Stability checker stopped")
     
     def _check_stable_files(self):
         """Check all tracked files for stability"""
-        print(f"[FileMonitor] Checking {len(self.file_tracker)} tracked files")
+        logger.debug(f"Checking {len(self.file_tracker)} tracked files")
         current_time = time.time()
         stable_files = []
         
@@ -177,7 +179,7 @@ class FileMonitor:
         
         # Process stable files
         for file_path in stable_files:
-            print(f"[FileMonitor] File stable: {file_path.name} ({self.file_tracker[file_path][0]} bytes)")
+            logger.info(f"File stable: {file_path.name} ({self.file_tracker[file_path][0]} bytes)")
             
             # Remove from tracker (so we don't process it again)
             del self.file_tracker[file_path]
@@ -186,7 +188,7 @@ class FileMonitor:
             try:
                 self.callback(str(file_path))
             except Exception as e:
-                print(f"[FileMonitor] ERROR: Callback failed for {file_path}: {e}")
+                logger.error(f"Callback failed for {file_path}: {e}")
     
     def get_tracked_files(self) -> List[str]:
         """
@@ -222,28 +224,32 @@ class LogFileHandler(FileSystemEventHandler):
 
 
 if __name__ == '__main__':
-    # Quick test
     import sys
     
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format='%(asctime)s [%(levelname)s] %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    
     if len(sys.argv) < 2:
-        print("Usage: python file_monitor.py <directory>")
+        logger.error("Usage: python file_monitor.py <directory>")
         sys.exit(1)
     
     directory = sys.argv[1]
     
     def on_file_ready(filepath):
-        print(f"\n*** FILE READY: {filepath} ***\n")
+        logger.info(f"*** FILE READY: {filepath} ***")
     
     monitor = FileMonitor([directory], on_file_ready, stability_seconds=10)
     
     try:
         monitor.start()
-        print(f"Monitoring {directory}")
-        print("Create/modify files to test. Press Ctrl+C to stop.")
+        logger.info(f"Monitoring {directory}")
+        logger.info("Create/modify files to test. Press Ctrl+C to stop.")
         
-        # Keep running
         while True:
             time.sleep(1)
     except KeyboardInterrupt:
-        print("\nStopping...")
+        logger.info("Stopping...")
         monitor.stop()

@@ -5,9 +5,12 @@ Monitors disk space and manages file cleanup
 """
 
 import shutil
+import logging
 from pathlib import Path
 from typing import List, Tuple
 import os
+
+logger = logging.getLogger(__name__)
 
 
 class DiskManager:
@@ -42,10 +45,10 @@ class DiskManager:
         # Track uploaded files (files safe to delete)
         self.uploaded_files = set()
         
-        print(f"[DiskManager] Initialized")
-        print(f"[DiskManager] Reserved space: {reserved_gb} GB")
-        print(f"[DiskManager] Warning threshold: {warning_threshold * 100}%")
-        print(f"[DiskManager] Critical threshold: {critical_threshold * 100}%")
+        logger.info("Initialized")
+        logger.info(f"Reserved space: {reserved_gb} GB")
+        logger.info(f"Warning threshold: {warning_threshold * 100}%")
+        logger.info(f"Critical threshold: {critical_threshold * 100}%")
     
     def mark_uploaded(self, filepath: str):
         """
@@ -55,7 +58,7 @@ class DiskManager:
             filepath: Path to uploaded file
         """
         self.uploaded_files.add(str(Path(filepath).resolve()))
-        print(f"[DiskManager] Marked as uploaded: {Path(filepath).name}")
+        logger.info(f"Marked as uploaded: {Path(filepath).name}")
     
     def get_disk_usage(self, path: str = "/") -> Tuple[float, int, int]:
         """
@@ -84,17 +87,17 @@ class DiskManager:
         usage_percent, used, free = self.get_disk_usage(path)
         
         if free < self.reserved_bytes:
-            print(f"[DiskManager] WARNING: Low disk space")
-            print(f"[DiskManager] Free: {free / (1024**3):.2f} GB")
-            print(f"[DiskManager] Reserved: {self.reserved_bytes / (1024**3):.2f} GB")
+            logger.warning("Low disk space")
+            logger.warning(f"Free: {free / (1024**3):.2f} GB")
+            logger.warning(f"Reserved: {self.reserved_bytes / (1024**3):.2f} GB")
             return False
         
         if usage_percent >= self.critical_threshold:
-            print(f"[DiskManager] CRITICAL: Disk usage at {usage_percent * 100:.1f}%")
+            logger.error(f"CRITICAL: Disk usage at {usage_percent * 100:.1f}%")
             return False
         
         if usage_percent >= self.warning_threshold:
-            print(f"[DiskManager] WARNING: Disk usage at {usage_percent * 100:.1f}%")
+            logger.warning(f"Disk usage at {usage_percent * 100:.1f}%")
         
         return True
     
@@ -113,13 +116,13 @@ class DiskManager:
         else:
             target_free_bytes = int(target_free_gb * 1024 * 1024 * 1024)
         
-        print(f"[DiskManager] Starting cleanup to free {target_free_bytes / (1024**3):.2f} GB")
+        logger.info(f"Starting cleanup to free {target_free_bytes / (1024**3):.2f} GB")
         
         # Get current free space
         _, _, free_bytes = self.get_disk_usage()
         
         if free_bytes >= target_free_bytes:
-            print(f"[DiskManager] Sufficient space available, no cleanup needed")
+            logger.info("Sufficient space available, no cleanup needed")
             return 0
         
         # Get all uploaded files sorted by modification time (oldest first)
@@ -131,7 +134,7 @@ class DiskManager:
                 size = filepath.stat().st_size
                 uploaded_file_list.append((mtime, size, filepath))
         
-        uploaded_file_list.sort()  # Sort by mtime (oldest first)
+        uploaded_file_list.sort()
         
         deleted_count = 0
         freed_bytes = 0
@@ -142,15 +145,15 @@ class DiskManager:
                 break
             
             try:
-                print(f"[DiskManager] Deleting: {filepath.name} ({size / (1024**2):.2f} MB)")
+                logger.info(f"Deleting: {filepath.name} ({size / (1024**2):.2f} MB)")
                 filepath.unlink()
                 freed_bytes += size
                 deleted_count += 1
                 self.uploaded_files.discard(str(filepath))
             except Exception as e:
-                print(f"[DiskManager] ERROR deleting {filepath}: {e}")
+                logger.error(f"Error deleting {filepath}: {e}")
         
-        print(f"[DiskManager] Cleanup complete: {deleted_count} files deleted, {freed_bytes / (1024**3):.2f} GB freed")
+        logger.info(f"Cleanup complete: {deleted_count} files deleted, {freed_bytes / (1024**3):.2f} GB freed")
         
         return deleted_count
     
@@ -190,23 +193,28 @@ class DiskManager:
 
 
 if __name__ == '__main__':
-    # Quick test
     import tempfile
+    
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s [%(levelname)s] %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
     
     # Create temp directory
     temp_dir = tempfile.mkdtemp()
-    print(f"Test directory: {temp_dir}")
+    logger.info(f"Test directory: {temp_dir}")
     
     # Create disk manager
     dm = DiskManager([temp_dir], reserved_gb=1.0)
     
     # Check disk space
     usage, used, free = dm.get_disk_usage()
-    print(f"\nDisk usage: {usage * 100:.1f}%")
-    print(f"Free space: {free / (1024**3):.2f} GB")
+    logger.info(f"Disk usage: {usage * 100:.1f}%")
+    logger.info(f"Free space: {free / (1024**3):.2f} GB")
     
     has_space = dm.check_disk_space()
-    print(f"Has sufficient space: {has_space}")
+    logger.info(f"Has sufficient space: {has_space}")
     
     # Cleanup temp
     import shutil

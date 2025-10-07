@@ -14,14 +14,16 @@ if str(current_dir) not in sys.path:
 
 import signal
 import time
+import logging
 from datetime import datetime, time as dt_time
 import threading
 
-# Now imports will work
 from config_manager import ConfigManager
 from file_monitor import FileMonitor
 from upload_manager import UploadManager
 from disk_manager import DiskManager
+
+logger = logging.getLogger(__name__)
 
 
 class TVMUploadSystem:
@@ -43,7 +45,7 @@ class TVMUploadSystem:
         Args:
             config_path: Path to configuration file
         """
-        print("[System] Initializing TVM Upload System...")
+        logger.info("Initializing TVM Upload System...")
         
         # Load configuration
         self.config = ConfigManager(config_path)
@@ -82,20 +84,20 @@ class TVMUploadSystem:
             'bytes_uploaded': 0
         }
         
-        print("[System] Initialization complete")
+        logger.info("Initialization complete")
     
     def start(self):
         """Start the system"""
         if self._running:
-            print("[System] Already running")
+            logger.warning("Already running")
             return
         
-        print("[System] Starting TVM Upload System...")
+        logger.info("Starting TVM Upload System...")
         
         # Check disk space before starting
         if not self.disk_manager.check_disk_space():
-            print("[System] WARNING: Low disk space detected")
-            print("[System] Running cleanup before starting...")
+            logger.warning("Low disk space detected")
+            logger.info("Running cleanup before starting...")
             self.disk_manager.cleanup_old_files()
         
         # Start file monitoring
@@ -106,16 +108,16 @@ class TVMUploadSystem:
         self._schedule_thread = threading.Thread(target=self._schedule_loop, daemon=True)
         self._schedule_thread.start()
         
-        print("[System] System started successfully")
-        print(f"[System] Upload schedule: {self.config.get('upload.schedule')} daily")
-        print(f"[System] Monitoring directories: {len(self.config.get('log_directories'))}")
+        logger.info("System started successfully")
+        logger.info(f"Upload schedule: {self.config.get('upload.schedule')} daily")
+        logger.info(f"Monitoring directories: {len(self.config.get('log_directories'))}")
     
     def stop(self):
         """Stop the system gracefully"""
         if not self._running:
             return
         
-        print("[System] Shutting down...")
+        logger.info("Shutting down...")
         
         self._running = False
         
@@ -128,13 +130,13 @@ class TVMUploadSystem:
         
         # Upload any remaining queued files
         if len(self._upload_queue) > 0:
-            print(f"[System] Uploading {len(self._upload_queue)} queued files before shutdown...")
+            logger.info(f"Uploading {len(self._upload_queue)} queued files before shutdown...")
             self._process_upload_queue()
         
         # Print statistics
         self._print_statistics()
         
-        print("[System] Shutdown complete")
+        logger.info("Shutdown complete")
     
     def _on_file_ready(self, filepath: str):
         """
@@ -145,7 +147,7 @@ class TVMUploadSystem:
         """
         self.stats['files_detected'] += 1
         
-        print(f"[System] File ready: {Path(filepath).name}")
+        logger.info(f"File ready: {Path(filepath).name}")
         
         # Add to upload queue
         with self._upload_lock:
@@ -186,7 +188,7 @@ class TVMUploadSystem:
         Background thread for scheduled uploads
         Checks every minute if it's time to upload
         """
-        print("[System] Schedule loop started")
+        logger.info("Schedule loop started")
         
         while self._running:
             try:
@@ -199,19 +201,19 @@ class TVMUploadSystem:
                 
                 # If within 1 minute of schedule time, trigger upload
                 if self._is_near_schedule_time(now, schedule_time):
-                    print(f"[System] Scheduled upload time reached: {schedule_time}")
+                    logger.info(f"Scheduled upload time reached: {schedule_time}")
                     self._process_upload_queue()
                     
                     # Sleep until next day to avoid multiple triggers
-                    time.sleep(3600)  # Sleep 1 hour
+                    time.sleep(3600)
                 
             except Exception as e:
-                print(f"[System] ERROR in schedule loop: {e}")
+                logger.error(f"Error in schedule loop: {e}")
             
             # Check every minute
             time.sleep(60)
         
-        print("[System] Schedule loop stopped")
+        logger.info("Schedule loop stopped")
     
     def _is_near_schedule_time(self, now: dt_time, schedule: dt_time) -> bool:
         """
@@ -238,16 +240,16 @@ class TVMUploadSystem:
             files_to_upload = list(self._upload_queue)
             self._upload_queue.clear()
         
-        print(f"[System] Processing {len(files_to_upload)} files for upload")
+        logger.info(f"Processing {len(files_to_upload)} files for upload")
         
         for filepath in files_to_upload:
             self._upload_file(filepath)
         
         # Check disk space after uploads
         if not self.disk_manager.check_disk_space():
-            print("[System] Low disk space after uploads, running cleanup...")
+            logger.warning("Low disk space after uploads, running cleanup...")
             deleted = self.disk_manager.cleanup_old_files()
-            print(f"[System] Cleanup freed space by deleting {deleted} files")
+            logger.info(f"Cleanup freed space by deleting {deleted} files")
     
     def _upload_file(self, filepath: str):
         """
@@ -259,7 +261,7 @@ class TVMUploadSystem:
         file_path = Path(filepath)
         
         if not file_path.exists():
-            print(f"[System] WARNING: File disappeared: {file_path.name}")
+            logger.warning(f"File disappeared: {file_path.name}")
             return
         
         # Get file size for stats
@@ -275,26 +277,26 @@ class TVMUploadSystem:
             # Mark as uploaded in disk manager
             self.disk_manager.mark_uploaded(filepath)
             
-            print(f"[System] Upload successful: {file_path.name} ({file_size / (1024**2):.2f} MB)")
+            logger.info(f"Upload successful: {file_path.name} ({file_size / (1024**2):.2f} MB)")
         else:
             self.stats['files_failed'] += 1
-            print(f"[System] Upload failed: {file_path.name}")
+            logger.error(f"Upload failed: {file_path.name}")
     
     def _print_statistics(self):
         """Print system statistics"""
-        print("\n" + "="*50)
-        print("System Statistics")
-        print("="*50)
-        print(f"Files detected:     {self.stats['files_detected']}")
-        print(f"Files uploaded:     {self.stats['files_uploaded']}")
-        print(f"Files failed:       {self.stats['files_failed']}")
-        print(f"Data uploaded:      {self.stats['bytes_uploaded'] / (1024**3):.2f} GB")
-        print("="*50 + "\n")
+        logger.info("\n" + "="*50)
+        logger.info("System Statistics")
+        logger.info("="*50)
+        logger.info(f"Files detected:     {self.stats['files_detected']}")
+        logger.info(f"Files uploaded:     {self.stats['files_uploaded']}")
+        logger.info(f"Files failed:       {self.stats['files_failed']}")
+        logger.info(f"Data uploaded:      {self.stats['bytes_uploaded'] / (1024**3):.2f} GB")
+        logger.info("="*50 + "\n")
 
 
 def signal_handler(signum, frame):
     """Handle shutdown signals"""
-    print(f"\n[System] Received signal {signum}")
+    logger.info(f"Received signal {signum}")
     if 'system' in globals():
         system.stop()
     sys.exit(0)
@@ -315,20 +317,33 @@ def main():
         action='store_true',
         help='Test configuration and exit'
     )
+    parser.add_argument(
+        '--log-level',
+        default='INFO',
+        choices=['DEBUG', 'INFO', 'WARNING', 'ERROR'],
+        help='Logging level'
+    )
     
     args = parser.parse_args()
+    
+    # Set up logging
+    logging.basicConfig(
+        level=getattr(logging, args.log_level),
+        format='%(asctime)s [%(name)s] [%(levelname)s] %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
     
     # Test config mode
     if args.test_config:
         try:
             config = ConfigManager(args.config)
-            print("Configuration valid!")
-            print(f"Vehicle ID: {config.get('vehicle_id')}")
-            print(f"S3 Bucket: {config.get('s3.bucket')}")
-            print(f"Directories: {config.get('log_directories')}")
+            logger.info("Configuration valid!")
+            logger.info(f"Vehicle ID: {config.get('vehicle_id')}")
+            logger.info(f"S3 Bucket: {config.get('s3.bucket')}")
+            logger.info(f"Directories: {config.get('log_directories')}")
             sys.exit(0)
         except Exception as e:
-            print(f"Configuration error: {e}")
+            logger.error(f"Configuration error: {e}")
             sys.exit(1)
     
     # Register signal handlers
@@ -343,15 +358,15 @@ def main():
         system.start()
         
         # Keep running
-        print("[System] Running... Press Ctrl+C to stop")
+        logger.info("Running... Press Ctrl+C to stop")
         while True:
             time.sleep(1)
             
     except KeyboardInterrupt:
-        print("\n[System] Keyboard interrupt received")
+        logger.info("Keyboard interrupt received")
         system.stop()
     except Exception as e:
-        print(f"[System] FATAL ERROR: {e}")
+        logger.error(f"FATAL ERROR: {e}")
         import traceback
         traceback.print_exc()
         sys.exit(1)

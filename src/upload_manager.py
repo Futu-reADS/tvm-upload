@@ -6,10 +6,13 @@ Handles S3 uploads with retry logic
 
 import boto3
 import time
+import logging
 from pathlib import Path
 from typing import Optional, Tuple
 from datetime import datetime
 from botocore.exceptions import ClientError, BotoCoreError
+
+logger = logging.getLogger(__name__)
 
 
 class UploadError(Exception):
@@ -46,9 +49,9 @@ class UploadManager:
         # Initialize S3 client
         self.s3_client = boto3.client('s3', region_name=region)
         
-        print(f"[UploadManager] Initialized for bucket: {bucket}")
-        print(f"[UploadManager] Vehicle ID: {vehicle_id}")
-        print(f"[UploadManager] Max retries: {max_retries}")
+        logger.info(f"Initialized for bucket: {bucket}")
+        logger.info(f"Vehicle ID: {vehicle_id}")
+        logger.info(f"Max retries: {max_retries}")
     
     def upload_file(self, local_path: str) -> bool:
         """
@@ -63,7 +66,7 @@ class UploadManager:
         file_path = Path(local_path)
         
         if not file_path.exists():
-            print(f"[UploadManager] ERROR: File not found: {local_path}")
+            logger.error(f"File not found: {local_path}")
             return False
         
         # Build S3 key
@@ -72,35 +75,35 @@ class UploadManager:
         # Try upload with retries
         for attempt in range(1, self.max_retries + 1):
             try:
-                print(f"[UploadManager] Uploading {file_path.name} (attempt {attempt}/{self.max_retries})")
+                logger.info(f"Uploading {file_path.name} (attempt {attempt}/{self.max_retries})")
                 
                 # Upload file
                 file_size = file_path.stat().st_size
                 
-                if file_size > 5 * 1024 * 1024:  # 5MB threshold
+                if file_size > 5 * 1024 * 1024:
                     # Use multipart upload for large files
                     self._multipart_upload(str(file_path), s3_key)
                 else:
                     # Simple upload for small files
                     self.s3_client.upload_file(str(file_path), self.bucket, s3_key)
                 
-                print(f"[UploadManager] SUCCESS: {file_path.name} -> s3://{self.bucket}/{s3_key}")
+                logger.info(f"SUCCESS: {file_path.name} -> s3://{self.bucket}/{s3_key}")
                 return True
                 
             except (ClientError, BotoCoreError) as e:
-                print(f"[UploadManager] Upload failed (attempt {attempt}): {e}")
+                logger.warning(f"Upload failed (attempt {attempt}): {e}")
                 
                 if attempt < self.max_retries:
                     # Calculate backoff delay
                     delay = self._calculate_backoff(attempt)
-                    print(f"[UploadManager] Retrying in {delay} seconds...")
+                    logger.info(f"Retrying in {delay} seconds...")
                     time.sleep(delay)
                 else:
-                    print(f"[UploadManager] FAILED: Max retries exceeded for {file_path.name}")
+                    logger.error(f"Max retries exceeded for {file_path.name}")
                     return False
             
             except Exception as e:
-                print(f"[UploadManager] Unexpected error: {e}")
+                logger.error(f"Unexpected error: {e}")
                 return False
         
         return False
@@ -147,14 +150,13 @@ class UploadManager:
             s3_key: S3 object key
         """
         # For simplicity, use boto3's upload_file which handles multipart automatically
-        # In production, you might want more control with create_multipart_upload
         self.s3_client.upload_file(
             file_path, 
             self.bucket, 
             s3_key,
             Config=boto3.s3.transfer.TransferConfig(
-                multipart_threshold=5 * 1024 * 1024,  # 5MB
-                multipart_chunksize=5 * 1024 * 1024   # 5MB chunks
+                multipart_threshold=5 * 1024 * 1024,
+                multipart_chunksize=5 * 1024 * 1024
             )
         )
     
@@ -179,25 +181,30 @@ class UploadManager:
 
 
 if __name__ == '__main__':
-    # Quick test (requires AWS credentials)
     import sys
     
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s [%(levelname)s] %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    
     if len(sys.argv) < 2:
-        print("Usage: python upload_manager.py <file_path>")
+        logger.error("Usage: python upload_manager.py <file_path>")
         sys.exit(1)
     
     # Test with local credentials
     uploader = UploadManager(
         bucket="tvm-logs-test",
-        region="us-east-1",  # Use your test region
+        region="us-east-1",
         vehicle_id="vehicle-test"
     )
     
     result = uploader.upload_file(sys.argv[1])
     
     if result:
-        print("Upload successful!")
+        logger.info("Upload successful!")
         sys.exit(0)
     else:
-        print("Upload failed!")
+        logger.error("Upload failed!")
         sys.exit(1)

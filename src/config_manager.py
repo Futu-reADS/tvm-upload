@@ -7,8 +7,11 @@ Loads, validates, and manages YAML configuration
 import yaml
 import os
 import signal
+import logging
 from pathlib import Path
 from typing import Dict, Any, List
+
+logger = logging.getLogger(__name__)
 
 
 class ConfigValidationError(Exception):
@@ -64,7 +67,7 @@ class ConfigManager:
         # Validate configuration
         self.validate_config(self.config)
         
-        print(f"[ConfigManager] Loaded config from {self.config_path}")
+        logger.info(f"Loaded config from {self.config_path}")
         return self.config
     
     def reload_config(self) -> Dict[str, Any]:
@@ -74,12 +77,12 @@ class ConfigManager:
         Returns:
             dict: Reloaded configuration
         """
-        print("[ConfigManager] Reloading configuration...")
+        logger.info("Reloading configuration...")
         try:
             return self.load_config()
         except Exception as e:
-            print(f"[ConfigManager] ERROR: Failed to reload config: {e}")
-            print("[ConfigManager] Keeping existing configuration")
+            logger.error(f"Failed to reload config: {e}")
+            logger.info("Keeping existing configuration")
             return self.config
     
     def validate_config(self, config: Dict[str, Any]) -> bool:
@@ -123,7 +126,8 @@ class ConfigManager:
         #     raise ConfigValidationError(
         #         f"s3.region must be one of {valid_regions}"
         #     )
-    
+
+
         # Validate region exists (allow any AWS region)
         if not config['s3']['region']:
             raise ConfigValidationError("s3.region cannot be empty")
@@ -162,7 +166,7 @@ class ConfigManager:
                     "disk.critical_threshold must be between 0 and 1"
                 )
         
-        print("[ConfigManager] Configuration validated successfully")
+        logger.info("Configuration validated successfully")
         return True
     
     def _is_valid_time_format(self, time_str: str) -> bool:
@@ -215,21 +219,26 @@ class ConfigManager:
 
 
 if __name__ == '__main__':
-    # Quick test
     import sys
     
+    logging.basicConfig(
+        level=logging.INFO,
+        format='%(asctime)s [%(levelname)s] %(message)s',
+        datefmt='%Y-%m-%d %H:%M:%S'
+    )
+    
     if len(sys.argv) < 2:
-        print("Usage: python config_manager.py <config_file>")
+        logger.error("Usage: python config_manager.py <config_file>")
         sys.exit(1)
     
     try:
         cm = ConfigManager(sys.argv[1])
-        print("\nConfiguration loaded successfully!")
-        print(f"Vehicle ID: {cm.get('vehicle_id')}")
-        print(f"Log directories: {cm.get('log_directories')}")
-        print(f"S3 bucket: {cm.get('s3.bucket')}")
-        print(f"S3 region: {cm.get('s3.region')}")
-        print(f"Upload schedule: {cm.get('upload.schedule')}")
+        logger.info("Configuration loaded successfully!")
+        logger.info(f"Vehicle ID: {cm.get('vehicle_id')}")
+        logger.info(f"Log directories: {cm.get('log_directories')}")
+        logger.info(f"S3 bucket: {cm.get('s3.bucket')}")
+        logger.info(f"S3 region: {cm.get('s3.region')}")
+        logger.info(f"Upload schedule: {cm.get('upload.schedule')}")
     except Exception as e:
-        print(f"ERROR: {e}")
+        logger.error(f"ERROR: {e}")
         sys.exit(1)
