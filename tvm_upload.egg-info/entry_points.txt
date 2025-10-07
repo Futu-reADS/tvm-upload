@@ -1,3 +1,0 @@
-[console_scripts]
-tvm-upload = src.main:main
-
