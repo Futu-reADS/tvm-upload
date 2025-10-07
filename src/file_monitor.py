@@ -2,6 +2,9 @@
 """
 File Monitor for TVM Log Upload System
 Watches directories and detects completed log files
+
+Uses watchdog library to monitor filesystem events and determines when
+files are complete based on size stability over a configured period.
 """
 
 import time
@@ -17,10 +20,30 @@ logger = logging.getLogger(__name__)
 
 class FileMonitor:
     """
-    Monitors directories for completed log files
+    Monitors directories for completed log files using watchdog.
     
     A file is considered "complete" when its size hasn't changed for
-    the configured stability period (default: 60 seconds)
+    the configured stability period (default: 60 seconds). This ensures
+    files are fully written before processing.
+    
+    Architecture:
+    - Watchdog Observer: Detects filesystem events (create/modify)
+    - File Tracker: Tracks file sizes and last modification time
+    - Stability Checker: Background thread that checks for stable files
+    
+    Example:
+        >>> def on_complete(filepath):
+        ...     print(f"File ready: {filepath}")
+        >>> monitor = FileMonitor(['/var/log'], on_complete, stability_seconds=60)
+        >>> monitor.start()
+        >>> # ... monitor runs in background ...
+        >>> monitor.stop()
+    
+    Attributes:
+        directories (List[Path]): Directories being monitored
+        callback (Callable): Function called when file is stable
+        stability_seconds (int): Seconds file must be unchanged
+        file_tracker (dict): Maps filepath to (size, timestamp)
     """
     
     def __init__(self, 
@@ -28,12 +51,15 @@ class FileMonitor:
                  callback: Callable[[str], None],
                  stability_seconds: int = 60):
         """
-        Initialize file monitor
+        Initialize file monitor.
         
         Args:
             directories: List of directory paths to monitor
             callback: Function to call when file is ready (receives file path)
             stability_seconds: Seconds file must be unchanged to be "complete"
+            
+        Note:
+            Directories will be created if they don't exist
         """
         self.directories = [Path(d) for d in directories]
         self.callback = callback
@@ -54,7 +80,15 @@ class FileMonitor:
         logger.info(f"Stability period: {stability_seconds} seconds")
     
     def start(self):
-        """Start monitoring directories"""
+        """
+        Start monitoring directories.
+        
+        Starts the watchdog observer and stability checker thread.
+        Creates directories if they don't exist.
+        
+        Note:
+            Safe to call multiple times - will not start if already running
+        """
         if self._running:
             logger.warning("Already running")
             return
@@ -80,7 +114,15 @@ class FileMonitor:
         logger.info("Started monitoring")
     
     def stop(self):
-        """Stop monitoring"""
+        """
+        Stop monitoring directories.
+        
+        Gracefully stops the watchdog observer and stability checker thread.
+        Waits for threads to terminate (max 2 seconds for checker).
+        
+        Note:
+            Safe to call multiple times
+        """
         if not self._running:
             return
         
@@ -98,10 +140,16 @@ class FileMonitor:
     
     def _on_file_event(self, file_path: str):
         """
-        Called when a file is created or modified
+        Called when watchdog detects a file create or modify event.
+        
+        Updates the file tracker with current file size and timestamp.
+        Ignores hidden files (starting with '.') and directories.
         
         Args:
-            file_path: Path to the file
+            file_path: Path to the file that changed
+            
+        Note:
+            This runs in watchdog's event thread
         """
         path = Path(file_path)
         
@@ -128,8 +176,14 @@ class FileMonitor:
     
     def _stability_checker(self):
         """
-        Background thread that checks file stability
-        Checks immediately, then every 10 seconds
+        Background thread that periodically checks file stability.
+        
+        Checks all tracked files to see if they've been stable (unchanged)
+        for the configured stability period. Checks immediately on start,
+        then periodically based on stability_seconds (max 10 second intervals).
+        
+        Note:
+            Runs in daemon thread, automatically stops when main thread exits
         """
         logger.info("Stability checker started")
         
@@ -146,7 +200,18 @@ class FileMonitor:
         logger.info("Stability checker stopped")
     
     def _check_stable_files(self):
-        """Check all tracked files for stability"""
+        """
+        Check all tracked files for stability.
+        
+        For each tracked file:
+        1. Check if it still exists
+        2. Get current size
+        3. Compare with tracked size
+        4. If unchanged for stability_seconds, mark as stable and call callback
+        
+        Automatically removes deleted files from tracker.
+        Resets timer if file size changes.
+        """
         logger.debug(f"Checking {len(self.file_tracker)} tracked files")
         current_time = time.time()
         stable_files = []
@@ -192,33 +257,51 @@ class FileMonitor:
     
     def get_tracked_files(self) -> List[str]:
         """
-        Get list of currently tracked files (for testing/debugging)
+        Get list of currently tracked files.
         
         Returns:
-            List of file paths being tracked
+            List of file paths being tracked (not yet stable)
+            
+        Note:
+            Useful for debugging and monitoring
         """
         return [str(p) for p in self.file_tracker.keys()]
 
 
 class LogFileHandler(FileSystemEventHandler):
-    """Watchdog event handler for log files"""
+    """
+    Watchdog event handler for log files.
+    
+    Forwards file create and modify events to a callback function.
+    Ignores directory events.
+    """
     
     def __init__(self, callback: Callable[[str], None]):
         """
-        Initialize handler
+        Initialize handler with callback.
         
         Args:
-            callback: Function to call when file event occurs
+            callback: Function to call when file event occurs (receives file path)
         """
         self.callback = callback
     
     def on_created(self, event):
-        """Called when a file is created"""
+        """
+        Called when a file is created.
+        
+        Args:
+            event: FileSystemEvent with event details
+        """
         if not event.is_directory:
             self.callback(event.src_path)
     
     def on_modified(self, event):
-        """Called when a file is modified"""
+        """
+        Called when a file is modified.
+        
+        Args:
+            event: FileSystemEvent with event details
+        """
         if not event.is_directory:
             self.callback(event.src_path)
 

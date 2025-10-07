@@ -2,6 +2,9 @@
 """
 Upload Manager for TVM Log Upload System
 Handles S3 uploads with retry logic
+
+Provides robust file upload to S3 with exponential backoff retry,
+multipart upload support for large files, and upload verification.
 """
 
 import boto3
@@ -16,30 +19,59 @@ logger = logging.getLogger(__name__)
 
 
 class UploadError(Exception):
-    """Raised when upload fails after all retries"""
+    """
+    Raised when upload fails after all retries.
+    
+    This exception indicates that the file could not be uploaded
+    even after the maximum number of retry attempts.
+    """
     pass
 
 
 class UploadManager:
     """
-    Manages file uploads to S3 with retry logic
+    Manages file uploads to S3 with retry logic.
     
     Features:
-    - Exponential backoff retry
-    - Multipart upload for large files
-    - Upload progress tracking
+    - Exponential backoff retry (1, 2, 4, 8... up to 512 seconds)
+    - Automatic multipart upload for files >5MB
+    - S3 key generation: {vehicle-id}/{YYYY-MM-DD}/{filename}
+    - Upload verification
+    
+    Example:
+        >>> uploader = UploadManager(
+        ...     bucket='tvm-logs',
+        ...     region='cn-north-1',
+        ...     vehicle_id='vehicle-001'
+        ... )
+        >>> success = uploader.upload_file('/var/log/test.log')
+        >>> if success:
+        ...     print("Upload successful")
+    
+    Attributes:
+        bucket (str): S3 bucket name
+        region (str): AWS region
+        vehicle_id (str): Vehicle identifier for S3 key prefix
+        max_retries (int): Maximum retry attempts
+        s3_client: Boto3 S3 client
     """
     
     def __init__(self, bucket: str, region: str, vehicle_id: str, 
                  max_retries: int = 10):
         """
-        Initialize upload manager
+        Initialize upload manager.
         
         Args:
             bucket: S3 bucket name
-            region: AWS region
+            region: AWS region (e.g., 'cn-north-1', 'us-east-1')
             vehicle_id: Vehicle identifier for S3 prefix
-            max_retries: Maximum retry attempts
+            max_retries: Maximum retry attempts (default: 10)
+            
+        Note:
+            Requires AWS credentials to be configured via:
+            - Environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
+            - AWS credentials file (~/.aws/credentials)
+            - IAM role (if running on EC2)
         """
         self.bucket = bucket
         self.region = region
@@ -55,13 +87,19 @@ class UploadManager:
     
     def upload_file(self, local_path: str) -> bool:
         """
-        Upload file to S3 with retry logic
+        Upload file to S3 with retry logic.
+        
+        Attempts upload with exponential backoff on failure.
+        Automatically uses multipart upload for files larger than 5MB.
         
         Args:
             local_path: Path to local file
             
         Returns:
-            bool: True if upload succeeded, False otherwise
+            bool: True if upload succeeded, False if failed after all retries
+            
+        Note:
+            Logs detailed progress including attempt number and errors
         """
         file_path = Path(local_path)
         
@@ -110,14 +148,19 @@ class UploadManager:
     
     def _build_s3_key(self, file_path: Path) -> str:
         """
-        Build S3 key from file path
+        Build S3 key from file path.
+        
         Format: {vehicle-id}/{YYYY-MM-DD}/{filename}
+        Example: vehicle-001/2025-10-12/autoware.log
         
         Args:
             file_path: Local file path
             
         Returns:
-            str: S3 key
+            str: S3 object key
+            
+        Note:
+            Uses current date for the middle component
         """
         # Use current date
         date_str = datetime.now().strftime("%Y-%m-%d")
@@ -129,13 +172,21 @@ class UploadManager:
     
     def _calculate_backoff(self, attempt: int) -> int:
         """
-        Calculate exponential backoff delay
+        Calculate exponential backoff delay.
+        
+        Uses formula: min(2^(attempt-1), 512)
+        Sequence: 1, 2, 4, 8, 16, 32, 64, 128, 256, 512, 512...
         
         Args:
             attempt: Current attempt number (1-based)
             
         Returns:
-            int: Delay in seconds
+            int: Delay in seconds (max 512)
+            
+        Examples:
+            >>> _calculate_backoff(1)  # 1 second
+            >>> _calculate_backoff(5)  # 16 seconds
+            >>> _calculate_backoff(10) # 512 seconds (capped)
         """
         # Exponential backoff: 1, 2, 4, 8, 16, 32, 64, 128, 256, 512
         delay = min(2 ** (attempt - 1), 512)
@@ -143,11 +194,17 @@ class UploadManager:
     
     def _multipart_upload(self, file_path: str, s3_key: str):
         """
-        Upload large file using multipart upload
+        Upload large file using multipart upload.
+        
+        Splits file into 5MB chunks and uploads them in parallel.
+        Boto3 handles the multipart API calls automatically.
         
         Args:
             file_path: Local file path
             s3_key: S3 object key
+            
+        Note:
+            Uses boto3's high-level transfer configuration
         """
         # For simplicity, use boto3's upload_file which handles multipart automatically
         self.s3_client.upload_file(
@@ -162,13 +219,19 @@ class UploadManager:
     
     def verify_upload(self, local_path: str) -> bool:
         """
-        Verify that file exists in S3
+        Verify that file exists in S3.
+        
+        Checks if file was successfully uploaded by attempting to
+        retrieve object metadata.
         
         Args:
-            local_path: Local file path
+            local_path: Local file path (used to build S3 key)
             
         Returns:
-            bool: True if file exists in S3
+            bool: True if file exists in S3, False otherwise
+            
+        Note:
+            Does not verify file content or size, only existence
         """
         file_path = Path(local_path)
         s3_key = self._build_s3_key(file_path)

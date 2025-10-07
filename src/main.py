@@ -2,6 +2,9 @@
 """
 TVM Log Upload System - Main Application
 Integrates all components for production use
+
+This is the main entry point that coordinates file monitoring,
+uploading, disk management, and scheduling.
 """
 
 import sys
@@ -28,22 +31,48 @@ logger = logging.getLogger(__name__)
 
 class TVMUploadSystem:
     """
-    Main system coordinator
+    Main system coordinator for TVM log upload.
     
-    Responsibilities:
-    - Load configuration
-    - Start file monitoring
-    - Upload files to S3
-    - Manage disk space
-    - Handle scheduling
+    Coordinates:
+    - Configuration management (config_manager)
+    - File monitoring (file_monitor)
+    - S3 uploads (upload_manager)
+    - Disk space management (disk_manager)
+    - Upload scheduling
+    
+    Architecture:
+    1. File Monitor detects stable files → adds to upload queue
+    2. Scheduler triggers upload at configured time
+    3. Upload Manager uploads files to S3 with retry
+    4. Disk Manager tracks uploaded files and cleans up when needed
+    
+    Example:
+        >>> system = TVMUploadSystem('/etc/tvm-upload/config.yaml')
+        >>> system.start()
+        >>> # ... system runs ...
+        >>> system.stop()
+    
+    Attributes:
+        config (ConfigManager): Configuration manager
+        upload_manager (UploadManager): S3 upload manager
+        disk_manager (DiskManager): Disk space manager
+        file_monitor (FileMonitor): File monitoring component
+        stats (dict): Runtime statistics (files detected/uploaded/failed)
     """
     
     def __init__(self, config_path: str):
         """
-        Initialize TVM upload system
+        Initialize TVM upload system.
+        
+        Loads configuration and initializes all components.
+        Does not start monitoring - call start() to begin operation.
         
         Args:
             config_path: Path to configuration file
+            
+        Raises:
+            FileNotFoundError: If config file doesn't exist
+            ConfigValidationError: If config is invalid
         """
         logger.info("Initializing TVM Upload System...")
         
@@ -87,7 +116,15 @@ class TVMUploadSystem:
         logger.info("Initialization complete")
     
     def start(self):
-        """Start the system"""
+        """
+        Start the system.
+        
+        Starts file monitoring and scheduling thread.
+        Checks disk space before starting and runs cleanup if needed.
+        
+        Note:
+            Safe to call multiple times - will not start if already running
+        """
         if self._running:
             logger.warning("Already running")
             return
@@ -113,7 +150,16 @@ class TVMUploadSystem:
         logger.info(f"Monitoring directories: {len(self.config.get('log_directories'))}")
     
     def stop(self):
-        """Stop the system gracefully"""
+        """
+        Stop the system gracefully.
+        
+        Stops file monitoring and scheduling.
+        Uploads any remaining queued files before shutdown.
+        Prints final statistics.
+        
+        Note:
+            Waits up to 5 seconds for schedule thread to terminate
+        """
         if not self._running:
             return
         
@@ -140,10 +186,16 @@ class TVMUploadSystem:
     
     def _on_file_ready(self, filepath: str):
         """
-        Called when file monitor detects a stable file
+        Callback when file monitor detects a stable file.
+        
+        Adds file to upload queue and triggers immediate upload
+        if within operational hours.
         
         Args:
             filepath: Path to stable file
+            
+        Note:
+            Thread-safe - uses lock to protect upload queue
         """
         self.stats['files_detected'] += 1
         
@@ -160,10 +212,16 @@ class TVMUploadSystem:
     
     def _should_upload_now(self) -> bool:
         """
-        Determine if we should upload now based on schedule
+        Determine if uploads should happen now based on operational hours.
+        
+        Checks if current time is within configured operational hours.
+        If operational_hours not configured, always returns True.
         
         Returns:
-            bool: True if within operational hours
+            bool: True if within operational hours (or no restriction)
+            
+        Note:
+            Silently allows upload if operational_hours parsing fails
         """
         now = datetime.now().time()
         
@@ -185,8 +243,14 @@ class TVMUploadSystem:
     
     def _schedule_loop(self):
         """
-        Background thread for scheduled uploads
-        Checks every minute if it's time to upload
+        Background thread for scheduled uploads.
+        
+        Checks every minute if current time matches configured schedule time.
+        Triggers upload when schedule time is reached (within 1 minute).
+        Sleeps 1 hour after triggering to avoid multiple triggers.
+        
+        Note:
+            Runs in daemon thread, logs errors but continues running
         """
         logger.info("Schedule loop started")
         
@@ -217,14 +281,19 @@ class TVMUploadSystem:
     
     def _is_near_schedule_time(self, now: dt_time, schedule: dt_time) -> bool:
         """
-        Check if current time is within 1 minute of scheduled time
+        Check if current time is within 1 minute of scheduled time.
         
         Args:
             now: Current time
             schedule: Scheduled time
             
         Returns:
-            bool: True if within 1 minute
+            bool: True if within 1 minute (before or after)
+            
+        Example:
+            >>> _is_near_schedule_time(time(15, 00), time(15, 00))  # True
+            >>> _is_near_schedule_time(time(15, 01), time(15, 00))  # True
+            >>> _is_near_schedule_time(time(15, 02), time(15, 00))  # False
         """
         now_minutes = now.hour * 60 + now.minute
         schedule_minutes = schedule.hour * 60 + schedule.minute
@@ -232,7 +301,15 @@ class TVMUploadSystem:
         return abs(now_minutes - schedule_minutes) <= 1
     
     def _process_upload_queue(self):
-        """Process all files in upload queue"""
+        """
+        Process all files in upload queue.
+        
+        Uploads all queued files and checks disk space afterward.
+        Runs cleanup if disk space is low after uploads.
+        
+        Note:
+            Thread-safe - uses lock to snapshot and clear queue atomically
+        """
         with self._upload_lock:
             if len(self._upload_queue) == 0:
                 return
@@ -253,10 +330,16 @@ class TVMUploadSystem:
     
     def _upload_file(self, filepath: str):
         """
-        Upload single file to S3
+        Upload single file to S3.
+        
+        Updates statistics based on success/failure.
+        Marks file as uploaded in disk manager on success.
         
         Args:
             filepath: Path to file to upload
+            
+        Note:
+            Logs warning if file disappeared before upload
         """
         file_path = Path(filepath)
         
@@ -283,7 +366,15 @@ class TVMUploadSystem:
             logger.error(f"Upload failed: {file_path.name}")
     
     def _print_statistics(self):
-        """Print system statistics"""
+        """
+        Print system statistics.
+        
+        Shows:
+        - Files detected
+        - Files uploaded successfully
+        - Files failed
+        - Total data uploaded (GB)
+        """
         logger.info("\n" + "="*50)
         logger.info("System Statistics")
         logger.info("="*50)
@@ -295,7 +386,15 @@ class TVMUploadSystem:
 
 
 def signal_handler(signum, frame):
-    """Handle shutdown signals"""
+    """
+    Handle shutdown signals (SIGTERM, SIGINT).
+    
+    Gracefully stops the system and exits.
+    
+    Args:
+        signum: Signal number
+        frame: Current stack frame
+    """
     logger.info(f"Received signal {signum}")
     if 'system' in globals():
         system.stop()
@@ -303,7 +402,17 @@ def signal_handler(signum, frame):
 
 
 def main():
-    """Main entry point"""
+    """
+    Main entry point for TVM Upload System.
+    
+    Parses command-line arguments, sets up logging, and runs the system.
+    Handles graceful shutdown on SIGTERM/SIGINT.
+    
+    Command-line arguments:
+        --config: Path to configuration file
+        --test-config: Test configuration and exit
+        --log-level: Logging level (DEBUG, INFO, WARNING, ERROR)
+    """
     import argparse
     
     parser = argparse.ArgumentParser(description='TVM Log Upload System')

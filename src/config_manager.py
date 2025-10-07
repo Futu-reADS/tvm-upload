@@ -2,6 +2,9 @@
 """
 Configuration Manager for TVM Log Upload System
 Loads, validates, and manages YAML configuration
+
+This module provides configuration management with hot-reload capability
+and comprehensive validation for the TVM log upload system.
 """
 
 import yaml
@@ -15,26 +18,49 @@ logger = logging.getLogger(__name__)
 
 
 class ConfigValidationError(Exception):
-    """Raised when configuration validation fails"""
+    """
+    Raised when configuration validation fails.
+    
+    This exception is raised when the configuration file is malformed,
+    missing required fields, or contains invalid values.
+    """
     pass
 
 
 class ConfigManager:
     """
-    Manages system configuration from YAML file
+    Manages system configuration from YAML file.
     
     Features:
     - Load and validate YAML config
     - Hot-reload on SIGHUP signal
     - Schema validation
+    - Dot-notation access to nested values
+    
+    Example:
+        >>> config = ConfigManager('/etc/tvm-upload/config.yaml')
+        >>> bucket = config.get('s3.bucket')
+        >>> config.reload_config()  # Manual reload
+    
+    Attributes:
+        config_path (Path): Path to the configuration file
+        config (dict): Loaded configuration dictionary
     """
     
     def __init__(self, config_path: str):
         """
-        Initialize config manager
+        Initialize config manager and load configuration.
         
         Args:
             config_path: Path to YAML config file
+            
+        Raises:
+            FileNotFoundError: If config file doesn't exist
+            yaml.YAMLError: If YAML syntax is invalid
+            ConfigValidationError: If validation fails
+        
+        Note:
+            Automatically sets up SIGHUP handler for hot-reload
         """
         self.config_path = Path(config_path)
         self.config = {}
@@ -47,10 +73,13 @@ class ConfigManager:
     
     def load_config(self) -> Dict[str, Any]:
         """
-        Load configuration from YAML file
+        Load configuration from YAML file.
+        
+        Reads the YAML file, parses it, and validates the configuration
+        schema and values.
         
         Returns:
-            dict: Loaded configuration
+            dict: Loaded and validated configuration
             
         Raises:
             FileNotFoundError: If config file doesn't exist
@@ -72,10 +101,16 @@ class ConfigManager:
     
     def reload_config(self) -> Dict[str, Any]:
         """
-        Reload configuration (called on SIGHUP)
+        Reload configuration from disk.
+        
+        Called automatically when SIGHUP signal is received.
+        If reload fails, keeps the existing configuration.
         
         Returns:
-            dict: Reloaded configuration
+            dict: Reloaded configuration (or existing if reload failed)
+            
+        Note:
+            Safe to call - never leaves system without valid config
         """
         logger.info("Reloading configuration...")
         try:
@@ -87,16 +122,22 @@ class ConfigManager:
     
     def validate_config(self, config: Dict[str, Any]) -> bool:
         """
-        Validate configuration schema and values
+        Validate configuration schema and values.
+        
+        Checks for:
+        - Required top-level keys (vehicle_id, log_directories, s3, upload, disk)
+        - Correct data types for all fields
+        - Valid value ranges (e.g., thresholds between 0 and 1)
+        - Valid time format for schedule (HH:MM)
         
         Args:
             config: Configuration dictionary to validate
             
         Returns:
-            bool: True if valid
+            bool: True if validation passes
             
         Raises:
-            ConfigValidationError: If validation fails
+            ConfigValidationError: If any validation check fails
         """
         # Required top-level keys
         required_keys = ['vehicle_id', 'log_directories', 's3', 'upload', 'disk']
@@ -171,13 +212,23 @@ class ConfigManager:
     
     def _is_valid_time_format(self, time_str: str) -> bool:
         """
-        Check if string is valid HH:MM format
+        Check if string is valid HH:MM format.
+        
+        Validates that:
+        - String contains exactly one colon
+        - Hours are in range 0-23
+        - Minutes are in range 0-59
         
         Args:
             time_str: Time string to validate
             
         Returns:
-            bool: True if valid HH:MM format
+            bool: True if valid HH:MM format, False otherwise
+            
+        Examples:
+            >>> _is_valid_time_format("15:30")  # True
+            >>> _is_valid_time_format("25:00")  # False (invalid hour)
+            >>> _is_valid_time_format("12:70")  # False (invalid minute)
         """
         try:
             parts = time_str.split(':')
@@ -192,19 +243,34 @@ class ConfigManager:
             return False
     
     def _handle_reload_signal(self, signum, frame):
-        """Signal handler for SIGHUP"""
+        """
+        Signal handler for SIGHUP.
+        
+        Triggers configuration reload when SIGHUP signal is received.
+        
+        Args:
+            signum: Signal number
+            frame: Current stack frame
+        """
         self.reload_config()
     
     def get(self, key: str, default=None) -> Any:
         """
-        Get configuration value by key
+        Get configuration value by dot-separated key path.
+        
+        Supports nested key access using dot notation.
         
         Args:
             key: Dot-separated key path (e.g., 's3.bucket')
             default: Default value if key not found
             
         Returns:
-            Configuration value or default
+            Configuration value or default if not found
+            
+        Examples:
+            >>> config.get('vehicle_id')  # 'vehicle-001'
+            >>> config.get('s3.bucket')  # 'tvm-logs'
+            >>> config.get('missing.key', 'default')  # 'default'
         """
         keys = key.split('.')
         value = self.config
