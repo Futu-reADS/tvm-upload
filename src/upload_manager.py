@@ -57,7 +57,7 @@ class UploadManager:
     """
     
     def __init__(self, bucket: str, region: str, vehicle_id: str, 
-                 max_retries: int = 10):
+             max_retries: int = 10):
         """
         Initialize upload manager.
         
@@ -66,20 +66,38 @@ class UploadManager:
             region: AWS region (e.g., 'cn-north-1', 'us-east-1')
             vehicle_id: Vehicle identifier for S3 prefix
             max_retries: Maximum retry attempts (default: 10)
-            
-        Note:
-            Requires AWS credentials to be configured via:
-            - Environment variables (AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY)
-            - AWS credentials file (~/.aws/credentials)
-            - IAM role (if running on EC2)
         """
         self.bucket = bucket
         self.region = region
         self.vehicle_id = vehicle_id
         self.max_retries = max_retries
         
-        # Initialize S3 client
-        self.s3_client = boto3.client('s3', region_name=region)
+        # Initialize S3 client with China endpoint support
+        import os
+        
+        # Check for LocalStack (testing)
+        endpoint_url = os.getenv('AWS_ENDPOINT_URL')
+        
+        if endpoint_url:
+            logger.info(f"Using custom endpoint: {endpoint_url}")
+            self.s3_client = boto3.client(
+                's3',
+                endpoint_url=endpoint_url,
+                aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID', 'test'),
+                aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY', 'test'),
+                region_name=region
+            )
+        elif region.startswith('cn-'):
+            # AWS China uses different endpoints
+            logger.info(f"Using AWS China endpoint for region: {region}")
+            self.s3_client = boto3.client(
+                's3',
+                region_name=region,
+                endpoint_url=f'https://s3.{region}.amazonaws.com.cn'
+            )
+        else:
+            # Standard AWS regions
+            self.s3_client = boto3.client('s3', region_name=region)
         
         logger.info(f"Initialized for bucket: {bucket}")
         logger.info(f"Vehicle ID: {vehicle_id}")
