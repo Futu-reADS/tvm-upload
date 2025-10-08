@@ -1,6 +1,9 @@
 #!/bin/bash
 # Test runner for TVM Upload System
 
+python3 -m venv venv
+source venv/bin/activate
+
 set -e  # Exit on any error
 
 echo "======================================"
