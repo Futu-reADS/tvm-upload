@@ -5,6 +5,8 @@ Integrates all components for production use
 
 This is the main entry point that coordinates file monitoring,
 uploading, disk management, and scheduling.
+
+Version: 2.0 - Added configurable deletion policies
 """
 
 import sys
@@ -42,12 +44,14 @@ class TVMUploadSystem:
     - S3 uploads (upload_manager)
     - Disk space management (disk_manager)
     - Upload scheduling
+    - Deletion policies (NEW v2.0)
     
     Architecture:
     1. File Monitor detects stable files → adds to upload queue
     2. Scheduler triggers upload at configured time
     3. Upload Manager uploads files to S3 with retry
-    4. Disk Manager tracks uploaded files and cleans up when needed
+    4. Disk Manager tracks uploaded files and cleans up based on policy
+    5. Age-based cleanup runs daily at scheduled time (NEW v2.0)
     
     Example:
         >>> system = TVMUploadSystem('/etc/tvm-upload/config.yaml')
@@ -77,7 +81,7 @@ class TVMUploadSystem:
             FileNotFoundError: If config file doesn't exist
             ConfigValidationError: If config is invalid
         """
-        logger.info("Initializing TVM Upload System...")
+        logger.info("Initializing TVM Upload System v2.0...")
         
         # Load configuration
         self.config = ConfigManager(config_path)
@@ -96,10 +100,12 @@ class TVMUploadSystem:
             critical_threshold=self.config.get('disk.critical_threshold', 0.95)
         )
         
+        # Pass config to FileMonitor for startup scan (NEW v2.0)
         self.file_monitor = FileMonitor(
             directories=self.config.get('log_directories'),
             callback=self._on_file_ready,
-            stability_seconds=self.config.get('upload.file_stable_seconds', 60)
+            stability_seconds=self.config.get('upload.file_stable_seconds', 60),
+            config=self.config.config  # Pass full config dict
         )
 
         self.cloudwatch = CloudWatchManager(
@@ -126,7 +132,58 @@ class TVMUploadSystem:
             'bytes_uploaded': 0
         }
         
+        # Log deletion policy configuration (NEW v2.0)
+        self._log_deletion_config()
+        
         logger.info("Initialization complete")
+    
+    def _log_deletion_config(self):
+        """Log the current deletion policy configuration (NEW v2.0)."""
+        logger.info("\n" + "="*60)
+        logger.info("DELETION POLICY CONFIGURATION")
+        logger.info("="*60)
+        
+        # Q1: Startup scan
+        scan_config = self.config.get('upload.scan_existing_files', {})
+        if scan_config.get('enabled', True):
+            max_age = scan_config.get('max_age_days', 3)
+            logger.info(f"Startup scan: ENABLED (upload files from last {max_age} days)")
+        else:
+            logger.info("Startup scan: DISABLED (only new files)")
+        
+        # Q2: After upload deletion (FIXED)
+        after_upload_config = self.config.get('deletion.after_upload', {})
+        
+        if after_upload_config.get('enabled', True):  # ← NEW: Check enabled
+            keep_days = after_upload_config.get('keep_days', 14)
+            if keep_days == 0:
+                logger.info("After upload: DELETE IMMEDIATELY")
+            else:
+                logger.info(f"After upload: KEEP for {keep_days} days")
+        else:
+            logger.info("After upload: DELETION DISABLED (keep files indefinitely)")
+        
+        # Q3: Age-based cleanup
+        age_config = self.config.get('deletion.age_based', {})
+        if age_config.get('enabled', True):
+            max_age = age_config.get('max_age_days', 7)
+            schedule = age_config.get('schedule_time', '02:00')
+            logger.info(f"Age-based cleanup: ENABLED (delete >{max_age} days, daily at {schedule})")
+        else:
+            logger.info("Age-based cleanup: DISABLED")
+        
+        # Q5: Emergency cleanup
+        emergency_enabled = self.config.get('deletion.emergency.enabled', False)
+        if emergency_enabled:
+            logger.info("Emergency cleanup: ENABLED (triggers at 90% disk full)")
+        else:
+            logger.info("Emergency cleanup: DISABLED")
+        
+        # Q4: S3 retention
+        s3_retention = self.config.get('s3_lifecycle.retention_days', 14)
+        logger.info(f"S3 retention: {s3_retention} days (AWS lifecycle policy)")
+        
+        logger.info("="*60 + "\n")
     
     def start(self):
         """
@@ -147,10 +204,16 @@ class TVMUploadSystem:
         # Check disk space before starting
         if not self.disk_manager.check_disk_space():
             logger.warning("Low disk space detected")
-            logger.info("Running cleanup before starting...")
-            self.disk_manager.cleanup_old_files()
+            
+            # Run emergency cleanup if enabled
+            emergency_enabled = self.config.get('deletion.emergency.enabled', False)
+            if emergency_enabled:
+                logger.info("Running emergency cleanup before starting...")
+                self.disk_manager.cleanup_old_files()
+            else:
+                logger.warning("Emergency cleanup disabled - disk may be full!")
         
-        # Start file monitoring
+        # Start file monitoring (includes startup scan)
         self.file_monitor.start()
         
         # Start scheduling thread
@@ -188,8 +251,8 @@ class TVMUploadSystem:
             self._schedule_thread.join(timeout=5)
         
         # Upload any remaining queued files
-        if len(self._upload_queue) > 0:
-            logger.info(f"Uploading {len(self._upload_queue)} queued files before shutdown...")
+        if self.queue_manager.get_queue_size() > 0:
+            logger.info(f"Uploading {self.queue_manager.get_queue_size()} queued files before shutdown...")
             self._process_upload_queue()
         
         # Print statistics
@@ -250,18 +313,16 @@ class TVMUploadSystem:
                 logger.warning(f"Error parsing operational hours: {e}")
                 # If parsing fails, allow upload
         
-        # Add network check here later
-        # if not self._check_network():
-        #     return False
-        
         return True
     
     def _schedule_loop(self):
         """
-        Background thread for scheduled uploads.
+        Background thread for scheduled uploads and cleanup.
         
-        Checks every minute if current time matches configured schedule time.
-        Triggers upload when schedule time is reached (within 1 minute).
+        Checks every minute for:
+        - Scheduled upload time
+        - Age-based cleanup time (NEW v2.0)
+        
         Sleeps 1 hour after triggering to avoid multiple triggers.
         
         Note:
@@ -270,16 +331,18 @@ class TVMUploadSystem:
         logger.info("Schedule loop started")
     
         last_upload_date = None
+        last_cleanup_date = None
         
         while self._running:
             try:
                 now = datetime.now()
+                
+                # ===== Scheduled upload check =====
                 schedule_time = datetime.strptime(
                     self.config.get('upload.schedule'),
                     '%H:%M'
                 ).time()
                 
-                # Check if it's upload time and we haven't uploaded today
                 if self._is_near_schedule_time(now.time(), schedule_time):
                     if last_upload_date != now.date():
                         logger.info(f"Scheduled upload time reached: {schedule_time}")
@@ -292,6 +355,33 @@ class TVMUploadSystem:
                         
                         # Sleep 1 hour to avoid multiple triggers
                         time.sleep(3600)
+                
+                # ===== NEW: Age-based cleanup check (v2.0) =====
+                age_config = self.config.get('deletion.age_based', {})
+                
+                if age_config.get('enabled', True):  # Default: enabled
+                    cleanup_time = datetime.strptime(
+                        age_config.get('schedule_time', '02:00'),
+                        '%H:%M'
+                    ).time()
+                    
+                    if self._is_near_schedule_time(now.time(), cleanup_time):
+                        if last_cleanup_date != now.date():
+                            logger.info("=== Running scheduled age-based cleanup ===")
+                            
+                            max_age_days = age_config.get('max_age_days', 7)  # Default: 7 (Maeda-san)
+                            deleted = self.disk_manager.cleanup_by_age(max_age_days)
+                            
+                            logger.info(f"Age-based cleanup complete: {deleted} files deleted")
+                            last_cleanup_date = now.date()
+                            
+                            # Publish metrics after cleanup
+                            usage, _, _ = self.disk_manager.get_disk_usage()
+                            self.cloudwatch.publish_metrics(disk_usage_percent=usage * 100)
+                            
+                            # Sleep 1 hour to avoid multiple triggers
+                            time.sleep(3600)
+                # ===== END NEW =====
                 
             except Exception as e:
                 logger.error(f"Error in schedule loop: {e}")
@@ -327,7 +417,7 @@ class TVMUploadSystem:
         Process all files in upload queue.
         
         Uploads all queued files and checks disk space afterward.
-        Runs cleanup if disk space is low after uploads.
+        Runs cleanup if disk space is low after uploads (NEW v2.0: only if emergency enabled).
         
         Note:
             Thread-safe - uses lock to snapshot and clear queue atomically
@@ -342,20 +432,25 @@ class TVMUploadSystem:
         for filepath in batch:
             self._upload_file(filepath)
         
-        # Check disk space after uploads
-        if not self.disk_manager.check_disk_space():
-            logger.warning("Low disk space after uploads, running cleanup...")
-            deleted = self.disk_manager.cleanup_old_files()
-            logger.info(f"Cleanup freed space by deleting {deleted} files")
-
+        # NEW v2.0: Check if emergency cleanup is enabled
+        emergency_enabled = self.config.get('deletion.emergency.enabled', False)
+        
+        if emergency_enabled:
+            # Check disk space after uploads
+            if not self.disk_manager.check_disk_space():
+                logger.warning("Low disk space after uploads, running EMERGENCY cleanup...")
+                deleted = self.disk_manager.cleanup_old_files()
+                logger.info(f"Emergency cleanup freed space by deleting {deleted} files")
+        else:
+            logger.debug("Emergency cleanup disabled - skipping disk check")
     
     def _upload_file(self, filepath: str):
         """
         Upload single file to S3.
         
         Updates statistics based on success/failure.
-        Record CloudWatch metrics on success/failure.
-        Marks file as uploaded in disk manager on success.
+        Records CloudWatch metrics on success/failure.
+        Handles file deletion based on configured policy (NEW v2.0).
         
         Args:
             filepath: Path to file to upload
@@ -377,12 +472,42 @@ class TVMUploadSystem:
             self.stats['files_uploaded'] += 1
             self.stats['bytes_uploaded'] += file_size
             self.cloudwatch.record_upload_success(file_size)
-            self.disk_manager.mark_uploaded(filepath)
             
             # Remove from queue
             self.queue_manager.mark_uploaded(filepath)
             
-            logger.info(f"Upload successful: {file_path.name} ({file_size / (1024**2):.2f} MB)")
+            # ===== NEW: Configurable deletion after upload (v2.0) =====
+            after_upload_config = self.config.get('deletion.after_upload', {})
+            
+            if after_upload_config.get('enabled', True):
+                keep_days = self.config.get('deletion.after_upload.keep_days', 14)  # Default: 14 (Maeda-san)
+                
+                if keep_days == 0:
+                    # Option A1: Delete immediately
+                    try:
+                        file_path.unlink()
+                        logger.info(f"Upload successful + DELETED: {file_path.name} "
+                                f"({file_size / (1024**2):.2f} MB)")
+                    except Exception as e:
+                        logger.error(f"Failed to delete {file_path.name}: {e}")
+                        # Fall back to marking for later cleanup
+                        self.disk_manager.mark_uploaded(filepath, keep_until_days=0)
+                else:
+                    # Option A2: Keep for N days
+                    self.disk_manager.mark_uploaded(filepath, keep_until_days=keep_days)
+                    logger.info(f"Upload successful, keeping for {keep_days} days: {file_path.name} "
+                            f"({file_size / (1024**2):.2f} MB)")
+                
+                # Run deferred deletion check (deletes files whose keep_until expired)
+                deleted_count = self.disk_manager.cleanup_deferred_deletions()
+                if deleted_count > 0:
+                    logger.info(f"Deferred deletion: removed {deleted_count} expired files")
+            
+            else:
+                # ← NEW: Deletion disabled branch
+                logger.info(f"Upload successful, deletion DISABLED - keeping indefinitely: {file_path.name} "
+                      f"({file_size / (1024**2):.2f} MB)")
+            
         else:
             self.stats['files_failed'] += 1
             self.cloudwatch.record_upload_failure()
@@ -427,19 +552,6 @@ def signal_handler(signum, frame):
         system.stop()
     sys.exit(0)
 
-# Add periodic metric publishing (in _schedule_loop or new thread)
-def _publish_metrics_loop(self):
-    """Publish metrics to CloudWatch every hour."""
-    while self._running:
-        try:
-            usage, _, _ = self.disk_manager.get_disk_usage()
-            self.cloudwatch.publish_metrics(disk_usage_percent=usage * 100)
-            logger.info("Published metrics to CloudWatch")
-        except Exception as e:
-            logger.error(f"Error publishing metrics: {e}")
-        
-        # Sleep 1 hour
-        time.sleep(3600)
 
 def main():
     """
@@ -455,7 +567,7 @@ def main():
     """
     import argparse
     
-    parser = argparse.ArgumentParser(description='TVM Log Upload System')
+    parser = argparse.ArgumentParser(description='TVM Log Upload System v2.0')
     parser.add_argument(
         '--config',
         default='/etc/tvm-upload/config.yaml',
@@ -490,6 +602,13 @@ def main():
             logger.info(f"Vehicle ID: {config.get('vehicle_id')}")
             logger.info(f"S3 Bucket: {config.get('s3.bucket')}")
             logger.info(f"Directories: {config.get('log_directories')}")
+            
+            # Show deletion policy (NEW v2.0)
+            logger.info("\nDeletion Policy:")
+            logger.info(f"  After upload: keep {config.get('deletion.after_upload.keep_days', 14)} days")
+            logger.info(f"  Age cleanup: {config.get('deletion.age_based.max_age_days', 7)} days")
+            logger.info(f"  Emergency: {config.get('deletion.emergency.enabled', False)}")
+            
             sys.exit(0)
         except Exception as e:
             logger.error(f"Configuration error: {e}")

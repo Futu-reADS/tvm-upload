@@ -312,7 +312,8 @@ cat ~/.aws/credentials
 # aws_secret_access_key = YOUR_SECRET
 
 # Test S3 access
-aws s3 ls s3://tvm-logs --region cn-north-1
+#aws s3 ls s3://tvm-logs --region cn-north-1
+aws s3 ls s3://t01logs   --region cn-north-1   --endpoint-url https://s3.cn-north-1.amazonaws.com.cn   --profile china
 
 # Test with boto3
 python3 -c "import boto3; print(boto3.client('s3', region_name='cn-north-1').list_buckets())"

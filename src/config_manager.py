@@ -5,6 +5,8 @@ Loads, validates, and manages YAML configuration
 
 This module provides configuration management with hot-reload capability
 and comprehensive validation for the TVM log upload system.
+
+Version: 2.0 - Added deletion policy configuration support
 """
 
 import yaml
@@ -36,6 +38,7 @@ class ConfigManager:
     - Hot-reload on SIGHUP signal
     - Schema validation
     - Dot-notation access to nested values
+    - Support for deletion policies (v2.0)
     
     Example:
         >>> config = ConfigManager('/etc/tvm-upload/config.yaml')
@@ -129,6 +132,7 @@ class ConfigManager:
         - Correct data types for all fields
         - Valid value ranges (e.g., thresholds between 0 and 1)
         - Valid time format for schedule (HH:MM)
+        - Deletion policy configuration (v2.0)
         
         Args:
             config: Configuration dictionary to validate
@@ -156,59 +160,197 @@ class ConfigManager:
             raise ConfigValidationError("log_directories cannot be empty")
         
         # Validate S3 config
+        self._validate_s3_config(config['s3'])
+        
+        # Validate upload config
+        self._validate_upload_config(config['upload'])
+        
+        # Validate disk config
+        self._validate_disk_config(config['disk'])
+        
+        # Validate deletion config (NEW in v2.0)
+        if 'deletion' in config:
+            self._validate_deletion_config(config['deletion'])
+        
+        # Validate S3 lifecycle config (NEW in v2.0)
+        if 's3_lifecycle' in config:
+            self._validate_s3_lifecycle_config(config['s3_lifecycle'])
+        
+        # Validate monitoring config (NEW in v2.0)
+        if 'monitoring' in config:
+            self._validate_monitoring_config(config['monitoring'])
+        
+        logger.info("Configuration validated successfully")
+        return True
+    
+    def _validate_s3_config(self, s3_config: Dict[str, Any]) -> None:
+        """Validate S3 configuration section."""
         s3_required = ['bucket', 'region', 'credentials_path']
         for key in s3_required:
-            if key not in config['s3']:
+            if key not in s3_config:
                 raise ConfigValidationError(f"Missing s3.{key}")
         
-        # Validate region
-        # valid_regions = ['cn-north-1', 'cn-northwest-1']
-        # if config['s3']['region'] not in valid_regions:
-        #     raise ConfigValidationError(
-        #         f"s3.region must be one of {valid_regions}"
-        #     )
-
-
         # Validate region exists (allow any AWS region)
-        if not config['s3']['region']:
+        if not s3_config['region']:
             raise ConfigValidationError("s3.region cannot be empty")
-                
-        # Validate upload config
-        if 'schedule' not in config['upload']:
+    
+    def _validate_upload_config(self, upload_config: Dict[str, Any]) -> None:
+        """Validate upload configuration section."""
+        # Validate schedule
+        if 'schedule' not in upload_config:
             raise ConfigValidationError("Missing upload.schedule")
         
-        # Validate schedule format (HH:MM)
-        schedule = config['upload']['schedule']
+        schedule = upload_config['schedule']
         if not self._is_valid_time_format(schedule):
             raise ConfigValidationError(
                 f"upload.schedule must be in HH:MM format, got: {schedule}"
             )
         
-        # Validate disk config
-        if 'reserved_gb' not in config['disk']:
+        # Validate file_stable_seconds (optional)
+        if 'file_stable_seconds' in upload_config:
+            stable_secs = upload_config['file_stable_seconds']
+            if not isinstance(stable_secs, (int, float)) or stable_secs < 0:
+                raise ConfigValidationError(
+                    "upload.file_stable_seconds must be a non-negative number"
+                )
+        
+        # Validate operational_hours (optional)
+        if 'operational_hours' in upload_config:
+            op_hours = upload_config['operational_hours']
+            if 'enabled' in op_hours and not isinstance(op_hours['enabled'], bool):
+                raise ConfigValidationError(
+                    "upload.operational_hours.enabled must be boolean"
+                )
+            
+            if op_hours.get('enabled', False):
+                if 'start' not in op_hours or 'end' not in op_hours:
+                    raise ConfigValidationError(
+                        "upload.operational_hours requires 'start' and 'end' when enabled"
+                    )
+                
+                if not self._is_valid_time_format(op_hours['start']):
+                    raise ConfigValidationError(
+                        f"upload.operational_hours.start must be HH:MM format"
+                    )
+                
+                if not self._is_valid_time_format(op_hours['end']):
+                    raise ConfigValidationError(
+                        f"upload.operational_hours.end must be HH:MM format"
+                    )
+        
+        # Validate scan_existing_files (NEW in v2.0)
+        if 'scan_existing_files' in upload_config:
+            scan_config = upload_config['scan_existing_files']
+            
+            if 'enabled' in scan_config and not isinstance(scan_config['enabled'], bool):
+                raise ConfigValidationError(
+                    "upload.scan_existing_files.enabled must be boolean"
+                )
+            
+            if 'max_age_days' in scan_config:
+                max_age = scan_config['max_age_days']
+                if not isinstance(max_age, (int, float)) or max_age < 0:
+                    raise ConfigValidationError(
+                        "upload.scan_existing_files.max_age_days must be >= 0"
+                    )
+    
+    def _validate_disk_config(self, disk_config: Dict[str, Any]) -> None:
+        """Validate disk configuration section."""
+        if 'reserved_gb' not in disk_config:
             raise ConfigValidationError("Missing disk.reserved_gb")
         
-        if not isinstance(config['disk']['reserved_gb'], (int, float)):
+        if not isinstance(disk_config['reserved_gb'], (int, float)):
             raise ConfigValidationError("disk.reserved_gb must be a number")
         
-        if config['disk']['reserved_gb'] <= 0:
+        if disk_config['reserved_gb'] <= 0:
             raise ConfigValidationError("disk.reserved_gb must be positive")
         
         # Validate thresholds
-        if 'warning_threshold' in config['disk']:
-            if not 0 < config['disk']['warning_threshold'] < 1:
+        if 'warning_threshold' in disk_config:
+            if not 0 < disk_config['warning_threshold'] < 1:
                 raise ConfigValidationError(
                     "disk.warning_threshold must be between 0 and 1"
                 )
         
-        if 'critical_threshold' in config['disk']:
-            if not 0 < config['disk']['critical_threshold'] < 1:
+        if 'critical_threshold' in disk_config:
+            if not 0 < disk_config['critical_threshold'] < 1:
                 raise ConfigValidationError(
                     "disk.critical_threshold must be between 0 and 1"
                 )
+    
+    def _validate_deletion_config(self, deletion_config: Dict[str, Any]) -> None:
+        """Validate deletion policy configuration (NEW in v2.0)."""
+        # Validate after_upload section
+        if 'after_upload' in deletion_config:
+            after_upload = deletion_config['after_upload']
+            
+            if 'enabled' in after_upload and not isinstance(after_upload['enabled'], bool):
+                raise ConfigValidationError(
+                    "deletion.after_upload.enabled must be boolean"
+                )
+            
+            if 'keep_days' in after_upload:
+                keep_days = after_upload['keep_days']
+                if not isinstance(keep_days, (int, float)) or keep_days < 0:
+                    raise ConfigValidationError(
+                        "deletion.after_upload.keep_days must be >= 0"
+                    )
         
-        logger.info("Configuration validated successfully")
-        return True
+        # Validate age_based section
+        if 'age_based' in deletion_config:
+            age_based = deletion_config['age_based']
+            
+            if 'enabled' in age_based and not isinstance(age_based['enabled'], bool):
+                raise ConfigValidationError(
+                    "deletion.age_based.enabled must be boolean"
+                )
+            
+            if 'max_age_days' in age_based:
+                max_age = age_based['max_age_days']
+                if not isinstance(max_age, (int, float)) or max_age < 0:
+                    raise ConfigValidationError(
+                        "deletion.age_based.max_age_days must be >= 0"
+                    )
+            
+            if 'schedule_time' in age_based:
+                schedule_time = age_based['schedule_time']
+                if not self._is_valid_time_format(schedule_time):
+                    raise ConfigValidationError(
+                        f"deletion.age_based.schedule_time must be HH:MM format, got: {schedule_time}"
+                    )
+        
+        # Validate emergency section
+        if 'emergency' in deletion_config:
+            emergency = deletion_config['emergency']
+            
+            if 'enabled' in emergency and not isinstance(emergency['enabled'], bool):
+                raise ConfigValidationError(
+                    "deletion.emergency.enabled must be boolean"
+                )
+    
+    def _validate_s3_lifecycle_config(self, s3_lifecycle_config: Dict[str, Any]) -> None:
+        """Validate S3 lifecycle configuration (NEW in v2.0)."""
+        if 'retention_days' in s3_lifecycle_config:
+            retention = s3_lifecycle_config['retention_days']
+            if not isinstance(retention, (int, float)) or retention <= 0:
+                raise ConfigValidationError(
+                    "s3_lifecycle.retention_days must be > 0"
+                )
+    
+    def _validate_monitoring_config(self, monitoring_config: Dict[str, Any]) -> None:
+        """Validate monitoring configuration (NEW in v2.0)."""
+        if 'cloudwatch_enabled' in monitoring_config:
+            if not isinstance(monitoring_config['cloudwatch_enabled'], bool):
+                raise ConfigValidationError(
+                    "monitoring.cloudwatch_enabled must be boolean"
+                )
+        
+        if 'metrics_publish_interval' in monitoring_config:
+            interval = monitoring_config['metrics_publish_interval']
+            if not isinstance(interval, (int, float)) or interval <= 0:
+                raise ConfigValidationError(
+                    "monitoring.metrics_publish_interval must be > 0"
+                )
     
     def _is_valid_time_format(self, time_str: str) -> bool:
         """
@@ -271,6 +413,7 @@ class ConfigManager:
             >>> config.get('vehicle_id')  # 'vehicle-001'
             >>> config.get('s3.bucket')  # 'tvm-logs'
             >>> config.get('missing.key', 'default')  # 'default'
+            >>> config.get('deletion.after_upload.keep_days', 0)  # 14
         """
         keys = key.split('.')
         value = self.config
@@ -305,6 +448,17 @@ if __name__ == '__main__':
         logger.info(f"S3 bucket: {cm.get('s3.bucket')}")
         logger.info(f"S3 region: {cm.get('s3.region')}")
         logger.info(f"Upload schedule: {cm.get('upload.schedule')}")
+        
+        # NEW: Display deletion policy settings
+        logger.info("\nDeletion Policy Settings:")
+        logger.info(f"  Scan existing files: {cm.get('upload.scan_existing_files.enabled', False)}")
+        logger.info(f"  Max age for scan: {cm.get('upload.scan_existing_files.max_age_days', 0)} days")
+        logger.info(f"  Keep after upload: {cm.get('deletion.after_upload.keep_days', 0)} days")
+        logger.info(f"  Age-based cleanup: {cm.get('deletion.age_based.enabled', False)}")
+        logger.info(f"  Age-based max age: {cm.get('deletion.age_based.max_age_days', 0)} days")
+        logger.info(f"  Emergency cleanup: {cm.get('deletion.emergency.enabled', False)}")
+        logger.info(f"  S3 retention: {cm.get('s3_lifecycle.retention_days', 14)} days")
+        
     except Exception as e:
         logger.error(f"ERROR: {e}")
         sys.exit(1)

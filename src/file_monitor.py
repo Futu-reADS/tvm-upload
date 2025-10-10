@@ -5,6 +5,8 @@ Watches directories and detects completed log files
 
 Uses watchdog library to monitor filesystem events and determines when
 files are complete based on size stability over a configured period.
+
+Version: 2.0 - Added startup scan for existing files
 """
 
 import time
@@ -30,6 +32,7 @@ class FileMonitor:
     - Watchdog Observer: Detects filesystem events (create/modify)
     - File Tracker: Tracks file sizes and last modification time
     - Stability Checker: Background thread that checks for stable files
+    - Startup Scanner: Scans for existing files on initialization (NEW v2.0)
     
     Example:
         >>> def on_complete(filepath):
@@ -44,12 +47,14 @@ class FileMonitor:
         callback (Callable): Function called when file is stable
         stability_seconds (int): Seconds file must be unchanged
         file_tracker (dict): Maps filepath to (size, timestamp)
+        config (dict): Configuration dictionary for startup scan
     """
     
     def __init__(self, 
                  directories: List[str], 
                  callback: Callable[[str], None],
-                 stability_seconds: int = 60):
+                 stability_seconds: int = 60,
+                 config: dict = None):
         """
         Initialize file monitor.
         
@@ -57,6 +62,7 @@ class FileMonitor:
             directories: List of directory paths to monitor
             callback: Function to call when file is ready (receives file path)
             stability_seconds: Seconds file must be unchanged to be "complete"
+            config: Configuration dict for startup scan settings (NEW v2.0)
             
         Note:
             Directories will be created if they don't exist
@@ -64,6 +70,7 @@ class FileMonitor:
         self.directories = [Path(d) for d in directories]
         self.callback = callback
         self.stability_seconds = stability_seconds
+        self.config = config or {}
         
         # Track file sizes: {filepath: (size, last_check_time)}
         self.file_tracker: Dict[Path, Tuple[int, float]] = {}
@@ -85,6 +92,7 @@ class FileMonitor:
         
         Starts the watchdog observer and stability checker thread.
         Creates directories if they don't exist.
+        Optionally scans for existing files based on configuration (NEW v2.0).
         
         Note:
             Safe to call multiple times - will not start if already running
@@ -99,6 +107,43 @@ class FileMonitor:
                 logger.warning(f"Directory does not exist: {directory}")
                 logger.info(f"Creating directory: {directory}")
                 directory.mkdir(parents=True, exist_ok=True)
+        
+        # ===== NEW: Configurable startup scan (v2.0) =====
+        scan_config = self.config.get('upload', {}).get('scan_existing_files', {})
+        
+        if scan_config.get('enabled', True):  # Default: enabled
+            max_age_days = scan_config.get('max_age_days', 3)  # Default: 3 days (Maeda-san's choice)
+            
+            logger.info(f"Scanning for existing files (max age: {max_age_days} days)...")
+            
+            cutoff_time = time.time() - (max_age_days * 24 * 3600)
+            existing_count = 0
+            skipped_count = 0
+            
+            for directory in self.directories:
+                for file_path in directory.iterdir():
+                    if file_path.is_file() and not file_path.name.startswith('.'):
+                        try:
+                            mtime = file_path.stat().st_mtime
+                            
+                            if max_age_days == 0 or mtime > cutoff_time:
+                                # Add to tracker for stability check
+                                self._on_file_event(str(file_path))
+                                existing_count += 1
+                                logger.debug(f"Found existing file: {file_path.name}")
+                            else:
+                                logger.debug(f"Skipping old file: {file_path.name} "
+                                           f"({(time.time() - mtime) / 86400:.1f} days old)")
+                                skipped_count += 1
+                        except (OSError, FileNotFoundError) as e:
+                            logger.debug(f"Error checking file {file_path}: {e}")
+            
+            logger.info(f"Startup scan complete: {existing_count} files added to queue")
+            if skipped_count > 0:
+                logger.info(f"Skipped {skipped_count} files older than {max_age_days} days")
+        else:
+            logger.info("Startup scan disabled - will only upload new files created after startup")
+        # ===== END NEW =====
         
         # Start watchdog observer
         for directory in self.directories:
@@ -324,7 +369,17 @@ if __name__ == '__main__':
     def on_file_ready(filepath):
         logger.info(f"*** FILE READY: {filepath} ***")
     
-    monitor = FileMonitor([directory], on_file_ready, stability_seconds=10)
+    # Test with startup scan enabled
+    test_config = {
+        'upload': {
+            'scan_existing_files': {
+                'enabled': True,
+                'max_age_days': 3
+            }
+        }
+    }
+    
+    monitor = FileMonitor([directory], on_file_ready, stability_seconds=10, config=test_config)
     
     try:
         monitor.start()
