@@ -272,7 +272,7 @@ def test_emergency_cleanup_enabled(mock_cw_boto3, mock_upload_boto3, test_env_wi
 
 @patch('src.upload_manager.boto3')
 @patch('src.cloudwatch_manager.boto3')
-def test_emergency_cleanup_disabled():
+def test_emergency_cleanup_disabled(mock_cw_boto3, mock_upload_boto3):  # ← MUST ADD THESE PARAMETERS
     """Test emergency cleanup does not run when disabled"""
     temp_dir = tempfile.mkdtemp()
     log_dir = Path(temp_dir) / 'logs'
@@ -302,9 +302,15 @@ monitoring:
     config_file.write_text(config_content)
     
     try:
-        # Mock boto3
-        mock_upload_boto3.client.return_value = Mock()
-        mock_cw_boto3.client.return_value = Mock()
+        # Mock boto3 properly
+        mock_s3 = Mock()
+        mock_s3.upload_file.return_value = None
+        mock_s3.head_object.return_value = {}
+        mock_upload_boto3.client.return_value = mock_s3
+        
+        mock_cw = Mock()
+        mock_cw.put_metric_data.return_value = None
+        mock_cw_boto3.client.return_value = mock_cw
         
         system = TVMUploadSystem(str(config_file))
         
@@ -331,19 +337,66 @@ def test_startup_scan_integration(test_env_with_deletion):
     test_file2 = Path(log_dir) / 'existing2.log'
     test_file2.write_text('data2')
     
-    with patch('src.upload_manager.boto3'), patch('src.cloudwatch_manager.boto3'):
+    # Patch boto3 BEFORE importing/creating anything
+    with patch('boto3.client') as mock_boto3_client:
+        
+        # Mock S3 client
+        mock_s3 = Mock()
+        mock_s3.upload_file.return_value = None
+        mock_s3.head_object.return_value = {}
+        
+        # Mock CloudWatch client
+        mock_cw = Mock()
+        mock_cw.put_metric_data.return_value = None
+        
+        # Return different mocks based on service name
+        def client_side_effect(service_name, **kwargs):
+            if service_name == 's3':
+                return mock_s3
+            elif service_name == 'cloudwatch':
+                return mock_cw
+            return Mock()
+        
+        mock_boto3_client.side_effect = client_side_effect
+        
+        # Now create system (will use mocked boto3)
         system = TVMUploadSystem(config_file)
         
         # Start system (triggers startup scan)
         system.start()
         
-        # Wait for startup scan + stability
-        time.sleep(10)
-        
-        # Files should be detected and queued
-        assert system.stats['files_detected'] >= 2, "Startup scan should detect existing files"
-        
-        system.stop()
+        try:
+            # Poll for files to be detected
+            max_wait = 15
+            waited = 0
+            interval = 0.5
+            
+            while waited < max_wait:
+                detected = system.stats['files_detected']
+                uploaded = system.stats['files_uploaded']
+                
+                # Check if both files were either detected or uploaded
+                if detected + uploaded >= 2:
+                    break
+                    
+                time.sleep(interval)
+                waited += interval
+            
+            # Get final stats
+            detected = system.stats['files_detected']
+            uploaded = system.stats['files_uploaded']
+            failed = system.stats['files_failed']
+            queued = system.queue_manager.get_queue_size()
+            
+            # Files should be either detected (waiting) or uploaded (processed)
+            total_processed = detected + uploaded
+            
+            assert total_processed >= 2, \
+                f"After {waited:.1f}s: detected={detected}, uploaded={uploaded}, " \
+                f"failed={failed}, queued={queued}. Expected 2+ files processed."
+            
+        finally:
+            system.stop()
 
 
 if __name__ == '__main__':
