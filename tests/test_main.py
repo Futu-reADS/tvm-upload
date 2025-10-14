@@ -120,12 +120,26 @@ monitoring:
         system.stop()
         assert system._running is False
     
-    def test_start_already_running(self, system, caplog):
+    def test_start_already_running(self, system):
         """Test starting when already running"""
+        # First start - should succeed
         system.start()
+        assert system._running is True
+        
+        # Get reference to file monitor
+        first_observer = system.file_monitor.observer
+        
+        # Second start - should be no-op (not start again)
         system.start()
         
-        assert "Already running" in caplog.text
+        # Should still be running
+        assert system._running is True
+        
+        # Observer should be the same instance (not recreated)
+        assert system.file_monitor.observer is first_observer
+        
+        # Cleanup
+        system.stop()
     
     def test_on_file_ready_within_hours(self, system, temp_log_dir):
         """Test file ready callback WITHIN operational hours"""
