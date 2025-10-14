@@ -87,7 +87,7 @@ def test_exponential_backoff():
     assert uploader._calculate_backoff(10) == 512  # Max cap
 
 
-@patch('upload_manager.boto3.client')
+@patch('src.upload_manager.boto3.client')
 def test_successful_upload(mock_boto_client, temp_file):
     """Test successful file upload"""
     # Mock S3 client
@@ -107,7 +107,7 @@ def test_successful_upload(mock_boto_client, temp_file):
     assert mock_s3.upload_file.called
 
 
-@patch('upload_manager.boto3.client')
+@patch('src.upload_manager.boto3.client')
 def test_upload_nonexistent_file(mock_boto_client):
     """Test uploading file that doesn't exist"""
     mock_s3 = Mock()
@@ -125,8 +125,8 @@ def test_upload_nonexistent_file(mock_boto_client):
     assert not mock_s3.upload_file.called
 
 
-@patch('upload_manager.boto3.client')
-@patch('upload_manager.time.sleep')  # Mock sleep to speed up test
+@patch('src.upload_manager.boto3.client')
+@patch('src.upload_manager.time.sleep')  # Mock sleep to speed up test
 def test_upload_with_retry(mock_sleep, mock_boto_client, temp_file):
     """Test upload retries on failure"""
     mock_s3 = Mock()
@@ -153,8 +153,8 @@ def test_upload_with_retry(mock_sleep, mock_boto_client, temp_file):
     assert mock_sleep.call_count == 2  # Slept between retries
 
 
-@patch('upload_manager.boto3.client')
-@patch('upload_manager.time.sleep')
+@patch('src.upload_manager.boto3.client')
+@patch('src.upload_manager.time.sleep')
 def test_upload_fails_after_max_retries(mock_sleep, mock_boto_client, temp_file):
     """Test upload fails after max retries"""
     mock_s3 = Mock()
@@ -179,7 +179,7 @@ def test_upload_fails_after_max_retries(mock_sleep, mock_boto_client, temp_file)
     assert mock_s3.upload_file.call_count == 3
 
 
-@patch('upload_manager.boto3.client')
+@patch('src.upload_manager.boto3.client')
 def test_multipart_upload_for_large_files(mock_boto_client, large_temp_file):
     """Test that large files use multipart upload"""
     mock_s3 = Mock()

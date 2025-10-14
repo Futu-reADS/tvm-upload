@@ -56,8 +56,9 @@ class UploadManager:
         s3_client: Boto3 S3 client
     """
     
+    # upload_manager.py
     def __init__(self, bucket: str, region: str, vehicle_id: str, 
-             max_retries: int = 10):
+                max_retries: int = 10, profile_name: str = None):  # ← Add profile parameter
         """
         Initialize upload manager.
         
@@ -66,6 +67,7 @@ class UploadManager:
             region: AWS region (e.g., 'cn-north-1', 'us-east-1')
             vehicle_id: Vehicle identifier for S3 prefix
             max_retries: Maximum retry attempts (default: 10)
+            profile_name: AWS profile name (default: None uses default profile)
         """
         self.bucket = bucket
         self.region = region
@@ -78,26 +80,31 @@ class UploadManager:
         # Check for LocalStack (testing)
         endpoint_url = os.getenv('AWS_ENDPOINT_URL')
         
+        # Prepare boto3 client kwargs
+        client_kwargs = {'region_name': region}
+        
+        # Add profile if specified
+        if profile_name:
+            import boto3.session
+            session = boto3.session.Session(profile_name=profile_name)
+            logger.info(f"Using AWS profile: {profile_name}")
+        else:
+            session = boto3.session.Session()
+        
         if endpoint_url:
             logger.info(f"Using custom endpoint: {endpoint_url}")
-            self.s3_client = boto3.client(
-                's3',
-                endpoint_url=endpoint_url,
-                aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID', 'test'),
-                aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY', 'test'),
-                region_name=region
-            )
+            client_kwargs['endpoint_url'] = endpoint_url
+            client_kwargs['aws_access_key_id'] = os.getenv('AWS_ACCESS_KEY_ID', 'test')
+            client_kwargs['aws_secret_access_key'] = os.getenv('AWS_SECRET_ACCESS_KEY', 'test')
+            self.s3_client = session.client('s3', **client_kwargs)
         elif region.startswith('cn-'):
             # AWS China uses different endpoints
             logger.info(f"Using AWS China endpoint for region: {region}")
-            self.s3_client = boto3.client(
-                's3',
-                region_name=region,
-                endpoint_url=f'https://s3.{region}.amazonaws.com.cn'
-            )
+            client_kwargs['endpoint_url'] = f'https://s3.{region}.amazonaws.com.cn'
+            self.s3_client = session.client('s3', **client_kwargs)
         else:
             # Standard AWS regions
-            self.s3_client = boto3.client('s3', region_name=region)
+            self.s3_client = session.client('s3', **client_kwargs)
         
         logger.info(f"Initialized for bucket: {bucket}")
         logger.info(f"Vehicle ID: {vehicle_id}")

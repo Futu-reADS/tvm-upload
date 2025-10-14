@@ -13,7 +13,7 @@ from src.config_manager import ConfigManager, ConfigValidationError
 @pytest.fixture
 def temp_config_file():
     """Fixture using actual example config as single source of truth"""
-    example_path = Path(__file__).parent.parent / 'config' / 'config.yaml.example'
+    example_path = Path(__file__).parent.parent / '..' / 'config' / 'config.yaml.example'
     
     with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
         with open(example_path) as src:
