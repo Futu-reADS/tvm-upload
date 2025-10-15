@@ -48,7 +48,35 @@ nano config/config.yaml
 # Test configuration
 python3 src/main.py --config config/config.yaml --test-config
 ```
+===============================================
+# Complete clean setup from scratch
+cd ~/tvm-upload
 
+# Remove old venv
+rm -rf venv
+
+# Create new clean venv
+python3 -m venv venv
+
+# Activate
+source venv/bin/activate
+
+# Upgrade pip
+pip install --upgrade pip
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Install package in development mode
+pip install -e .
+
+# Verify installation
+python -c "import src.config_manager; print('✓ Package installed')"
+
+# Run tests
+pytest tests/unit/ -v
+
+===============================================
 ## Configuration
 
 Edit `config/config.yaml`:
