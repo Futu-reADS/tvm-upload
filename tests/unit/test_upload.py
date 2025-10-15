@@ -87,13 +87,21 @@ def test_exponential_backoff():
     assert uploader._calculate_backoff(10) == 512  # Max cap
 
 
-@patch('src.upload_manager.boto3.client')
-def test_successful_upload(mock_boto_client, temp_file):
+@patch('src.upload_manager.boto3.session.Session')  # ← Changed this line
+def test_successful_upload(mock_Session, temp_file):  # ← Parameter name changed
     """Test successful file upload"""
-    # Mock S3 client
+    # Create mock S3 client
     mock_s3 = Mock()
-    mock_boto_client.return_value = mock_s3
+    mock_s3.upload_file.return_value = None 
     
+    # Create mock session instance
+    mock_session_instance = Mock()
+    mock_session_instance.client.return_value = mock_s3
+    
+    # When Session() is called, return our mock session
+    mock_Session.return_value = mock_session_instance
+    
+    # Create uploader (this calls Session())
     uploader = UploadManager(
         bucket="test-bucket",
         region="us-east-1",
@@ -103,9 +111,9 @@ def test_successful_upload(mock_boto_client, temp_file):
     # Upload file
     result = uploader.upload_file(temp_file)
     
+    # Assertions
     assert result is True
     assert mock_s3.upload_file.called
-
 
 @patch('src.upload_manager.boto3.client')
 def test_upload_nonexistent_file(mock_boto_client):
@@ -125,12 +133,20 @@ def test_upload_nonexistent_file(mock_boto_client):
     assert not mock_s3.upload_file.called
 
 
-@patch('src.upload_manager.boto3.client')
+@patch('src.upload_manager.boto3.session.Session')
 @patch('src.upload_manager.time.sleep')  # Mock sleep to speed up test
-def test_upload_with_retry(mock_sleep, mock_boto_client, temp_file):
+def test_upload_with_retry(mock_sleep, mock_Session, temp_file):
     """Test upload retries on failure"""
+    # Create mock S3 client
     mock_s3 = Mock()
-    mock_boto_client.return_value = mock_s3
+    mock_s3.upload_file.return_value = None 
+    
+    # Create mock session instance
+    mock_session_instance = Mock()
+    mock_session_instance.client.return_value = mock_s3
+    
+    # When Session() is called, return our mock session
+    mock_Session.return_value = mock_session_instance
     
     # Fail first 2 attempts, succeed on 3rd
     from botocore.exceptions import ClientError
@@ -153,12 +169,21 @@ def test_upload_with_retry(mock_sleep, mock_boto_client, temp_file):
     assert mock_sleep.call_count == 2  # Slept between retries
 
 
-@patch('src.upload_manager.boto3.client')
-@patch('src.upload_manager.time.sleep')
-def test_upload_fails_after_max_retries(mock_sleep, mock_boto_client, temp_file):
+@patch('src.upload_manager.boto3.session.Session')
+#@patch('src.upload_manager.time.sleep')
+def test_upload_fails_after_max_retries(mock_Session, temp_file):
     """Test upload fails after max retries"""
+    
+    # Create mock S3 client
     mock_s3 = Mock()
-    mock_boto_client.return_value = mock_s3
+    mock_s3.upload_file.return_value = None 
+    
+    # Create mock session instance
+    mock_session_instance = Mock()
+    mock_session_instance.client.return_value = mock_s3
+    
+    # When Session() is called, return our mock session
+    mock_Session.return_value = mock_session_instance
     
     # Always fail
     from botocore.exceptions import ClientError
@@ -179,11 +204,20 @@ def test_upload_fails_after_max_retries(mock_sleep, mock_boto_client, temp_file)
     assert mock_s3.upload_file.call_count == 3
 
 
-@patch('src.upload_manager.boto3.client')
-def test_multipart_upload_for_large_files(mock_boto_client, large_temp_file):
+@patch('src.upload_manager.boto3.session.Session')
+def test_multipart_upload_for_large_files(mock_Session, large_temp_file):
     """Test that large files use multipart upload"""
+    
+    # Create mock S3 client
     mock_s3 = Mock()
-    mock_boto_client.return_value = mock_s3
+    mock_s3.upload_file.return_value = None 
+    
+    # Create mock session instance
+    mock_session_instance = Mock()
+    mock_session_instance.client.return_value = mock_s3
+    
+    # When Session() is called, return our mock session
+    mock_Session.return_value = mock_session_instance
     
     uploader = UploadManager(
         bucket="test-bucket",

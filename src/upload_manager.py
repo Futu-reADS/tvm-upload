@@ -82,10 +82,9 @@ class UploadManager:
         
         # Prepare boto3 client kwargs
         client_kwargs = {'region_name': region}
-        
+        import boto3.session
         # Add profile if specified
         if profile_name:
-            import boto3.session
             session = boto3.session.Session(profile_name=profile_name)
             logger.info(f"Using AWS profile: {profile_name}")
         else:
