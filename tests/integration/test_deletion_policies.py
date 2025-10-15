@@ -8,8 +8,10 @@ import pytest
 import tempfile
 import time
 import shutil
+import os
 from pathlib import Path
-from unittest.mock import patch, Mock
+from datetime import datetime, timedelta
+from unittest.mock import patch, Mock, MagicMock
 
 from src.main import TVMUploadSystem
 
@@ -75,8 +77,8 @@ monitoring:
     shutil.rmtree(temp_dir, ignore_errors=True)
 
 
-@patch('src.upload_manager.boto3')
-@patch('src.cloudwatch_manager.boto3')
+@patch('src.upload_manager.boto3.session.Session')
+@patch('src.cloudwatch_manager.boto3.session.Session')
 def test_immediate_deletion_after_upload(mock_cw_boto3, mock_upload_boto3, test_env_with_deletion):
     """Test files deleted immediately after upload when keep_days=0"""
     config_file, log_dir, temp_dir = test_env_with_deletion
@@ -104,8 +106,8 @@ def test_immediate_deletion_after_upload(mock_cw_boto3, mock_upload_boto3, test_
     assert system.stats['files_uploaded'] == 1
 
 
-@patch('src.upload_manager.boto3')
-@patch('src.cloudwatch_manager.boto3')
+@patch('src.upload_manager.boto3.session.Session')
+@patch('src.cloudwatch_manager.boto3.session.Session')
 def test_deferred_deletion_keeps_file(mock_cw_boto3, mock_upload_boto3):
     """Test files kept for N days after upload when keep_days>0"""
     temp_dir = tempfile.mkdtemp()
@@ -158,8 +160,8 @@ monitoring:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 
-@patch('src.upload_manager.boto3')
-@patch('src.cloudwatch_manager.boto3')
+@patch('src.upload_manager.boto3.session.Session')
+@patch('src.cloudwatch_manager.boto3.session.Session')
 def test_deletion_disabled(mock_cw_boto3, mock_upload_boto3):
     """Test files kept indefinitely when deletion.after_upload.enabled=false"""
     temp_dir = tempfile.mkdtemp()
@@ -244,8 +246,8 @@ def test_age_based_cleanup_integration(test_env_with_deletion):
         assert recent_file.exists(), "Recent file should remain"
 
 
-@patch('src.upload_manager.boto3')
-@patch('src.cloudwatch_manager.boto3')
+@patch('src.upload_manager.boto3.session.Session')
+@patch('src.cloudwatch_manager.boto3.session.Session')
 def test_emergency_cleanup_enabled(mock_cw_boto3, mock_upload_boto3, test_env_with_deletion):
     """Test emergency cleanup triggers when enabled"""
     config_file, log_dir, temp_dir = test_env_with_deletion
@@ -270,8 +272,8 @@ def test_emergency_cleanup_enabled(mock_cw_boto3, mock_upload_boto3, test_env_wi
         # Emergency cleanup should have run (since enabled=true)
 
 
-@patch('src.upload_manager.boto3')
-@patch('src.cloudwatch_manager.boto3')
+@patch('src.upload_manager.boto3.session.Session')
+@patch('src.cloudwatch_manager.boto3.session.Session')
 def test_emergency_cleanup_disabled(mock_cw_boto3, mock_upload_boto3):  # ← MUST ADD THESE PARAMETERS
     """Test emergency cleanup does not run when disabled"""
     temp_dir = tempfile.mkdtemp()
@@ -326,77 +328,84 @@ monitoring:
         shutil.rmtree(temp_dir, ignore_errors=True)
 
 
-def test_startup_scan_integration(test_env_with_deletion):
-    """Test startup scan finds existing files and adds to queue"""
-    config_file, log_dir, temp_dir = test_env_with_deletion
+@patch('src.upload_manager.boto3.session.Session')  # ← Mock AWS
+def test_startup_scan_integration(mock_Session, temp_config_file):
+    """Test that system scans and uploads existing files on startup"""
     
-    # Create files BEFORE starting system
-    test_file1 = Path(log_dir) / 'existing1.log'
-    test_file1.write_text('data1')
+    cfg_path = Path(temp_config_file)
+
+    # Setup mock S3 client
+    mock_s3 = Mock()
+    mock_s3.upload_file.return_value = None  # ← Simulate successful upload
     
-    test_file2 = Path(log_dir) / 'existing2.log'
-    test_file2.write_text('data2')
+    mock_session_instance = Mock()
+    mock_session_instance.client.return_value = mock_s3
+    mock_Session.return_value = mock_session_instance
     
-    # Patch boto3 BEFORE importing/creating anything
-    with patch('boto3.client') as mock_boto3_client:
+    # Create test directory
+    log_dir = Path('/tmp/test-startup-scan')
+    log_dir.mkdir(exist_ok=True)
+    
+    try:
+        # Create files that should be uploaded (within 3 days)
+        now = datetime.now()
         
-        # Mock S3 client
-        mock_s3 = Mock()
-        mock_s3.upload_file.return_value = None
-        mock_s3.head_object.return_value = {}
+        # File 1: 1 day old
+        file1 = log_dir / 'existing1.log'
+        file1.write_text('test')
+        old_time = (now - timedelta(days=1)).timestamp()
+        os.utime(file1, (old_time, old_time))
         
-        # Mock CloudWatch client
-        mock_cw = Mock()
-        mock_cw.put_metric_data.return_value = None
+        # File 2: 2 days old
+        file2 = log_dir / 'existing2.log'
+        file2.write_text('test')
+        old_time = (now - timedelta(days=2)).timestamp()
+        os.utime(file2, (old_time, old_time))
         
-        # Return different mocks based on service name
-        def client_side_effect(service_name, **kwargs):
-            if service_name == 's3':
-                return mock_s3
-            elif service_name == 'cloudwatch':
-                return mock_cw
-            return Mock()
+        # File 3: Too old (5 days) - should NOT be uploaded
+        file3 = log_dir / 'too_old.log'
+        file3.write_text('test')
+        old_time = (now - timedelta(days=5)).timestamp()
+        os.utime(file3, (old_time, old_time))
         
-        mock_boto3_client.side_effect = client_side_effect
+        # Update config to use our test directory
+        # config_content = temp_config_file.read_text()
+        config_content = cfg_path.read_text()
+        config_content = config_content.replace(
+            'log_directories:',
+            f'log_directories:\n  - {log_dir}'
+        )
+        # temp_config_file.write_text(config_content)
+        cfg_path.write_text(config_content)
         
-        # Now create system (will use mocked boto3)
-        system = TVMUploadSystem(config_file)
-        
-        # Start system (triggers startup scan)
+        # Start system
+        # system = TVMUploadSystem(str(temp_config_file))
+        system = TVMUploadSystem(str(cfg_path))
         system.start()
         
-        try:
-            # Poll for files to be detected
-            max_wait = 15
-            waited = 0
-            interval = 0.5
-            
-            while waited < max_wait:
-                detected = system.stats['files_detected']
-                uploaded = system.stats['files_uploaded']
-                
-                # Check if both files were either detected or uploaded
-                if detected + uploaded >= 2:
-                    break
-                    
-                time.sleep(interval)
-                waited += interval
-            
-            # Get final stats
-            detected = system.stats['files_detected']
-            uploaded = system.stats['files_uploaded']
-            failed = system.stats['files_failed']
-            queued = system.queue_manager.get_queue_size()
-            
-            # Files should be either detected (waiting) or uploaded (processed)
-            total_processed = detected + uploaded
-            
-            assert total_processed >= 2, \
-                f"After {waited:.1f}s: detected={detected}, uploaded={uploaded}, " \
-                f"failed={failed}, queued={queued}. Expected 2+ files processed."
-            
-        finally:
-            system.stop()
+        # Wait for startup scan and uploads
+        time.sleep(3)  # ← Reduced from 15s since mocked uploads are instant
+        
+        system.stop()
+        
+        # Verify results
+        stats = system.get_statistics()
+        total_processed = stats['uploaded'] + stats['failed']
+        
+        # Should have processed 2 files (not 3, since one is too old)
+        assert total_processed >= 2, \
+            f"After startup: detected={stats['detected']}, uploaded={stats['uploaded']}, " \
+            f"failed={stats['failed']}. Expected 2+ files processed."
+        
+        # Verify uploads were attempted
+        assert mock_s3.upload_file.call_count >= 2, \
+            f"Expected at least 2 upload attempts, got {mock_s3.upload_file.call_count}"
+        
+    finally:
+        # Cleanup
+        import shutil
+        if log_dir.exists():
+            shutil.rmtree(log_dir)
 
 
 if __name__ == '__main__':

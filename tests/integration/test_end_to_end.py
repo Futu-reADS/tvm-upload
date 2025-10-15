@@ -54,8 +54,8 @@ monitoring:
     shutil.rmtree(temp_dir, ignore_errors=True)
 
 
-@patch('src.upload_manager.boto3')
-@patch('src.cloudwatch_manager.boto3')
+@patch('src.upload_manager.boto3.session.Session')
+@patch('src.cloudwatch_manager.boto3.session.Session')
 def test_system_initialization(mock_cw_boto3, mock_upload_boto3, test_config):
     """Test system initializes correctly"""
     config_file, temp_dir = test_config
@@ -73,8 +73,8 @@ def test_system_initialization(mock_cw_boto3, mock_upload_boto3, test_config):
     assert system.queue_manager is not None
 
 
-@patch('src.upload_manager.boto3')
-@patch('src.cloudwatch_manager.boto3')
+@patch('src.upload_manager.boto3.session.Session')
+@patch('src.cloudwatch_manager.boto3.session.Session')
 def test_file_detection_and_queue(mock_cw_boto3, mock_upload_boto3, test_config):
     """Test file detection adds to upload queue"""
     config_file, temp_dir = test_config
@@ -105,8 +105,8 @@ def test_file_detection_and_queue(mock_cw_boto3, mock_upload_boto3, test_config)
         system.stop()
 
 
-@patch('src.upload_manager.boto3')
-@patch('src.cloudwatch_manager.boto3')
+@patch('src.upload_manager.boto3.session.Session')
+@patch('src.cloudwatch_manager.boto3.session.Session')
 def test_upload_marks_file_for_cleanup(mock_cw_boto3, mock_upload_boto3, test_config):
     """Test uploaded file is marked for cleanup"""
     config_file, temp_dir = test_config
@@ -140,8 +140,8 @@ def test_upload_marks_file_for_cleanup(mock_cw_boto3, mock_upload_boto3, test_co
         system.stop()
 
 
-@patch('src.upload_manager.boto3')
-@patch('src.cloudwatch_manager.boto3')
+@patch('src.upload_manager.boto3.session.Session')
+@patch('src.cloudwatch_manager.boto3.session.Session')
 def test_statistics_tracking(mock_cw_boto3, mock_upload_boto3, test_config):
     """Test statistics are tracked during operation"""
     config_file, temp_dir = test_config

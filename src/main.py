@@ -536,6 +536,19 @@ class TVMUploadSystem:
         logger.info(f"Data uploaded:      {self.stats['bytes_uploaded'] / (1024**3):.2f} GB")
         logger.info("="*50 + "\n")
 
+    def get_statistics(self) -> dict:
+        """
+        Public snapshot for tests/monitoring.
+        Matches test expectations: keys 'detected', 'uploaded', 'failed'.
+        """
+        s = self.stats
+        return {
+            "detected": int(s.get("files_detected", 0)),
+            "uploaded": int(s.get("files_uploaded", 0)),
+            "failed":   int(s.get("files_failed", 0)),
+            "bytes_uploaded": int(s.get("bytes_uploaded", 0)),
+        }
+
 
 def signal_handler(signum, frame):
     """

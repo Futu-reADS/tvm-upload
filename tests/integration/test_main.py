@@ -75,8 +75,8 @@ monitoring:
         temp_log_dir.mkdir(exist_ok=True)
         
         # Mock boto3 BEFORE creating system
-        with patch('src.upload_manager.boto3') as mock_boto3_upload, \
-             patch('src.cloudwatch_manager.boto3') as mock_boto3_cw:
+        with patch('src.upload_manager.boto3.session.Session') as mock_boto3_upload, \
+             patch('src.cloudwatch_manager.boto3.session.Session') as mock_boto3_cw:
             
             # Mock S3 client
             mock_s3_client = Mock()
@@ -230,8 +230,8 @@ monitoring:
         config_file = Path('/tmp/test-config-no-op.yaml')
         config_file.write_text(config_content)
         
-        with patch('src.upload_manager.boto3'), \
-             patch('src.cloudwatch_manager.boto3'):
+        with patch('src.upload_manager.boto3.session.Session'), \
+             patch('src.cloudwatch_manager.boto3.session.Session'):
             
             try:
                 system = TVMUploadSystem(str(config_file))
