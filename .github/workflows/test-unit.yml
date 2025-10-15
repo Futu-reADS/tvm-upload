@@ -34,7 +34,11 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
           pip install pytest pytest-cov
-      
+
+      - name: Install package
+        run: |
+          pip install -e .
+
       - name: Run unit tests
         run: |
           pytest tests/unit/ -v --cov=src --cov-report=xml

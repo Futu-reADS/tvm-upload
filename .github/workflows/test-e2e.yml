@@ -32,7 +32,11 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
           pip install pytest
-      
+
+      - name: Install package  # ← ADD THIS
+        run: |
+          pip install -e .
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v2
         with:

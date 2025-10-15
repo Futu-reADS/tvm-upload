@@ -32,7 +32,11 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
           pip install pytest
-      
+
+      - name: Install package  # ← ADD THIS
+        run: |
+          pip install -e .
+
       - name: Run integration tests
         run: |
           pytest tests/integration/ -v -m "not real_aws"
