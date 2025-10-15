@@ -5,7 +5,7 @@ on:
   pull_request:
     branches: [main, develop]
   push:
-    branches: [main, develop]
+    branches: [main, develop, cicd_integration]
 
 jobs:
   integration-tests:
