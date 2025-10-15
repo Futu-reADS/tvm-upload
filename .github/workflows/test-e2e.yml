@@ -1,58 +1,78 @@
 # .github/workflows/test-e2e.yml
-name: E2E Tests (Real AWS)
+name: E2E Tests (Real AWS - OIDC)
 
 on:
   push:
     branches: [main, cicd_integration]
-  workflow_dispatch:  # Manual trigger
+  workflow_dispatch:
   schedule:
-    - cron: '0 2 * * *'  # Daily at 2 AM UTC
+    - cron: '0 2 * * *'  # 02:00 UTC (11:00 JST)
+
+# ✅ NEW: Required for OIDC authentication
+permissions:
+  id-token: write  # Required to request OIDC token
+  contents: read   # Required to checkout code
 
 jobs:
+  # ❌ REMOVED: precheck job - no longer needed with OIDC!
+  
   e2e-tests:
-    name: E2E Tests (Real AWS)
+    name: E2E Tests (Real AWS - OIDC)
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     
-    # Only run if AWS credentials are available
+    # ✅ SIMPLIFIED: No need to check for secrets with OIDC
     if: |
-      github.ref == 'refs/heads/main' ||
-      github.event_name == 'workflow_dispatch'
-    
+      github.ref_name == 'main' || 
+      github.ref_name == 'cicd_integration' ||
+      github.event_name == 'workflow_dispatch' || 
+      github.event_name == 'schedule'
+
     steps:
       - name: Checkout code
-        uses: actions/checkout@v3
-      
+        uses: actions/checkout@v4
+
       - name: Setup Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-      
+          cache: 'pip'
+
       - name: Install dependencies
         run: |
           pip install --upgrade pip
           pip install -r requirements.txt
           pip install pytest
 
-      - name: Install package  # ← ADD THIS
-        run: |
-          pip install -e .
+      - name: Install package  
+        run: pip install -e .
 
-      - name: Configure AWS credentials
-        uses: aws-actions/configure-aws-credentials@v2
+      # ✅ CHANGED: OIDC authentication (no secrets!)
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
         with:
-          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          role-to-assume: arn:aws-cn:iam::621346161733:role/GitHubActions-TVM-E2E-Role
           aws-region: cn-north-1
-      
+          # ❌ REMOVED: aws-access-key-id and aws-secret-access-key
+
       - name: Run E2E tests
         env:
-          TEST_BUCKET: ${{ secrets.TEST_BUCKET || 't01logs' }}
+          TEST_BUCKET: t01logs  # ✅ SIMPLIFIED: No need for secrets fallback
           AWS_REGION: cn-north-1
         run: |
           pytest tests/e2e/ -v -m "e2e or real_aws" --tb=short
-      
+
+      - name: Upload test logs on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: e2e-test-logs
+          path: |
+            *.log
+            /tmp/*.log
+          retention-days: 7
+
       - name: Notify on failure
         if: failure()
         run: |
-          echo "E2E tests failed! Check logs for details."
-          # Add Slack/email notification here if needed
+          echo "::error::E2E tests failed! Check logs for details."
