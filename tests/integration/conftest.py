@@ -1,115 +1,94 @@
-# tests/e2e/conftest.py
+# tests/integration/conftest.py
 """
-Fixtures for E2E tests (REAL AWS)
-These tests use actual AWS services and run in CI/CD only
+Fixtures for integration tests (mocked AWS)
+These tests verify components work together with mocked external services
 """
 
 import pytest
-import boto3
-import os
+import tempfile
+import yaml
 from pathlib import Path
-
-
-@pytest.fixture(scope='session')
-def aws_config():
-    """
-    Real AWS configuration
-    Uses environment variables or defaults for CI/CD
-    
-    Note: AWS_PROFILE defaults to None for OIDC in GitHub Actions
-    """
-    return {
-        'profile': os.getenv('AWS_PROFILE', None),  # ← CHANGED: None instead of 'china'
-        'bucket': os.getenv('TEST_BUCKET', 't01logs'),
-        'region': os.getenv('AWS_REGION', 'cn-north-1'),
-        'vehicle_id': 'e2e-test-vehicle'
-    }
+from unittest.mock import Mock, patch
 
 
 @pytest.fixture
-def real_s3_client(aws_config):
-    """
-    REAL S3 client - connects to actual AWS
-    NO MOCKING - this makes real API calls
-    
-    Works with both:
-    - Local: Uses AWS_PROFILE (e.g., 'china')
-    - CI/CD: Uses OIDC credentials (AWS_PROFILE=None)
-    """
-    # ✅ NEW: Conditional session creation
-    if aws_config['profile']:
-        # Local development with profile
-        session = boto3.Session(
-            profile_name=aws_config['profile'],
-            region_name=aws_config['region']
-        )
-    else:
-        # CI/CD with OIDC credentials (no profile)
-        session = boto3.Session(region_name=aws_config['region'])
-    
-    return session.client(
-        's3',
-        endpoint_url=f"https://s3.{aws_config['region']}.amazonaws.com.cn"
-    )
+def temp_log_dir():
+    """Create temporary log directory"""
+    log_dir = Path('/tmp/tvm-test-logs')
+    log_dir.mkdir(exist_ok=True)
+    yield log_dir
+    # Cleanup
+    if log_dir.exists():
+        import shutil
+        shutil.rmtree(log_dir)
 
 
 @pytest.fixture
-def real_cloudwatch_client(aws_config):
-    """
-    REAL CloudWatch client
+def temp_config_file(temp_log_dir):
+    """Create temporary config file for system tests"""
+    temp_log_dir.mkdir(exist_ok=True)
     
-    Works with both local profiles and OIDC
-    """
-    # ✅ NEW: Conditional session creation
-    if aws_config['profile']:
-        session = boto3.Session(
-            profile_name=aws_config['profile'],
-            region_name=aws_config['region']
-        )
-    else:
-        session = boto3.Session(region_name=aws_config['region'])
+    config_content = f"""
+vehicle_id: "test-vehicle"
+
+log_directories:
+  - {temp_log_dir}
+
+s3:
+  bucket: test-bucket
+  region: cn-north-1
+  credentials_path: ~/.aws
+
+upload:
+  schedule: "15:00"
+  file_stable_seconds: 2
+  operational_hours:
+    enabled: true
+    start: "09:00"
+    end: "16:00"
+  queue_file: /tmp/tvm-test-queue.json
+
+disk:
+  reserved_gb: 1
+  warning_threshold: 0.90
+  critical_threshold: 0.95
+
+deletion:
+  after_upload:
+    enabled: true
+    keep_days: 0
+  age_based:
+    enabled: true
+    max_age_days: 7
+    schedule_time: "02:00"
+  emergency:
+    enabled: true
+
+monitoring:
+  cloudwatch_enabled: false
+"""
     
-    return session.client('cloudwatch')
+    config_file = Path('/tmp') / 'test-config-integration.yaml'
+    config_file.write_text(config_content)
+    
+    yield str(config_file)
+    
+    config_file.unlink(missing_ok=True)
 
 
 @pytest.fixture
-def real_upload_manager(aws_config):
-    """
-    Upload manager connected to REAL AWS S3
-    
-    Works with both local profiles and OIDC
-    """
-    from src.upload_manager import UploadManager
-    return UploadManager(
-        bucket=aws_config['bucket'],
-        region=aws_config['region'],
-        vehicle_id=aws_config['vehicle_id'],
-        profile_name=aws_config['profile']  # ← Will be None in CI
-    )
+def mock_s3_client():
+    """Mock S3 client for integration tests"""
+    mock = Mock()
+    mock.upload_file.return_value = None
+    mock.head_object.return_value = {}
+    mock.delete_object.return_value = {}
+    return mock
 
 
 @pytest.fixture
-def s3_cleanup(real_s3_client, aws_config):
-    """
-    Auto-cleanup S3 objects after test completes
-    Usage: s3_cleanup('path/to/object.log')
-    """
-    objects_to_delete = []
-    
-    def track(key):
-        """Track S3 key for deletion"""
-        objects_to_delete.append(key)
-        return key
-    
-    yield track
-    
-    # Cleanup after test finishes
-    for key in objects_to_delete:
-        try:
-            real_s3_client.delete_object(
-                Bucket=aws_config['bucket'],
-                Key=key
-            )
-            print(f"✓ Cleaned up s3://{aws_config['bucket']}/{key}")
-        except Exception as e:
-            print(f"✗ Cleanup failed for {key}: {e}")
+def mock_cloudwatch_client():
+    """Mock CloudWatch client for integration tests"""
+    mock = Mock()
+    mock.put_metric_data.return_value = None
+    return mock

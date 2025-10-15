@@ -17,7 +17,7 @@ def aws_config():
     Uses environment variables or defaults for CI/CD
     """
     return {
-        'profile': os.getenv('AWS_PROFILE', 'china'),
+        'profile': os.getenv('AWS_PROFILE', None),  # ✅ None instead of 'china'
         'bucket': os.getenv('TEST_BUCKET', 't01logs'),
         'region': os.getenv('AWS_REGION', 'cn-north-1'),
         'vehicle_id': 'e2e-test-vehicle'
@@ -30,10 +30,19 @@ def real_s3_client(aws_config):
     REAL S3 client - connects to actual AWS
     NO MOCKING - this makes real API calls
     """
-    session = boto3.Session(profile_name=aws_config['profile'])
+    # ✅ CRITICAL: Check if profile exists before using it
+    if aws_config['profile']:
+        # Local: Use profile
+        session = boto3.Session(
+            profile_name=aws_config['profile'],
+            region_name=aws_config['region']
+        )
+    else:
+        # CI/CD: Use OIDC credentials (no profile)
+        session = boto3.Session(region_name=aws_config['region'])
+    
     return session.client(
         's3',
-        region_name=aws_config['region'],
         endpoint_url=f"https://s3.{aws_config['region']}.amazonaws.com.cn"
     )
 
@@ -43,11 +52,18 @@ def real_cloudwatch_client(aws_config):
     """
     REAL CloudWatch client
     """
-    session = boto3.Session(profile_name=aws_config['profile'])
-    return session.client(
-        'cloudwatch',
-        region_name=aws_config['region']
-    )
+    # ✅ CRITICAL: Check if profile exists before using it
+    if aws_config['profile']:
+        # Local: Use profile
+        session = boto3.Session(
+            profile_name=aws_config['profile'],
+            region_name=aws_config['region']
+        )
+    else:
+        # CI/CD: Use OIDC credentials (no profile)
+        session = boto3.Session(region_name=aws_config['region'])
+    
+    return session.client('cloudwatch')
 
 
 @pytest.fixture
@@ -56,11 +72,13 @@ def real_upload_manager(aws_config):
     Upload manager connected to REAL AWS S3
     """
     from src.upload_manager import UploadManager
+    
+    # ✅ This is OK - UploadManager already handles None profile
     return UploadManager(
         bucket=aws_config['bucket'],
         region=aws_config['region'],
         vehicle_id=aws_config['vehicle_id'],
-        profile_name=aws_config['profile']
+        profile_name=aws_config['profile']  # Will be None in CI - handled by UploadManager
     )
 
 
