@@ -30,7 +30,7 @@ def real_s3_client(aws_config):
     REAL S3 client - connects to actual AWS
     NO MOCKING - this makes real API calls
     """
-    # ✅ CRITICAL: Check if profile exists before using it
+    # CRITICAL: Check if profile exists before using it
     if aws_config['profile']:
         # Local: Use profile
         session = boto3.Session(
@@ -52,7 +52,7 @@ def real_cloudwatch_client(aws_config):
     """
     REAL CloudWatch client
     """
-    # ✅ CRITICAL: Check if profile exists before using it
+    # CRITICAL: Check if profile exists before using it
     if aws_config['profile']:
         # Local: Use profile
         session = boto3.Session(
@@ -73,7 +73,7 @@ def real_upload_manager(aws_config):
     """
     from src.upload_manager import UploadManager
     
-    # ✅ This is OK - UploadManager already handles None profile
+    # This is OK - UploadManager already handles None profile
     return UploadManager(
         bucket=aws_config['bucket'],
         region=aws_config['region'],
