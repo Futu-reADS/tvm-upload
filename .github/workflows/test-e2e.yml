@@ -3,7 +3,7 @@ name: E2E Tests (Real AWS - OIDC)
 
 on:
   push:
-    branches: [main, cicd_integration]
+    branches: [main]
   workflow_dispatch:
   schedule:
     - cron: '0 2 * * *'  # 02:00 UTC (11:00 JST)
@@ -24,7 +24,6 @@ jobs:
     # ✅ SIMPLIFIED: No need to check for secrets with OIDC
     if: |
       github.ref_name == 'main' || 
-      github.ref_name == 'cicd_integration' ||
       github.event_name == 'workflow_dispatch' || 
       github.event_name == 'schedule'
 
