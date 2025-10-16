@@ -1,0 +1,132 @@
+# TVM Log Upload System - Production Configuration
+# For vehicles deployed in China
+#
+# Copy this file to /etc/tvm-upload/config.yaml and customize
+# for your specific vehicle deployment.
+
+# ============================================
+# VEHICLE IDENTIFICATION
+# ============================================
+# IMPORTANT: Change this for each vehicle!
+vehicle_id: "vehicle-CN-001"
+
+# ============================================
+# LOG DIRECTORIES TO MONITOR
+# ============================================
+log_directories:
+  - /var/log/autoware/bags     # MCAP bag files
+  - /var/log/autoware/system   # System logs
+
+# ============================================
+# AWS S3 CONFIGURATION (China Region)
+# ============================================
+s3:
+  bucket: tvm-logs-production
+  region: cn-north-1            # Beijing region (or cn-northwest-1 for Ningxia)
+  credentials_path: /home/autoware/.aws
+  profile: china                # AWS profile name
+
+# ============================================
+# UPLOAD SETTINGS
+# ============================================
+upload:
+  # Daily upload time (HH:MM format, 24-hour)
+  schedule: "15:00"             # 3:00 PM local time
+  
+  # File stability check (seconds)
+  file_stable_seconds: 60       # Wait 60s for file to stop changing
+  
+  # Operational hours (prevent uploads during critical times)
+  operational_hours:
+    enabled: true
+    start: "09:00"              # Start uploads at 9 AM
+    end: "16:00"                # Stop uploads at 4 PM
+  
+  # Queue persistence
+  queue_file: /var/lib/tvm-upload/queue.json
+  
+  # Startup scan (upload existing files on daemon start)
+  scan_existing_files:
+    enabled: true
+    max_age_days: 3             # Upload files from last 3 days
+
+# ============================================
+# DELETION POLICIES
+# ============================================
+deletion:
+  # Delete after successful upload
+  after_upload:
+    enabled: true
+    keep_days: 0                # 0 = delete immediately (saves disk space)
+                                # 14 = keep for 14 days after upload
+  
+  # Age-based cleanup (safety net)
+  age_based:
+    enabled: true
+    max_age_days: 7             # Delete files older than 7 days
+    schedule_time: "02:00"      # Run daily at 2 AM
+  
+  # Emergency cleanup (CRITICAL!)
+  emergency:
+    enabled: true               # MUST be true for production
+                                # Prevents disk from filling up
+
+# ============================================
+# DISK MANAGEMENT
+# ============================================
+disk:
+  reserved_gb: 70               # Keep 70 GB free for new logs
+  warning_threshold: 0.90       # Warn at 90% usage
+  critical_threshold: 0.95      # Emergency cleanup at 95%
+
+# ============================================
+# MONITORING (CloudWatch)
+# ============================================
+monitoring:
+  cloudwatch_enabled: true
+  
+  # Publish interval
+  publish_interval_seconds: 3600  # Every 1 hour
+  
+  # Alarm thresholds
+  low_upload_threshold_mb: 100    # Alert if <100MB uploaded
+  alarm_evaluation_periods: 3     # Alert after 3 consecutive periods
+
+# ============================================
+# S3 LIFECYCLE MANAGEMENT
+# ============================================
+s3_lifecycle:
+  retention_days: 14            # Delete from S3 after 14 days
+                                # (Set up AWS lifecycle policy separately)
+
+# ============================================
+# CONFIGURATION NOTES
+# ============================================
+#
+# VEHICLE_ID:
+#   - Must be unique for each vehicle
+#   - Format: vehicle-{region}-{number}
+#   - Example: vehicle-CN-001, vehicle-CN-002, vehicle-JP-001
+#
+# OPERATIONAL_HOURS:
+#   - Prevents uploads during peak network usage
+#   - Adjust based on vehicle operation schedule
+#   - Disable if 24/7 operation needed (set enabled: false)
+#
+# DELETION POLICY:
+#   - keep_days=0: Delete immediately after upload (saves space)
+#   - keep_days=14: Keep for 2 weeks (for local debugging)
+#   - age_based: Safety net to prevent old files accumulating
+#   - emergency: MUST be enabled to prevent disk full
+#
+# DISK THRESHOLDS:
+#   - 90%: Start cleaning uploaded files
+#   - 95%: Emergency cleanup (delete ANY old files)
+#   - Adjust reserved_gb based on logging rate
+#
+# CLOUDWATCH:
+#   - Publishes metrics to AWS CloudWatch
+#   - Requires CloudWatch permissions in IAM policy
+#   - Can be disabled for testing (but enable for production)
+#
+# ============================================

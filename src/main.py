@@ -434,15 +434,21 @@ class TVMUploadSystem:
         
         # NEW v2.0: Check if emergency cleanup is enabled
         emergency_enabled = self.config.get('deletion.emergency.enabled', False)
-        
+
         if emergency_enabled:
-            # Check disk space after uploads
-            if not self.disk_manager.check_disk_space():
-                logger.warning("Low disk space after uploads, running EMERGENCY cleanup...")
+            usage, _, _ = self.disk_manager.get_disk_usage()
+            
+            if usage >= self.disk_manager.critical_threshold:  # >95%
+                logger.error(" CRITICAL: Disk usage >95% - triggering EMERGENCY cleanup")
+                deleted = self.disk_manager.emergency_cleanup_all_files()
+                logger.warning(f" Emergency cleanup: {deleted} files deleted (ANY files, not just uploaded)")
+            elif not self.disk_manager.check_disk_space():  # >90%
+                logger.warning("Disk usage >90% - cleaning uploaded files only")
                 deleted = self.disk_manager.cleanup_old_files()
-                logger.info(f"Emergency cleanup freed space by deleting {deleted} files")
+                logger.info(f"Standard cleanup: {deleted} uploaded files deleted")
         else:
             logger.debug("Emergency cleanup disabled - skipping disk check")
+
     
     def _upload_file(self, filepath: str):
         """

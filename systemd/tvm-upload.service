@@ -1,0 +1,53 @@
+[Unit]
+Description=TVM Log Upload System
+Documentation=https://github.com/Futu-reADS/tvm-upload
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=autoware
+Group=autoware
+WorkingDirectory=/opt/tvm-upload
+
+# Environment
+Environment="PATH=/opt/tvm-upload/venv/bin:/usr/local/bin:/usr/bin"
+Environment="PYTHONUNBUFFERED=1"
+
+# Start command
+ExecStart=/opt/tvm-upload/venv/bin/python /opt/tvm-upload/src/main.py --config /etc/tvm-upload/config.yaml --log-level INFO
+
+# Reload configuration on SIGHUP
+ExecReload=/bin/kill -HUP $MAINPID
+
+# Restart policy
+Restart=on-failure
+RestartSec=10
+StartLimitBurst=3
+StartLimitIntervalSec=60
+
+# Logging
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=tvm-upload
+
+# Security hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/autoware /var/lib/tvm-upload /tmp
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictRealtime=true
+RestrictSUIDSGID=true
+
+# Resource limits
+MemoryMax=512M
+MemoryHigh=400M
+CPUQuota=20%
+TasksMax=50
+
+[Install]
+WantedBy=multi-user.target
