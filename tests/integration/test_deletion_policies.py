@@ -220,7 +220,7 @@ def test_age_based_cleanup_integration(test_env_with_deletion):
     
     import os
     
-    with patch('src.upload_manager.boto3'), patch('src.cloudwatch_manager.boto3'):
+    with patch('src.upload_manager.boto3.session.Session'), patch('src.cloudwatch_manager.boto3.session.Session'):
         system = TVMUploadSystem(config_file)
         
         # Create old file (10 days old)

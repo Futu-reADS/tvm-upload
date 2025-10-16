@@ -354,6 +354,88 @@ class DiskManager:
         
         return deleted_count
     
+    def emergency_cleanup_all_files(self, target_free_gb: float = None) -> int:
+        """
+        EMERGENCY ONLY: Delete ANY old files to free space.
+        
+        Called when disk >95% full. Deletes oldest files first,
+        regardless of upload status. Data loss is acceptable in emergency.
+        
+        Args:
+            target_free_gb: Target free space in GB (default: reserved_gb)
+            
+        Returns:
+            int: Number of files deleted
+            
+        Safety:
+        - Deletes ALL files (uploaded or not) when disk critically full
+        - Sorts by mtime (modification time), deletes oldest first
+        - Stops when target reached or no more files to delete
+        - Logs each deletion with age and size
+        
+        Note:
+            This is EMERGENCY-ONLY cleanup for >95% disk usage.
+            Regular cleanup should use cleanup_old_files() for <95%.
+        """
+        if target_free_gb is None:
+            target_free_bytes = self.reserved_bytes
+        else:
+            target_free_bytes = int(target_free_gb * 1024 * 1024 * 1024)
+        
+        logger.warning("🚨 EMERGENCY CLEANUP: Deleting ALL old files (uploaded or not)")
+        
+        # Get current free space
+        _, _, free_bytes = self.get_disk_usage()
+        
+        if free_bytes >= target_free_bytes:
+            logger.info("Sufficient space available, no emergency cleanup needed")
+            return 0
+        
+        # Collect ALL files from monitored directories
+        all_files = []
+        for directory in self.log_directories:
+            if not directory.exists():
+                continue
+            
+            for file_path in directory.rglob('*'):
+                if file_path.is_file() and not file_path.name.startswith('.'):
+                    try:
+                        mtime = file_path.stat().st_mtime
+                        size = file_path.stat().st_size
+                        all_files.append((mtime, size, file_path))
+                    except (OSError, FileNotFoundError):
+                        pass
+        
+        # Sort by modification time (oldest first)
+        all_files.sort()
+        
+        deleted_count = 0
+        freed_bytes = 0
+        
+        for mtime, size, filepath in all_files:
+            # Check if we've freed enough space
+            if free_bytes + freed_bytes >= target_free_bytes:
+                break
+            
+            try:
+                age_days = (time.time() - mtime) / 86400
+                logger.warning(f"🚨 EMERGENCY: Deleting {filepath.name} "
+                            f"({size / (1024**2):.2f} MB, {age_days:.1f} days old)")
+                
+                filepath.unlink()
+                freed_bytes += size
+                deleted_count += 1
+                
+                # Remove from uploaded tracking if present
+                self.uploaded_files.pop(str(filepath.resolve()), None)
+                
+            except Exception as e:
+                logger.error(f"Error deleting {filepath}: {e}")
+        
+        logger.warning(f" EMERGENCY CLEANUP: {deleted_count} files deleted, ")
+        
+        return deleted_count
+    
     def get_directory_size(self, directory: str) -> int:
         """
         Calculate total size of directory recursively.
