@@ -12,17 +12,29 @@ from src.config_manager import ConfigManager, ConfigValidationError
 
 @pytest.fixture
 def temp_config_file():
-    """Fixture using actual example config as single source of truth"""
-    example_path = Path(__file__).parent.parent / '..' / 'config' / 'config.yaml.example'
+    """Create config with known values for testing"""
+    config_content = """
+vehicle_id: "vehicle-001"
+log_directories:
+  - /var/log/autoware/bags
+  - /var/log/autoware/system
+s3:
+  bucket: tvm-logs
+  region: cn-north-1
+  credentials_path: ~/.aws
+upload:
+  schedule: "15:00"
+disk:
+  reserved_gb: 70
+monitoring:
+  cloudwatch_enabled: false
+"""
     
     with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
-        with open(example_path) as src:
-            f.write(src.read())
+        f.write(config_content)
         temp_path = f.name
     
     yield temp_path
-    
-    # Cleanup
     Path(temp_path).unlink()
 
 

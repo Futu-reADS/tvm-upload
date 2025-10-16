@@ -57,7 +57,7 @@ deletion:
   # Delete after successful upload
   after_upload:
     enabled: true
-    keep_days: 0                # 0 = delete immediately (saves disk space)
+    keep_days: 14                # 0 = delete immediately (saves disk space)
                                 # 14 = keep for 14 days after upload
   
   # Age-based cleanup (safety net)
