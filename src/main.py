@@ -264,54 +264,65 @@ class TVMUploadSystem:
         """
         Callback when file monitor detects a stable file.
         
-        Adds file to upload queue and triggers immediate upload
-        if within operational hours.
+        Adds file to upload queue. Files are uploaded either:
+        1. At scheduled time (always)
+        2. Immediately if within operational hours (optional)
         
         Args:
             filepath: Path to stable file
-            
-        Note:
-            Thread-safe - uses lock to protect upload queue
         """
         self.stats['files_detected'] += 1
         
         logger.info(f"File ready: {Path(filepath).name}")
         
-        # Add to persistent queue
+        # Always add to persistent queue
         self.queue_manager.add_file(filepath)
         
-        # Check if we should upload now
-        if self._should_upload_now():
-            self._process_upload_queue()
+        # Check if operational hours allow immediate upload
+        op_hours = self.config.get('upload.operational_hours', {})
+        
+        if op_hours.get('enabled', False):
+            # Operational hours enabled - check if we can upload now
+            if self._should_upload_now():
+                logger.info("Within operational hours, uploading immediately")
+                self._process_upload_queue()
+            else:
+                logger.info("Outside operational hours, queued for scheduled upload")
+        else:
+            # Operational hours disabled - queue for scheduled upload only
+            logger.info(f"Queued for scheduled upload at {self.config.get('upload.schedule')}")
+            # Do NOT call _process_upload_queue() here!
     
     def _should_upload_now(self) -> bool:
         """
         Determine if uploads should happen now based on operational hours.
         
-        Checks if current time is within configured operational hours.
-        If operational_hours not configured, always returns True.
+        This is ONLY checked when operational_hours.enabled = true.
+        When disabled, files queue until scheduled time.
         
         Returns:
-            bool: True if within operational hours (or no restriction)
-            
-        Note:
-            Silently allows upload if operational_hours parsing fails
+            bool: True if within operational hours, False otherwise
         """
         now = datetime.now().time()
-    
+
         # Check operational hours
-        op_hours = self.config.get('upload.operational_hours')
-        if op_hours and op_hours.get('enabled', True):
-            try:
-                start_time = datetime.strptime(op_hours['start'], '%H:%M').time()
-                end_time = datetime.strptime(op_hours['end'], '%H:%M').time()
-                
-                if not (start_time <= now <= end_time):
-                    logger.debug(f"Outside operational hours ({start_time}-{end_time})")
-                    return False
-            except Exception as e:
-                logger.warning(f"Error parsing operational hours: {e}")
-                # If parsing fails, allow upload
+        op_hours = self.config.get('upload.operational_hours', {})
+        
+        if not op_hours.get('enabled', False):
+            # If operational hours not configured/enabled, 
+            # this function shouldn't be called, but return False to be safe
+            return False
+        
+        try:
+            start_time = datetime.strptime(op_hours['start'], '%H:%M').time()
+            end_time = datetime.strptime(op_hours['end'], '%H:%M').time()
+            
+            if not (start_time <= now <= end_time):
+                logger.debug(f"Outside operational hours ({start_time}-{end_time})")
+                return False
+        except Exception as e:
+            logger.warning(f"Error parsing operational hours: {e}")
+            return False
         
         return True
     
@@ -410,7 +421,7 @@ class TVMUploadSystem:
         now_minutes = now.hour * 60 + now.minute
         schedule_minutes = schedule.hour * 60 + schedule.minute
         
-        return abs(now_minutes - schedule_minutes) <= 1
+        return  abs(now_minutes - schedule_minutes) <= 1
     
     def _process_upload_queue(self):
         """

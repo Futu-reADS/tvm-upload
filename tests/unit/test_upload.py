@@ -9,6 +9,7 @@ from pathlib import Path
 from unittest.mock import Mock, patch, MagicMock
 
 from src.upload_manager import UploadManager, UploadError
+from botocore.exceptions import ClientError
 
 
 @pytest.fixture
@@ -93,6 +94,11 @@ def test_successful_upload(mock_Session, temp_file):  # ← Parameter name chang
     # Create mock S3 client
     mock_s3 = Mock()
     mock_s3.upload_file.return_value = None 
+
+    
+    mock_s3.head_object.side_effect = ClientError(
+        {'Error': {'Code': 'NotFound'}}, 'head_object'
+    )
     
     # Create mock session instance
     mock_session_instance = Mock()
@@ -141,6 +147,10 @@ def test_upload_with_retry(mock_sleep, mock_Session, temp_file):
     mock_s3 = Mock()
     mock_s3.upload_file.return_value = None 
     
+    mock_s3.head_object.side_effect = ClientError(
+        {'Error': {'Code': 'NotFound'}}, 'head_object'
+    )
+
     # Create mock session instance
     mock_session_instance = Mock()
     mock_session_instance.client.return_value = mock_s3
@@ -149,7 +159,6 @@ def test_upload_with_retry(mock_sleep, mock_Session, temp_file):
     mock_Session.return_value = mock_session_instance
     
     # Fail first 2 attempts, succeed on 3rd
-    from botocore.exceptions import ClientError
     mock_s3.upload_file.side_effect = [
         ClientError({'Error': {'Code': '500'}}, 'upload_file'),
         ClientError({'Error': {'Code': '500'}}, 'upload_file'),
@@ -177,6 +186,10 @@ def test_upload_fails_after_max_retries(mock_Session, temp_file):
     # Create mock S3 client
     mock_s3 = Mock()
     mock_s3.upload_file.return_value = None 
+
+    mock_s3.head_object.side_effect = ClientError(
+        {'Error': {'Code': 'NotFound'}}, 'head_object'
+    )
     
     # Create mock session instance
     mock_session_instance = Mock()
@@ -186,7 +199,6 @@ def test_upload_fails_after_max_retries(mock_Session, temp_file):
     mock_Session.return_value = mock_session_instance
     
     # Always fail
-    from botocore.exceptions import ClientError
     mock_s3.upload_file.side_effect = ClientError(
         {'Error': {'Code': '500'}}, 'upload_file'
     )
@@ -211,6 +223,10 @@ def test_multipart_upload_for_large_files(mock_Session, large_temp_file):
     # Create mock S3 client
     mock_s3 = Mock()
     mock_s3.upload_file.return_value = None 
+
+    mock_s3.head_object.side_effect = ClientError(
+        {'Error': {'Code': 'NotFound'}}, 'head_object'
+    )
     
     # Create mock session instance
     mock_session_instance = Mock()

@@ -21,7 +21,7 @@ log_directories:
 # AWS S3 CONFIGURATION (China Region)
 # ============================================
 s3:
-  bucket: tvm-logs-production
+  bucket: t01logs
   region: cn-north-1            # Beijing region (or cn-northwest-1 for Ningxia)
   credentials_path: /home/autoware/.aws
   profile: china                # AWS profile name
@@ -31,14 +31,14 @@ s3:
 # ============================================
 upload:
   # Daily upload time (HH:MM format, 24-hour)
-  schedule: "15:00"             # 3:00 PM local time
+  schedule: "16:55"             # 3:00 PM local time
   
   # File stability check (seconds)
   file_stable_seconds: 60       # Wait 60s for file to stop changing
   
   # Operational hours (prevent uploads during critical times)
   operational_hours:
-    enabled: true
+    enabled: false
     start: "09:00"              # Start uploads at 9 AM
     end: "16:00"                # Stop uploads at 4 PM
   

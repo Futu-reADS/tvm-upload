@@ -127,6 +127,11 @@ class FileMonitor:
                             mtime = file_path.stat().st_mtime
                             
                             if max_age_days == 0 or mtime > cutoff_time:
+
+                                # Only add if not already tracked
+                                if file_path in self.file_tracker:
+                                    logger.debug(f"Skipping already-tracked file: {file_path.name}")
+                                    continue
                                 # Add to tracker for stability check
                                 self._on_file_event(str(file_path))
                                 existing_count += 1

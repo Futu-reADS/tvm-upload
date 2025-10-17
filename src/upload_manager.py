@@ -133,6 +133,11 @@ class UploadManager:
         
         # Build S3 key
         s3_key = self._build_s3_key(file_path)
+
+        # Check if file already exists in S3
+        if self.verify_upload(local_path):
+            logger.info(f"File already in S3, skipping: {file_path.name}")
+            return True
         
         # Try upload with retries
         for attempt in range(1, self.max_retries + 1):
@@ -243,28 +248,66 @@ class UploadManager:
     
     def verify_upload(self, local_path: str) -> bool:
         """
-        Verify that file exists in S3.
+        Verify that THIS specific file (same content) exists in S3.
         
-        Checks if file was successfully uploaded by attempting to
-        retrieve object metadata.
+        Checks by comparing file size across multiple date paths.
+        A file is considered "already uploaded" if an S3 object exists with:
+        - Same filename
+        - Same size
+        - Within last 30 days
         
         Args:
-            local_path: Local file path (used to build S3 key)
+            local_path: Local file path
             
         Returns:
-            bool: True if file exists in S3, False otherwise
-            
-        Note:
-            Does not verify file content or size, only existence
+            bool: True if this exact file already exists in S3, False otherwise
         """
         file_path = Path(local_path)
-        s3_key = self._build_s3_key(file_path)
         
         try:
-            self.s3_client.head_object(Bucket=self.bucket, Key=s3_key)
-            return True
-        except ClientError:
+            local_size = file_path.stat().st_size
+        except (OSError, FileNotFoundError):
             return False
+        
+        from datetime import timedelta
+        
+        # Check today first (most common case)
+        s3_key = self._build_s3_key(file_path)
+        try:
+            response = self.s3_client.head_object(Bucket=self.bucket, Key=s3_key)
+            s3_size = response['ContentLength']
+            
+            if s3_size == local_size:
+                logger.info(f"File already in S3 (same size: {local_size} bytes), skipping: {file_path.name}")
+                return True
+            else:
+                logger.debug(f"Same filename in S3 but different size (local: {local_size}, S3: {s3_size})")
+                return False
+                
+        except ClientError:
+            pass
+        
+        # Check previous days (up to 30 days back)
+        for days_back in range(1, 31):
+            date_str = (datetime.now() - timedelta(days=days_back)).strftime("%Y-%m-%d")
+            s3_key = f"{self.vehicle_id}/{date_str}/{file_path.name}"
+            
+            try:
+                response = self.s3_client.head_object(Bucket=self.bucket, Key=s3_key)
+                s3_size = response['ContentLength']
+                
+                if s3_size == local_size:
+                    logger.info(f"File already in S3 ({days_back} days ago, same size), skipping: {file_path.name}")
+                    return True
+                else:
+                    logger.debug(f"Found {file_path.name} from {days_back} days ago but different size")
+                    
+            except ClientError:
+                continue
+        
+        # File not found in S3 (or all found files have different sizes)
+        logger.debug(f"File not found in S3 or different content: {file_path.name}")
+        return False
 
 
 if __name__ == '__main__':

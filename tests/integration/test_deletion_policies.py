@@ -12,6 +12,7 @@ import os
 from pathlib import Path
 from datetime import datetime, timedelta
 from unittest.mock import patch, Mock, MagicMock
+from botocore.exceptions import ClientError
 
 from src.main import TVMUploadSystem
 
@@ -307,7 +308,9 @@ monitoring:
         # Mock boto3 properly
         mock_s3 = Mock()
         mock_s3.upload_file.return_value = None
-        mock_s3.head_object.return_value = {}
+        mock_s3.head_object.side_effect = ClientError(
+            {'Error': {'Code': 'NotFound'}}, 'head_object'
+        )
         mock_upload_boto3.client.return_value = mock_s3
         
         mock_cw = Mock()
@@ -337,6 +340,10 @@ def test_startup_scan_integration(mock_Session, temp_config_file):
     # Setup mock S3 client
     mock_s3 = Mock()
     mock_s3.upload_file.return_value = None  # ← Simulate successful upload
+
+    mock_s3.head_object.side_effect = ClientError(  # ← ADD THIS
+        {'Error': {'Code': 'NotFound'}}, 'head_object'
+    )
     
     mock_session_instance = Mock()
     mock_session_instance.client.return_value = mock_s3

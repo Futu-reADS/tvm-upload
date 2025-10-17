@@ -203,40 +203,118 @@ monitoring:
         result = system._should_upload_now()
         assert result is False
     
-    def test_should_upload_now_no_operational_hours(self):
-        """Test upload always allowed when operational hours disabled"""
+    def test_should_upload_now_operational_hours(self):
+        """Test upload respects operational hours when enabled (uses actual current time)"""
+        test_dir = Path('/tmp/test-op-hours')
+        test_dir.mkdir(exist_ok=True)
+        
+        config_content = """
+    vehicle_id: "test-vehicle"
+
+    log_directories:
+        - /tmp/test-op-hours
+
+    s3:
+        bucket: test-bucket
+        region: cn-north-1
+        credentials_path: ~/.aws
+
+    upload:
+        schedule: "15:00"
+        file_stable_seconds: 60
+        queue_file: /tmp/test-queue-op-hours.json
+        operational_hours:
+            enabled: true
+            start: "09:00"
+            end: "16:00"
+
+    disk:
+        reserved_gb: 1
+        warning_threshold: 0.90
+        critical_threshold: 0.95
+
+    monitoring:
+        cloudwatch_enabled: false
+    """
+        
+        config_file = Path('/tmp/test-config-op-hours.yaml')
+        config_file.write_text(config_content)
+        
+        with patch('src.upload_manager.boto3.session.Session'), \
+            patch('src.cloudwatch_manager.boto3.session.Session'):
+            
+            try:
+                system = TVMUploadSystem(str(config_file))
+                
+                # Get actual current time
+                now = datetime.now().time()
+                start_time = dt_time(9, 0, 0)
+                end_time = dt_time(16, 0, 0)
+                
+                # Determine expected result based on actual time
+                expected_result = start_time <= now <= end_time
+                
+                # Call the actual method (no mocking!)
+                result = system._should_upload_now()
+                
+                # Assert based on actual time
+                if expected_result:
+                    assert result is True, \
+                        f"Should allow upload at {now} (within 09:00-16:00)"
+                else:
+                    assert result is False, \
+                        f"Should block upload at {now} (outside 09:00-16:00)"
+                
+                # Log for debugging
+                print(f"\n✓ Test passed: Current time {now}, " 
+                    f"expected={expected_result}, got={result}")
+                
+            finally:
+                config_file.unlink(missing_ok=True)
+                shutil.rmtree(test_dir, ignore_errors=True)
+                Path('/tmp/test-queue-op-hours.json').unlink(missing_ok=True)
+
+    def test_should_not_upload_now_no_operational_hours(self):
+        """Test files queue for schedule when operational hours disabled"""
         test_dir = Path('/tmp/test-no-op-hours')
         test_dir.mkdir(exist_ok=True)
         
         config_content = """
-vehicle_id: "test-vehicle"
-log_directories: [/tmp/test-no-op-hours]
-s3:
-  bucket: test-bucket
-  region: cn-north-1
-  credentials_path: ~/.aws
-upload:
-  schedule: "15:00"
-  file_stable_seconds: 60
-  queue_file: /tmp/test-queue-no-op.json
-disk:
-  reserved_gb: 1
-  warning_threshold: 0.90
-  critical_threshold: 0.95
-monitoring:
-  cloudwatch_enabled: false
-"""
+    vehicle_id: "test-vehicle"
+    log_directories: 
+        - /tmp/test-no-op-hours
+    s3:
+        bucket: test-bucket
+        region: cn-north-1
+        credentials_path: ~/.aws
+    upload:
+        schedule: "15:00"
+        file_stable_seconds: 60
+        queue_file: /tmp/test-queue-no-op.json
+        operational_hours:
+            enabled: false  # ← Explicitly disabled
+    disk:
+        reserved_gb: 1
+        warning_threshold: 0.90
+        critical_threshold: 0.95
+    monitoring:
+        cloudwatch_enabled: false
+    """
         
         config_file = Path('/tmp/test-config-no-op.yaml')
         config_file.write_text(config_content)
         
         with patch('src.upload_manager.boto3.session.Session'), \
-             patch('src.cloudwatch_manager.boto3.session.Session'):
+            patch('src.cloudwatch_manager.boto3.session.Session'):
             
             try:
                 system = TVMUploadSystem(str(config_file))
+                
+                # When operational hours disabled, _should_upload_now returns False
+                # This means files queue until scheduled time
                 result = system._should_upload_now()
-                assert result is True
+                assert result is False, "Files should queue for scheduled upload when operational_hours disabled"
+                
             finally:
                 config_file.unlink(missing_ok=True)
                 shutil.rmtree(test_dir, ignore_errors=True)

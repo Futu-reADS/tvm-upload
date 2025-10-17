@@ -3,19 +3,26 @@ Description=TVM Log Upload System
 Documentation=https://github.com/Futu-reADS/tvm-upload
 After=network-online.target
 Wants=network-online.target
+StartLimitBurst=3
+StartLimitIntervalSec=60
 
 [Service]
 Type=simple
-User=autoware
-Group=autoware
-WorkingDirectory=/opt/tvm-upload
+User=pankaj
+Group=pankaj
+WorkingDirectory=/home/pankaj/tvm-upload
 
 # Environment
-Environment="PATH=/opt/tvm-upload/venv/bin:/usr/local/bin:/usr/bin"
+Environment="PATH=/home/pankaj/tvm-upload/venv/bin:/usr/local/bin:/usr/bin"
 Environment="PYTHONUNBUFFERED=1"
 
-# Start command
-ExecStart=/opt/tvm-upload/venv/bin/python /opt/tvm-upload/src/main.py --config /etc/tvm-upload/config.yaml --log-level INFO
+Environment="AWS_SHARED_CREDENTIALS_FILE=/home/pankaj/.aws/credentials"
+Environment="AWS_CONFIG_FILE=/home/pankaj/.aws/config"
+Environment="AWS_PROFILE=china"
+
+
+# Start command (ONLY ONE ExecStart allowed)
+ExecStart=/home/pankaj/tvm-upload/venv/bin/python3 src/main.py --config /etc/tvm-upload/config.yaml --log-level INFO
 
 # Reload configuration on SIGHUP
 ExecReload=/bin/kill -HUP $MAINPID
@@ -23,8 +30,6 @@ ExecReload=/bin/kill -HUP $MAINPID
 # Restart policy
 Restart=on-failure
 RestartSec=10
-StartLimitBurst=3
-StartLimitIntervalSec=60
 
 # Logging
 StandardOutput=journal
@@ -35,7 +40,7 @@ SyslogIdentifier=tvm-upload
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
-ProtectHome=true
+# ProtectHome=true
 ReadWritePaths=/var/log/autoware /var/lib/tvm-upload /tmp
 ProtectKernelTunables=true
 ProtectKernelModules=true
