@@ -394,6 +394,124 @@ monitoring:
         assert system.stats['files_failed'] == 1
         assert system.stats['bytes_uploaded'] == 1024 * 1024 * 100
 
+    def test_age_based_cleanup_scheduling(self, system):
+        """Test age-based cleanup runs at scheduled time"""
+        # Create old files
+        old_file = system.disk_manager.log_directories[0] / "old.log"
+        old_file.write_text("old data")
+        
+        import time, os
+        old_mtime = time.time() - (10 * 24 * 3600)  # 10 days old
+        os.utime(str(old_file), (old_mtime, old_mtime))
+        
+        # Mock age-based cleanup config
+        with patch.object(system.config, 'get') as mock_config:
+            mock_config.side_effect = lambda key, default=None: {
+                'deletion.age_based': {'enabled': True, 'max_age_days': 7, 'schedule_time': '02:00'},
+                'deletion.age_based.enabled': True,
+                'deletion.age_based.max_age_days': 7,
+                'deletion.age_based.schedule_time': '02:00'
+            }.get(key, default)
+            
+            # Run age-based cleanup
+            deleted = system.disk_manager.cleanup_by_age(7)
+            
+            assert deleted >= 1, "Should delete old files"
+            assert not old_file.exists(), "Old file should be deleted"
+
+
+    def test_deferred_deletion_after_upload(self, system, temp_log_dir):
+        """Test file kept for N days after upload when configured"""
+        test_file = temp_log_dir / "test.log"
+        test_file.write_text("test data")
+        
+        # Mock config to keep files for 14 days
+        with patch.object(system.config, 'get') as mock_config:
+            mock_config.side_effect = lambda key, default=None: {
+                'deletion.after_upload': {'enabled': True, 'keep_days': 14},
+                'deletion.after_upload.enabled': True,
+                'deletion.after_upload.keep_days': 14
+            }.get(key, default)
+            
+            # Mock successful upload
+            with patch.object(system.upload_manager, 'upload_file', return_value=True):
+                system._upload_file(str(test_file))
+            
+            # File should still exist (14-day retention)
+            assert test_file.exists(), "File should be kept for 14 days"
+            assert system.disk_manager.get_uploaded_files_count() == 1
+
+
+    def test_immediate_deletion_after_upload(self, system, temp_log_dir):
+        """Test file deleted immediately after upload when keep_days=0"""
+        test_file = temp_log_dir / "test.log"
+        test_file.write_text("test data")
+        
+        # Mock config to delete immediately
+        with patch.object(system.config, 'get') as mock_config:
+            mock_config.side_effect = lambda key, default=None: {
+                'deletion.after_upload': {'enabled': True, 'keep_days': 0},
+                'deletion.after_upload.enabled': True,
+                'deletion.after_upload.keep_days': 0
+            }.get(key, default)
+            
+            # Mock successful upload
+            with patch.object(system.upload_manager, 'upload_file', return_value=True):
+                system._upload_file(str(test_file))
+            
+            # File should be deleted immediately
+            assert not test_file.exists(), "File should be deleted immediately"
+
+
+    def test_emergency_cleanup_triggers_when_enabled(self, system, temp_log_dir):
+        """Test emergency cleanup runs when disk space low and enabled"""
+        # Create a test file and add to queue
+        test_file = temp_log_dir / "test.log"
+        test_file.write_text("test data")
+        system.queue_manager.add_file(str(test_file))
+        
+        # Mock config with emergency enabled
+        with patch.object(system.config, 'get') as mock_config:
+            mock_config.side_effect = lambda key, default=None: {
+                'deletion.emergency.enabled': True,
+                'deletion.after_upload': {'enabled': False}  # Disable deletion to keep test simple
+            }.get(key, default)
+            
+            # Mock successful upload
+            with patch.object(system.upload_manager, 'upload_file', return_value=True):
+                # Mock low disk space AFTER uploads
+                with patch.object(system.disk_manager, 'check_disk_space', return_value=False):
+                    with patch.object(system.disk_manager, 'cleanup_old_files', return_value=5) as mock_cleanup:
+                        system._process_upload_queue()
+                        
+                        # Emergency cleanup should have been called
+                        mock_cleanup.assert_called_once()
+
+
+    def test_emergency_cleanup_skipped_when_disabled(self, system, temp_log_dir):
+        """Test emergency cleanup does NOT run when disabled"""
+        # Create a test file and add to queue
+        test_file = temp_log_dir / "test.log"
+        test_file.write_text("test data")
+        system.queue_manager.add_file(str(test_file))
+        
+        # Mock config with emergency disabled
+        with patch.object(system.config, 'get') as mock_config:
+            mock_config.side_effect = lambda key, default=None: {
+                'deletion.emergency.enabled': False,
+                'deletion.after_upload': {'enabled': False}  # Disable deletion to keep test simple
+            }.get(key, default)
+            
+            # Mock successful upload
+            with patch.object(system.upload_manager, 'upload_file', return_value=True):
+                # Mock low disk space AFTER uploads
+                with patch.object(system.disk_manager, 'check_disk_space', return_value=False):
+                    with patch.object(system.disk_manager, 'cleanup_old_files') as mock_cleanup:
+                        system._process_upload_queue()
+                        
+                        # Emergency cleanup should NOT have been called (disabled)
+                        mock_cleanup.assert_not_called()
+
 
 class TestSignalHandlers:
     """Test signal handling"""

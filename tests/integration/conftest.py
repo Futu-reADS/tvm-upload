@@ -79,9 +79,16 @@ monitoring:
 @pytest.fixture
 def mock_s3_client():
     """Mock S3 client for integration tests"""
+    from botocore.exceptions import ClientError
+    
     mock = Mock()
     mock.upload_file.return_value = None
-    mock.head_object.return_value = {}
+    
+    # Simulate file NOT in S3 (new upload)
+    mock.head_object.side_effect = ClientError(
+        {'Error': {'Code': 'NotFound'}}, 'head_object'
+    )
+    
     mock.delete_object.return_value = {}
     return mock
 

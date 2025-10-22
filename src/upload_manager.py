@@ -11,11 +11,20 @@ import boto3
 import time
 import logging
 from pathlib import Path
-from typing import Optional, Tuple
-from datetime import datetime
+from typing import List
+from datetime import datetime, timedelta
 from botocore.exceptions import ClientError, BotoCoreError
 
 logger = logging.getLogger(__name__)
+
+class UploadError(Exception):
+    """
+    Raised when upload fails after all retries.
+    
+    This exception indicates that the file could not be uploaded
+    even after the maximum number of retry attempts.
+    """
+    pass
 
 class PermanentUploadError(Exception):
     """

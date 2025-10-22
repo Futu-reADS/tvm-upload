@@ -177,6 +177,37 @@ def test_statistics_tracking(mock_cw_boto3, mock_upload_boto3, test_config):
     finally:
         system.stop()
 
+@patch('src.upload_manager.boto3.session.Session')
+@patch('src.cloudwatch_manager.boto3.session.Session')
+def test_complete_upload_and_deletion_flow(mock_cw_boto3, mock_upload_boto3, test_config):
+    """Test complete flow: detect -> upload -> delete with v2.0 policies"""
+    config_file, temp_dir = test_config
+    
+    # Mock boto3
+    mock_upload_boto3.client.return_value = Mock()
+    mock_cw_boto3.client.return_value = Mock()
+    
+    system = TVMUploadSystem(config_file)
+    system.upload_manager.upload_file = Mock(return_value=True)
+    
+    # Create test file
+    test_file = Path(temp_dir) / 'test.log'
+    test_file.write_text('test data' * 1000)
+    
+    # Mock config for immediate deletion
+    with patch.object(system.config, 'get') as mock_config:
+        mock_config.side_effect = lambda key, default=None: {
+            'deletion.after_upload.enabled': True,
+            'deletion.after_upload.keep_days': 0
+        }.get(key, default)
+        
+        # Upload file
+        system._upload_file(str(test_file))
+        
+        # Verify complete flow
+        assert system.stats['files_uploaded'] == 1, "File should be uploaded"
+        assert not test_file.exists(), "File should be deleted after upload"
+
 
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
