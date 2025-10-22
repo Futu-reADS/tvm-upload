@@ -8,6 +8,7 @@ files are complete based on size stability over a configured period.
 
 Version: 2.0 - Added startup scan for existing files
 Version: 2.1 - Added processed files registry to prevent duplicate uploads
+Version: 2.1.1 - Fixed registry file handling for GitHub Actions compatibility
 """
 
 import json  # ← ADD THIS
@@ -330,10 +331,31 @@ class FileMonitor:
         
         Saves in JSON format with metadata for debugging and monitoring.
         Creates parent directories if they don't exist.
+        
+        FIXED: Enhanced error handling and directory creation for GitHub Actions compatibility.
         """
         try:
-            # Ensure directory exists
-            self.registry_file.parent.mkdir(parents=True, exist_ok=True)
+            # Ensure parent directory exists with comprehensive checks
+            parent_dir = self.registry_file.parent
+            
+            # Resolve parent path to handle any symlinks or relative paths
+            parent_dir = parent_dir.resolve()
+            
+            # Create parent directories if they don't exist
+            if not parent_dir.exists():
+                try:
+                    parent_dir.mkdir(parents=True, exist_ok=True)
+                    logger.debug(f"Created registry parent directory: {parent_dir}")
+                except OSError as e:
+                    logger.error(f"Cannot create registry directory {parent_dir}: {e}")
+                    logger.warning("Processed files will not persist across restarts!")
+                    return
+            
+            # Verify parent directory is actually a directory
+            if not parent_dir.is_dir():
+                logger.error(f"Registry parent path is not a directory: {parent_dir}")
+                logger.warning("Processed files will not persist across restarts!")
+                return
             
             # Build registry data with metadata
             registry_data = {
@@ -347,19 +369,35 @@ class FileMonitor:
             
             # Write atomically using temp file
             temp_file = self.registry_file.with_suffix('.json.tmp')
-            with open(temp_file, 'w') as f:
-                json.dump(registry_data, f, indent=2)
             
-            # Atomic rename
-            temp_file.replace(self.registry_file)
-            
-            logger.debug(f"Saved {len(self.processed_files)} entries to registry")
+            try:
+                with open(temp_file, 'w') as f:
+                    json.dump(registry_data, f, indent=2)
+                
+                # Atomic rename
+                temp_file.replace(self.registry_file)
+                
+                logger.debug(f"Saved {len(self.processed_files)} entries to registry: {self.registry_file}")
+                
+            except Exception as write_error:
+                # Clean up temp file if write failed
+                if temp_file.exists():
+                    try:
+                        temp_file.unlink()
+                    except:
+                        pass
+                raise write_error
             
         except PermissionError as e:
             logger.error(f"Permission denied writing registry: {e}")
             logger.warning("Processed files will not persist across restarts!")
+        except FileNotFoundError as e:
+            logger.error(f"Registry path not found: {e}")
+            logger.warning("Processed files will not persist across restarts!")
         except Exception as e:
             logger.error(f"Failed to save processed registry: {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
 
 
     def _is_file_processed(self, file_path: Path) -> bool:
@@ -449,67 +487,61 @@ class FileMonitor:
         """
         path = Path(file_path)
         
-        # Only track regular files (not directories)
-        if not path.is_file():
-            return
-        
-        # Skip hidden files and marker files
+        # Ignore hidden files
         if path.name.startswith('.'):
             return
         
-        # Get current file size
-        try:
-            size = path.stat().st_size
-        except (OSError, FileNotFoundError):
-            # File might have been deleted
+        # Ignore if not a file
+        if not path.is_file():
             return
         
-        # Update tracker
-        current_time = time.time()
-        self.file_tracker[path] = (size, current_time)
+        # Check if already processed (duplicate prevention for startup scan)
+        if self._is_file_processed(path):
+            logger.debug(f"File already processed, skipping: {path.name}")
+            return
         
-        logger.debug(f"Tracking: {path.name} ({size} bytes)")
+        try:
+            size = path.stat().st_size
+            current_time = time.time()
+            
+            # Update tracker
+            if path in self.file_tracker:
+                old_size = self.file_tracker[path][0]
+                if old_size != size:
+                    logger.debug(f"File size changed: {path.name} ({old_size} -> {size} bytes)")
+            else:
+                logger.debug(f"Tracking new file: {path.name} ({size} bytes)")
+            
+            self.file_tracker[path] = (size, current_time)
+            
+        except (OSError, FileNotFoundError):
+            # File might have been deleted between detection and stat
+            logger.debug(f"Could not stat file (might have been deleted): {path.name}")
     
     def _stability_checker(self):
         """
-        Background thread that periodically checks file stability.
+        Background thread that periodically checks for stable files.
         
-        Checks all tracked files to see if they've been stable (unchanged)
-        for the configured stability period. Checks immediately on start,
-        then periodically based on stability_seconds (max 10 second intervals).
+        Runs every second and checks if tracked files have been stable
+        for the required duration. Calls callback for stable files.
         
         Note:
-            Runs in daemon thread, automatically stops when main thread exits
+            Runs in separate thread until _running is False
         """
-        logger.info("Stability checker started")
-        
         while self._running:
+            time.sleep(1)
             self._check_stable_files()
-            
-            # Sleep in small increments so we can stop quickly
-            sleep_time = min(self.stability_seconds, 10)
-            for _ in range(sleep_time):
-                if not self._running:
-                    break
-                time.sleep(1)
-        
-        logger.info("Stability checker stopped")
     
     def _check_stable_files(self):
         """
-        Check all tracked files for stability.
+        Check all tracked files for stability and trigger callbacks.
         
-        For each tracked file:
-        1. Check if it still exists
-        2. Get current size
-        3. Compare with tracked size
-        4. If unchanged for stability_seconds, mark as stable and call callback
+        A file is stable if:
+        1. It still exists
+        2. Its size hasn't changed since last check
+        3. It's been unchanged for stability_seconds
         
-        v2.1: Prevents double-marking by checking registry before AND after callback.
-        This handles batch uploads where files are marked inside _process_upload_queue().
-        
-        Automatically removes deleted files from tracker.
-        Resets timer if file size changes.
+        Stable files are removed from tracker and callback is called.
         """
         logger.debug(f"Checking {len(self.file_tracker)} tracked files")
         current_time = time.time()
