@@ -102,6 +102,24 @@ class TVMUploadSystem:
             critical_threshold=self.config.get('disk.critical_threshold', 0.95)
         )
         
+        # Setup deletion callback to clean registry
+        def on_file_deleted(filepath):
+            """Remove deleted file from registry"""
+            try:
+                file_path = Path(filepath)
+                if self.file_monitor._is_file_processed(file_path):
+                    # Remove from registry
+                    file_key = self.file_monitor._get_file_identity(file_path)
+                    if file_key and file_key in self.file_monitor.processed_files:
+                        del self.file_monitor.processed_files[file_key]
+                        self.file_monitor._save_processed_registry()
+                        logger.debug(f"Removed from registry: {file_path.name}")
+            except Exception as e:
+                logger.warning(f"Failed to remove from registry: {e}")
+
+        self.disk_manager._on_file_deleted_callback = on_file_deleted
+
+
         # Pass config to FileMonitor for startup scan (NEW v2.0)
         self.file_monitor = FileMonitor(
             directories=self.config.get('log_directories'),

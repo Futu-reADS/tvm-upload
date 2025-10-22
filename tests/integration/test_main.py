@@ -487,9 +487,9 @@ monitoring:
                         # Emergency cleanup should have been called
                         mock_cleanup.assert_called_once()
 
-
     def test_emergency_cleanup_skipped_when_disabled(self, system, temp_log_dir):
         """Test emergency cleanup does NOT run when disabled"""
+
         # Create a test file and add to queue
         test_file = temp_log_dir / "test.log"
         test_file.write_text("test data")
@@ -511,6 +511,34 @@ monitoring:
                         
                         # Emergency cleanup should NOT have been called (disabled)
                         mock_cleanup.assert_not_called()
+
+    def test_batch_upload_marks_files_in_registry(self, system, temp_log_dir):
+        """Test that batch-uploaded files are marked in registry (v2.1 feature)"""
+        # Create test files
+        files = []
+        for i in range(3):
+            f = temp_log_dir / f"batch{i}.log"
+            f.write_bytes(b'test data' * 1000)
+            files.append(f)
+            system.queue_manager.add_file(str(f))
+        
+        assert system.queue_manager.get_queue_size() == 3
+        
+        # Mock successful upload
+        with patch.object(system.upload_manager, 'upload_file', return_value=True):
+            results = system._process_upload_queue()
+        
+        # Verify all succeeded
+        assert len(results) == 3
+        assert all(results.values()), "All uploads should succeed"
+        
+        # CRITICAL: Verify marked in registry
+        for f in files:
+            is_processed = system.file_monitor._is_file_processed(Path(f))
+            assert is_processed, f"{f.name} should be in registry after batch upload"
+        
+        # Verify queue empty
+        assert system.queue_manager.get_queue_size() == 0
 
 
 class TestSignalHandlers:

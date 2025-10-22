@@ -55,10 +55,10 @@ class DiskManager:
     """
     
     def __init__(self, 
-                 log_directories: List[str],
-                 reserved_gb: float = 70.0,
-                 warning_threshold: float = 0.90,
-                 critical_threshold: float = 0.95):
+             log_directories: List[str],
+             reserved_gb: float = 70.0,
+             warning_threshold: float = 0.90,
+             critical_threshold: float = 0.95):
         """
         Initialize disk manager.
         
@@ -81,6 +81,9 @@ class DiskManager:
         # If keep_days=0, timestamp is 0 (delete immediately)
         # If keep_days=14, timestamp is upload_time + 14 days
         self.uploaded_files: Dict[str, float] = {}
+        
+        # Callback for registry cleanup (set by main.py)
+        self._on_file_deleted_callback = None
         
         logger.info("Initialized")
         logger.info(f"Reserved space: {reserved_gb} GB")
@@ -174,9 +177,9 @@ class DiskManager:
     
     def cleanup_deferred_deletions(self) -> int:
         """
-        Delete files whose keep_until time has expired (NEW v2.0).
+        Delete files whose deletion time has arrived (NEW v2.0).
         
-        Checks all uploaded files and deletes those that:
+        Checks all tracked uploaded files and deletes those that:
         - Have delete_after = 0 (immediate deletion)
         - Have delete_after < current_time (retention period expired)
         
@@ -203,7 +206,12 @@ class DiskManager:
                         freed_bytes += size
                         deleted_count += 1
                         logger.info(f"Deleted deferred file: {filepath.name} "
-                                  f"({size / (1024**2):.2f} MB)")
+                                f"({size / (1024**2):.2f} MB)")
+                        
+                        # Notify about deletion for registry cleanup
+                        if self._on_file_deleted_callback:
+                            self._on_file_deleted_callback(filepath_str)
+                            
                     except Exception as e:
                         logger.error(f"Error deleting {filepath}: {e}")
                 
@@ -212,7 +220,7 @@ class DiskManager:
         
         if deleted_count > 0:
             logger.info(f"Deferred deletion: {deleted_count} files, "
-                       f"{freed_bytes / (1024**3):.2f} GB freed")
+                    f"{freed_bytes / (1024**3):.2f} GB freed")
         
         return deleted_count
     
@@ -260,21 +268,26 @@ class DiskManager:
                             age_days = (time.time() - mtime) / 86400
                             
                             logger.info(f"Deleting old file: {file_path.name} "
-                                      f"({age_days:.1f} days old, {size / (1024**2):.1f} MB)")
+                                    f"({age_days:.1f} days old, {size / (1024**2):.1f} MB)")
                             
                             file_path.unlink()
                             deleted_count += 1
                             freed_bytes += size
                             
                             # Remove from uploaded tracking if present
-                            self.uploaded_files.pop(str(file_path.resolve()), None)
+                            filepath_str = str(file_path.resolve())
+                            self.uploaded_files.pop(filepath_str, None)
+                            
+                            # Notify about deletion for registry cleanup
+                            if self._on_file_deleted_callback:
+                                self._on_file_deleted_callback(filepath_str)
                             
                     except Exception as e:
                         logger.error(f"Error deleting {file_path}: {e}")
         
         if deleted_count > 0:
             logger.info(f"Age-based cleanup: {deleted_count} files deleted, "
-                       f"{freed_bytes / (1024**3):.2f} GB freed")
+                    f"{freed_bytes / (1024**3):.2f} GB freed")
         else:
             logger.info(f"Age-based cleanup: no files older than {max_age_days} days found")
         
@@ -345,12 +358,19 @@ class DiskManager:
                 filepath.unlink()
                 freed_bytes += size
                 deleted_count += 1
-                self.uploaded_files.pop(str(filepath.resolve()), None)
+                
+                filepath_str = str(filepath.resolve())
+                self.uploaded_files.pop(filepath_str, None)
+                
+                # Notify about deletion for registry cleanup
+                if self._on_file_deleted_callback:
+                    self._on_file_deleted_callback(filepath_str)
+                    
             except Exception as e:
                 logger.error(f"Error deleting {filepath}: {e}")
         
         logger.info(f"EMERGENCY cleanup complete: {deleted_count} files, "
-                   f"{freed_bytes / (1024**3):.2f} GB freed")
+                f"{freed_bytes / (1024**3):.2f} GB freed")
         
         return deleted_count
     
@@ -427,12 +447,18 @@ class DiskManager:
                 deleted_count += 1
                 
                 # Remove from uploaded tracking if present
-                self.uploaded_files.pop(str(filepath.resolve()), None)
+                filepath_str = str(filepath.resolve())
+                self.uploaded_files.pop(filepath_str, None)
+                
+                # Notify about deletion for registry cleanup
+                if self._on_file_deleted_callback:
+                    self._on_file_deleted_callback(filepath_str)
                 
             except Exception as e:
                 logger.error(f"Error deleting {filepath}: {e}")
         
-        logger.warning(f" EMERGENCY CLEANUP: {deleted_count} files deleted, ")
+        logger.warning(f"🚨 EMERGENCY CLEANUP: {deleted_count} files deleted, "
+                    f"{freed_bytes / (1024**3):.2f} GB freed")
         
         return deleted_count
     
