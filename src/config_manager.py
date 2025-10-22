@@ -196,17 +196,92 @@ class ConfigManager:
     
     def _validate_upload_config(self, upload_config: Dict[str, Any]) -> None:
         """Validate upload configuration section."""
-        # Validate schedule
+        
+        # ==========================================
+        # Validate schedule (UPDATED for new format)
+        # ==========================================
         if 'schedule' not in upload_config:
             raise ConfigValidationError("Missing upload.schedule")
         
         schedule = upload_config['schedule']
-        if not self._is_valid_time_format(schedule):
+        
+        # Support backward compatibility (string format: "15:00")
+        if isinstance(schedule, str):
+            if not self._is_valid_time_format(schedule):
+                raise ConfigValidationError(
+                    f"upload.schedule must be in HH:MM format, got: {schedule}"
+                )
+        
+        # New object format
+        elif isinstance(schedule, dict):
+            # Validate mode
+            if 'mode' not in schedule:
+                raise ConfigValidationError("Missing upload.schedule.mode")
+            
+            mode = schedule['mode']
+            valid_modes = ['daily', 'interval']
+            if mode not in valid_modes:
+                raise ConfigValidationError(
+                    f"upload.schedule.mode must be one of {valid_modes}, got: {mode}"
+                )
+            
+            # Validate daily_time (for daily mode)
+            if mode == 'daily':
+                if 'daily_time' not in schedule:
+                    raise ConfigValidationError(
+                        "upload.schedule.daily_time required when mode='daily'"
+                    )
+                
+                if not self._is_valid_time_format(schedule['daily_time']):
+                    raise ConfigValidationError(
+                        f"upload.schedule.daily_time must be HH:MM format, got: {schedule['daily_time']}"
+                    )
+            
+            # Validate interval settings (for interval mode)
+            if mode == 'interval':
+                interval_hours = schedule.get('interval_hours', 0)
+                interval_minutes = schedule.get('interval_minutes', 0)
+                
+                if not isinstance(interval_hours, (int, float)):
+                    raise ConfigValidationError(
+                        "upload.schedule.interval_hours must be a number"
+                    )
+                
+                if not isinstance(interval_minutes, (int, float)):
+                    raise ConfigValidationError(
+                        "upload.schedule.interval_minutes must be a number"
+                    )
+                
+                if interval_hours < 0 or interval_minutes < 0:
+                    raise ConfigValidationError(
+                        "upload.schedule intervals must be >= 0"
+                    )
+                
+                if interval_hours == 0 and interval_minutes == 0:
+                    raise ConfigValidationError(
+                        "upload.schedule: at least one interval must be > 0"
+                    )
+                
+                # Check reasonable limits
+                total_minutes = interval_hours * 60 + interval_minutes
+                if total_minutes < 5:
+                    raise ConfigValidationError(
+                        "upload.schedule: minimum interval is 5 minutes"
+                    )
+                
+                if total_minutes > 24 * 60:
+                    raise ConfigValidationError(
+                        "upload.schedule: maximum interval is 24 hours"
+                    )
+        
+        else:
             raise ConfigValidationError(
-                f"upload.schedule must be in HH:MM format, got: {schedule}"
+                "upload.schedule must be string (HH:MM) or object with 'mode'"
             )
         
+        # ==========================================
         # Validate file_stable_seconds (optional)
+        # ==========================================
         if 'file_stable_seconds' in upload_config:
             stable_secs = upload_config['file_stable_seconds']
             if not isinstance(stable_secs, (int, float)) or stable_secs < 0:
@@ -214,7 +289,9 @@ class ConfigManager:
                     "upload.file_stable_seconds must be a non-negative number"
                 )
         
+        # ==========================================
         # Validate operational_hours (optional)
+        # ==========================================
         if 'operational_hours' in upload_config:
             op_hours = upload_config['operational_hours']
             if 'enabled' in op_hours and not isinstance(op_hours['enabled'], bool):
@@ -238,7 +315,9 @@ class ConfigManager:
                         f"upload.operational_hours.end must be HH:MM format"
                     )
         
-        # Validate scan_existing_files (NEW in v2.0)
+        # ==========================================
+        # Validate scan_existing_files (v2.0)
+        # ==========================================
         if 'scan_existing_files' in upload_config:
             scan_config = upload_config['scan_existing_files']
             
@@ -253,6 +332,85 @@ class ConfigManager:
                     raise ConfigValidationError(
                         "upload.scan_existing_files.max_age_days must be >= 0"
                     )
+        
+        # ==========================================
+        # Validate processed_files_registry (NEW v2.1)
+        # ==========================================
+        if 'processed_files_registry' in upload_config:
+            registry = upload_config['processed_files_registry']
+            
+            if 'registry_file' in registry:
+                if not isinstance(registry['registry_file'], str):
+                    raise ConfigValidationError(
+                        "upload.processed_files_registry.registry_file must be string"
+                    )
+            
+            if 'retention_days' in registry:
+                retention = registry['retention_days']
+                if not isinstance(retention, (int, float)) or retention <= 0:
+                    raise ConfigValidationError(
+                        "upload.processed_files_registry.retention_days must be > 0"
+                    )
+        
+        # ==========================================
+        # Validate batch_upload (NEW v2.1)
+        # ==========================================
+        if 'batch_upload' in upload_config:
+            batch = upload_config['batch_upload']
+            
+            if 'enabled' in batch and not isinstance(batch['enabled'], bool):
+                raise ConfigValidationError(
+                    "upload.batch_upload.enabled must be boolean"
+                )
+            
+            if 'include_run_directory' in batch and not isinstance(batch['include_run_directory'], bool):
+                raise ConfigValidationError(
+                    "upload.batch_upload.include_run_directory must be boolean"
+                )
+        
+        # ==========================================
+        # Validate directory_configs (NEW v2.1)
+        # ==========================================
+        if 'directory_configs' in upload_config:
+            dir_configs = upload_config['directory_configs']
+            
+            if not isinstance(dir_configs, list):
+                raise ConfigValidationError(
+                    "upload.directory_configs must be a list"
+                )
+            
+            for i, dir_config in enumerate(dir_configs):
+                if not isinstance(dir_config, dict):
+                    raise ConfigValidationError(
+                        f"upload.directory_configs[{i}] must be a dictionary"
+                    )
+                
+                # Validate 'path' field (required)
+                if 'path' not in dir_config:
+                    raise ConfigValidationError(
+                        f"upload.directory_configs[{i}]: missing required field 'path'"
+                    )
+                
+                if not isinstance(dir_config['path'], str):
+                    raise ConfigValidationError(
+                        f"upload.directory_configs[{i}].path must be string"
+                    )
+                
+                # Validate 'type' field (optional)
+                if 'type' in dir_config:
+                    valid_types = ['ros_log', 'system_log', 'bag_log', 'default']
+                    if dir_config['type'] not in valid_types:
+                        raise ConfigValidationError(
+                            f"upload.directory_configs[{i}].type must be one of {valid_types}, "
+                            f"got: {dir_config['type']}"
+                        )
+                
+                # Validate boolean fields (optional)
+                for flag in ['include_run_directory', 'match_by_pid']:
+                    if flag in dir_config and not isinstance(dir_config[flag], bool):
+                        raise ConfigValidationError(
+                            f"upload.directory_configs[{i}].{flag} must be boolean"
+                        )
     
     def _validate_disk_config(self, disk_config: Dict[str, Any]) -> None:
         """Validate disk configuration section."""

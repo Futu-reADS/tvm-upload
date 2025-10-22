@@ -143,6 +143,49 @@ class QueueManager:
                 break
         
         self.save_queue()
+
+    def mark_permanent_failure(self, filepath: str, reason: str):
+        """
+        Remove file from queue after permanent failure.
+        
+        Used when a file cannot be uploaded due to permanent errors that
+        won't resolve by retrying (corrupted file, permission denied, etc.).
+        
+        Unlike mark_failed(), this REMOVES the file from queue entirely
+        instead of incrementing the attempt counter.
+        
+        Args:
+            filepath: Path to permanently failed file
+            reason: Reason for permanent failure (for logging)
+            
+        Example:
+            >>> queue_manager.mark_permanent_failure(
+            ...     '/var/log/corrupted.log',
+            ...     'Disk read error: bad sector'
+            ... )
+        """
+        original_size = len(self.queue)
+        
+        # Remove file from queue
+        self.queue = [
+            entry for entry in self.queue
+            if entry['filepath'] != filepath
+        ]
+        
+        removed = original_size - len(self.queue)
+        
+        if removed > 0:
+            logger.error(
+                f"PERMANENT FAILURE - removed from queue: {Path(filepath).name} "
+                f"(reason: {reason})"
+            )
+            logger.info(
+                f"This file will NOT be retried. "
+                f"Manual intervention required if upload is needed."
+            )
+            self.save_queue()
+        else:
+            logger.debug(f"File not in queue (already removed): {Path(filepath).name}")
     
     def get_queue_size(self) -> int:
         """Get number of files in queue."""

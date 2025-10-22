@@ -7,13 +7,16 @@ Uses watchdog library to monitor filesystem events and determines when
 files are complete based on size stability over a configured period.
 
 Version: 2.0 - Added startup scan for existing files
+Version: 2.1 - Added processed files registry to prevent duplicate uploads
 """
 
+import json  # ← ADD THIS
 import time
 import threading
 import logging
 from pathlib import Path
 from typing import Callable, Dict, Tuple, List
+from datetime import datetime  # ← ADD THIS
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler, FileCreatedEvent, FileModifiedEvent
 
@@ -51,10 +54,10 @@ class FileMonitor:
     """
     
     def __init__(self, 
-                 directories: List[str], 
-                 callback: Callable[[str], None],
-                 stability_seconds: int = 60,
-                 config: dict = None):
+             directories: List[str], 
+             callback: Callable[[str], None],
+             stability_seconds: int = 60,
+             config: dict = None):
         """
         Initialize file monitor.
         
@@ -72,8 +75,21 @@ class FileMonitor:
         self.stability_seconds = stability_seconds
         self.config = config or {}
         
-        # Track file sizes: {filepath: (size, last_check_time)}
+        # In-memory: Track files currently being written (stability check)
+        # Format: {Path: (size, last_check_time)}
         self.file_tracker: Dict[Path, Tuple[int, float]] = {}
+        
+        # Persistent: Track files already uploaded (duplicate prevention)
+        # Load registry settings from config
+        registry_config = self.config.get('upload', {}).get('processed_files_registry', {})
+        self.registry_file = Path(registry_config.get(
+            'registry_file', 
+            '/var/lib/tvm-upload/processed_files.json'
+        ))
+        self.registry_retention_days = registry_config.get('retention_days', 30)
+        
+        # Load processed files registry
+        self.processed_files: Dict[str, dict] = self._load_processed_registry()
         
         # Watchdog components
         self.observer = Observer()
@@ -85,6 +101,39 @@ class FileMonitor:
         
         logger.info(f"Initialized monitoring {len(directories)} directories")
         logger.info(f"Stability period: {stability_seconds} seconds")
+        logger.info(f"Processed files registry: {self.registry_file}")
+        logger.info(f"Registry retention: {self.registry_retention_days} days")
+        logger.info(f"Registry loaded: {len(self.processed_files)} entries")
+    
+    def _get_file_identity(self, file_path: Path) -> str:
+        """
+        Generate unique file identity key using path + size + mtime.
+        
+        This ensures same filename on different days = different files.
+        Format: {absolute_path}::{size}::{mtime}
+        
+        Args:
+            file_path: Path to file
+            
+        Returns:
+            str: Unique identifier (e.g., "/var/log/file.log::1024::1705132800.0")
+            None: If file cannot be accessed
+            
+        Example:
+            >>> _get_file_identity(Path('/var/log/test.log'))
+            '/var/log/test.log::104857600::1705132800.123'
+        """
+        try:
+            stat = file_path.stat()
+            size = stat.st_size
+            mtime = stat.st_mtime
+            
+            # Create unique key: filepath::size::mtime
+            return f"{file_path.resolve()}::{size}::{mtime}"
+        except (OSError, FileNotFoundError) as e:
+            logger.debug(f"Cannot get identity for {file_path}: {e}")
+            return None
+    
     
     def start(self):
         """
@@ -93,6 +142,7 @@ class FileMonitor:
         Starts the watchdog observer and stability checker thread.
         Creates directories if they don't exist.
         Optionally scans for existing files based on configuration (NEW v2.0).
+        Uses processed files registry to prevent duplicate uploads (NEW v2.1).
         
         Note:
             Safe to call multiple times - will not start if already running
@@ -108,47 +158,66 @@ class FileMonitor:
                 logger.info(f"Creating directory: {directory}")
                 directory.mkdir(parents=True, exist_ok=True)
         
-        # ===== NEW: Configurable startup scan (v2.0) =====
+        # ===== Startup scan with duplicate prevention =====
         scan_config = self.config.get('upload', {}).get('scan_existing_files', {})
         
         if scan_config.get('enabled', True):  # Default: enabled
-            max_age_days = scan_config.get('max_age_days', 3)  # Default: 3 days (Maeda-san's choice)
+            max_age_days = scan_config.get('max_age_days', 3)
             
             logger.info(f"Scanning for existing files (max age: {max_age_days} days)...")
             
             cutoff_time = time.time() - (max_age_days * 24 * 3600)
             existing_count = 0
-            skipped_count = 0
+            skipped_processed = 0
+            skipped_tracked = 0
+            skipped_old = 0
             
             for directory in self.directories:
+                if not directory.exists():
+                    continue
+                
                 for file_path in directory.iterdir():
-                    if file_path.is_file() and not file_path.name.startswith('.'):
-                        try:
-                            mtime = file_path.stat().st_mtime
+                    if not file_path.is_file() or file_path.name.startswith('.'):
+                        continue
+                    
+                    try:
+                        mtime = file_path.stat().st_mtime
+                        
+                        # ✅ Check 1: Already processed? (with metadata)
+                        if self._is_file_processed(file_path):
+                            skipped_processed += 1
+                            continue
+                        
+                        # ✅ Check 2: Already tracking? (in-memory)
+                        if file_path in self.file_tracker:
+                            logger.debug(f"Skipping already-tracked file: {file_path.name}")
+                            skipped_tracked += 1
+                            continue
+                        
+                        # ✅ Check 3: Within age window?
+                        if max_age_days == 0 or mtime > cutoff_time:
+                            self._on_file_event(str(file_path))
+                            existing_count += 1
+                            logger.debug(f"Found existing file: {file_path.name}")
+                        else:
+                            age_days = (time.time() - mtime) / 86400
+                            logger.debug(
+                                f"Skipping old file: {file_path.name} "
+                                f"({age_days:.1f} days old, cutoff: {max_age_days} days)"
+                            )
+                            skipped_old += 1
                             
-                            if max_age_days == 0 or mtime > cutoff_time:
-
-                                # Only add if not already tracked
-                                if file_path in self.file_tracker:
-                                    logger.debug(f"Skipping already-tracked file: {file_path.name}")
-                                    continue
-                                # Add to tracker for stability check
-                                self._on_file_event(str(file_path))
-                                existing_count += 1
-                                logger.debug(f"Found existing file: {file_path.name}")
-                            else:
-                                logger.debug(f"Skipping old file: {file_path.name} "
-                                           f"({(time.time() - mtime) / 86400:.1f} days old)")
-                                skipped_count += 1
-                        except (OSError, FileNotFoundError) as e:
-                            logger.debug(f"Error checking file {file_path}: {e}")
+                    except (OSError, FileNotFoundError) as e:
+                        logger.debug(f"Error checking file {file_path}: {e}")
             
-            logger.info(f"Startup scan complete: {existing_count} files added to queue")
-            if skipped_count > 0:
-                logger.info(f"Skipped {skipped_count} files older than {max_age_days} days")
+            logger.info(
+                f"Startup scan complete: {existing_count} files added, "
+                f"{skipped_processed} already processed, "
+                f"{skipped_tracked} already tracked, "
+                f"{skipped_old} too old"
+            )
         else:
             logger.info("Startup scan disabled - will only upload new files created after startup")
-        # ===== END NEW =====
         
         # Start watchdog observer
         for directory in self.directories:
@@ -163,6 +232,8 @@ class FileMonitor:
         
         logger.info("Started monitoring")
     
+
+
     def stop(self):
         """
         Stop monitoring directories.
@@ -188,6 +259,181 @@ class FileMonitor:
         
         logger.info("Stopped monitoring")
     
+    def _load_processed_registry(self) -> dict:
+        """
+        Load processed files registry from disk with automatic cleanup.
+        
+        Registry format:
+        {
+            "filepath::size::mtime": {
+                "processed_at": timestamp,
+                "size": bytes,
+                "mtime": timestamp,
+                "filepath": str,
+                "filename": str
+            }
+        }
+        
+        Cleanup actions:
+        - Remove entries older than retention_days
+        
+        Returns:
+            dict: Loaded registry (empty dict if file doesn't exist)
+        """
+        if not self.registry_file.exists():
+            logger.info("No existing processed files registry, starting fresh")
+            return {}
+        
+        try:
+            with open(self.registry_file, 'r') as f:
+                data = json.load(f)
+            
+            # Handle both old and new format
+            if '_metadata' in data:
+                files_data = data.get('files', {})
+            else:
+                # Legacy format (flat dict)
+                files_data = data
+            
+            original_count = len(files_data)
+            cutoff_time = time.time() - (self.registry_retention_days * 24 * 3600)
+            
+            # Remove time-expired entries
+            cleaned = {
+                key: meta 
+                for key, meta in files_data.items() 
+                if meta.get('processed_at', 0) > cutoff_time
+            }
+            
+            removed = original_count - len(cleaned)
+            if removed > 0:
+                logger.info(
+                    f"Registry cleanup: removed {removed}/{original_count} old entries "
+                    f"(retention: {self.registry_retention_days} days)"
+                )
+            
+            logger.info(f"Loaded {len(cleaned)} processed files from registry")
+            return cleaned
+            
+        except json.JSONDecodeError as e:
+            logger.error(f"Registry file corrupted: {e}")
+            logger.warning("Starting with empty registry")
+            return {}
+        except Exception as e:
+            logger.error(f"Failed to load processed registry: {e}")
+            return {}
+
+
+    def _save_processed_registry(self):
+        """
+        Save processed files registry to disk with metadata.
+        
+        Saves in JSON format with metadata for debugging and monitoring.
+        Creates parent directories if they don't exist.
+        """
+        try:
+            # Ensure directory exists
+            self.registry_file.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Build registry data with metadata
+            registry_data = {
+                '_metadata': {
+                    'last_updated': datetime.now().isoformat(),
+                    'total_entries': len(self.processed_files),
+                    'retention_days': self.registry_retention_days
+                },
+                'files': self.processed_files
+            }
+            
+            # Write atomically using temp file
+            temp_file = self.registry_file.with_suffix('.json.tmp')
+            with open(temp_file, 'w') as f:
+                json.dump(registry_data, f, indent=2)
+            
+            # Atomic rename
+            temp_file.replace(self.registry_file)
+            
+            logger.debug(f"Saved {len(self.processed_files)} entries to registry")
+            
+        except PermissionError as e:
+            logger.error(f"Permission denied writing registry: {e}")
+            logger.warning("Processed files will not persist across restarts!")
+        except Exception as e:
+            logger.error(f"Failed to save processed registry: {e}")
+
+
+    def _is_file_processed(self, file_path: Path) -> bool:
+        """
+        Check if file has already been processed (uploaded).
+        
+        Uses file identity (path + size + mtime) to detect:
+        - Same file rescanned: SKIP (already processed)
+        - Same filename, different day: PROCESS (new file)
+        
+        Args:
+            file_path: Path to check
+            
+        Returns:
+            bool: True if already processed, False if new
+        """
+        file_identity = self._get_file_identity(file_path)
+        
+        if file_identity is None:
+            return False
+        
+        is_processed = file_identity in self.processed_files
+        
+        if is_processed:
+            meta = self.processed_files[file_identity]
+            processed_time = datetime.fromtimestamp(meta['processed_at']).isoformat()
+            logger.debug(
+                f"File already processed: {file_path.name} "
+                f"(processed at {processed_time}, size: {meta['size']} bytes)"
+            )
+        
+        return is_processed
+
+
+    def _mark_file_processed(self, file_path: Path):
+        """
+        Mark file as processed with metadata.
+        
+        Stores:
+        - File identity (path::size::mtime)
+        - Processing timestamp
+        - File size and mtime
+        - Filepath and filename for debugging
+        
+        Args:
+            file_path: Path to mark as processed
+        """
+        file_identity = self._get_file_identity(file_path)
+        
+        if file_identity is None:
+            logger.warning(f"Cannot mark file as processed (stat failed): {file_path}")
+            return
+        
+        try:
+            stat = file_path.stat()
+            
+            self.processed_files[file_identity] = {
+                'processed_at': time.time(),
+                'size': stat.st_size,
+                'mtime': stat.st_mtime,
+                'filepath': str(file_path.resolve()),
+                'filename': file_path.name
+            }
+            
+            self._save_processed_registry()
+            
+            logger.info(
+                f"Marked as processed: {file_path.name} "
+                f"(size: {stat.st_size / (1024**2):.2f} MB)"
+            )
+            
+        except Exception as e:
+            logger.error(f"Failed to mark file as processed: {e}")
+
     def _on_file_event(self, file_path: str):
         """
         Called when watchdog detects a file create or modify event.
@@ -259,6 +505,9 @@ class FileMonitor:
         3. Compare with tracked size
         4. If unchanged for stability_seconds, mark as stable and call callback
         
+        v2.1: Prevents double-marking by checking registry before AND after callback.
+        This handles batch uploads where files are marked inside _process_upload_queue().
+        
         Automatically removes deleted files from tracker.
         Resets timer if file size changes.
         """
@@ -269,22 +518,25 @@ class FileMonitor:
         for file_path, (tracked_size, last_check) in list(self.file_tracker.items()):
             # Check if file still exists
             if not file_path.exists():
-                # File was deleted, remove from tracker
                 del self.file_tracker[file_path]
+                logger.debug(f"File deleted, removed from tracker: {file_path.name}")
                 continue
             
             # Get current size
             try:
                 current_size = file_path.stat().st_size
             except (OSError, FileNotFoundError):
-                # File disappeared, remove from tracker
                 del self.file_tracker[file_path]
+                logger.debug(f"File disappeared, removed from tracker: {file_path.name}")
                 continue
             
             # Check if size changed
             if current_size != tracked_size:
-                # Size changed, update tracker
                 self.file_tracker[file_path] = (current_size, current_time)
+                logger.debug(
+                    f"File size changed: {file_path.name} "
+                    f"({tracked_size} -> {current_size} bytes)"
+                )
                 continue
             
             # Check if stable for required duration
@@ -294,16 +546,60 @@ class FileMonitor:
         
         # Process stable files
         for file_path in stable_files:
-            logger.info(f"File stable: {file_path.name} ({self.file_tracker[file_path][0]} bytes)")
+            logger.info(
+                f"File stable: {file_path.name} "
+                f"({self.file_tracker[file_path][0] / (1024**2):.2f} MB)"
+            )
             
-            # Remove from tracker (so we don't process it again)
+            # Step 1: Remove from tracker (no longer monitoring)
             del self.file_tracker[file_path]
             
-            # Call callback
+            # Step 2: Check if already processed (safety check - prevents duplicate uploads)
+            if self._is_file_processed(file_path):
+                logger.info(f"File already processed (skipping duplicate): {file_path.name}")
+                continue
+            
+            # Step 3: Call callback (upload) and check result
+            upload_success = False
             try:
-                self.callback(str(file_path))
+                upload_success = self.callback(str(file_path))
+                
+                if upload_success is None:
+                    logger.warning(f"Callback returned None, assuming success: {file_path.name}")
+                    upload_success = True
+                    
             except Exception as e:
                 logger.error(f"Callback failed for {file_path}: {e}")
+                import traceback
+                logger.debug(traceback.format_exc())
+                upload_success = False
+            
+            # ===== Step 4: Check registry AGAIN after callback =====
+            # For batch uploads, file may have been marked inside _process_upload_queue()
+            # If so, don't mark again (prevents double-marking + double disk write)
+            if self._is_file_processed(file_path):
+                if upload_success:
+                    logger.debug(
+                        f"✓ Already marked during upload (batch): {file_path.name} "
+                        f"(skipping duplicate mark)"
+                    )
+                else:
+                    logger.warning(
+                        f"File marked as processed but callback returned False: {file_path.name} "
+                        f"(possible race condition or batch upload)"
+                    )
+                continue  # ← Skip marking
+            # ===== END Step 4 =====
+            
+            # Step 5: Mark as processed ONLY if success AND not already marked
+            if upload_success:
+                self._mark_file_processed(file_path)
+                logger.info(f"✓ Uploaded + marked as processed: {file_path.name}")
+            else:
+                logger.warning(
+                    f"✗ Upload failed, NOT marking as processed: {file_path.name} "
+                    f"(will retry on next restart if within scan age)"
+                )
     
     def get_tracked_files(self) -> List[str]:
         """
@@ -316,6 +612,32 @@ class FileMonitor:
             Useful for debugging and monitoring
         """
         return [str(p) for p in self.file_tracker.keys()]
+    
+    def mark_file_as_processed_externally(self, filepath: str):
+        """
+        Mark a file as processed externally (called by main.py).
+        
+        Used when files are uploaded outside the normal callback flow:
+        - Batch uploads (other files in the batch)
+        - Scheduled uploads (files uploaded by schedule, not by stability trigger)
+        
+        This prevents duplicate uploads on service restart.
+        
+        Args:
+            filepath: Path to file that was successfully uploaded
+            
+        Example:
+            >>> # After successful batch upload in main.py
+            >>> file_monitor.mark_file_as_processed_externally('/var/log/file.log')
+        """
+        file_path = Path(filepath)
+        
+        # Safety check: Only mark if not already processed
+        if not self._is_file_processed(file_path):
+            self._mark_file_processed(file_path)
+            logger.info(f"✓ Marked as processed (external): {file_path.name}")
+        else:
+            logger.debug(f"Already marked as processed: {file_path.name}")
 
 
 class LogFileHandler(FileSystemEventHandler):

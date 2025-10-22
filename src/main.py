@@ -25,7 +25,7 @@ import threading
 
 from config_manager import ConfigManager
 from file_monitor import FileMonitor
-from upload_manager import UploadManager
+from upload_manager import UploadManager, PermanentUploadError
 from disk_manager import DiskManager
 from cloudwatch_manager import CloudWatchManager
 from queue_manager import QueueManager
@@ -81,7 +81,7 @@ class TVMUploadSystem:
             FileNotFoundError: If config file doesn't exist
             ConfigValidationError: If config is invalid
         """
-        logger.info("Initializing TVM Upload System v2.0...")
+        logger.info("Initializing TVM Upload System v2.1...")
         
         # Load configuration
         self.config = ConfigManager(config_path)
@@ -90,7 +90,9 @@ class TVMUploadSystem:
         self.upload_manager = UploadManager(
             bucket=self.config.get('s3.bucket'),
             region=self.config.get('s3.region'),
-            vehicle_id=self.config.get('vehicle_id')
+            vehicle_id=self.config.get('vehicle_id'),
+            profile_name=self.config.get('s3.profile'),
+            log_directories=self.config.get('log_directories')  # ← NEW: Pass directories
         )
         
         self.disk_manager = DiskManager(
@@ -117,6 +119,11 @@ class TVMUploadSystem:
         self.queue_manager = QueueManager(
             queue_file=self.config.get('upload.queue_file', '/var/lib/tvm-upload/queue.json')
         )
+        
+        # ===== NEW: Load additional config settings (v2.1) =====
+        self.batch_upload_enabled = self.config.get('upload.batch_upload.enabled', True)
+        self.upload_on_start = self.config.get('upload.upload_on_start', True)
+        # ===== END NEW =====
         
         # Runtime state
         self._running = False
@@ -191,6 +198,7 @@ class TVMUploadSystem:
         
         Starts file monitoring and scheduling thread.
         Checks disk space before starting and runs cleanup if needed.
+        Optionally uploads queued files immediately on start (v2.1).
         
         Note:
             Safe to call multiple times - will not start if already running
@@ -216,13 +224,37 @@ class TVMUploadSystem:
         # Start file monitoring (includes startup scan)
         self.file_monitor.start()
         
+        # ===== UPDATED: Upload on start with registry marking =====
+        if self.upload_on_start and self.queue_manager.get_queue_size() > 0:
+            queue_size = self.queue_manager.get_queue_size()
+            logger.info(
+                f"upload_on_start enabled - uploading {queue_size} queued files immediately"
+            )
+            
+            # Upload and mark registry
+            upload_results = self._process_upload_queue()
+            
+            successful_count = sum(1 for s in upload_results.values() if s)
+            failed_count = len(upload_results) - successful_count
+            
+            logger.info(
+                f"Startup upload complete: {successful_count} files uploaded, "
+                f"{failed_count} failed"
+            )
+        elif not self.upload_on_start and self.queue_manager.get_queue_size() > 0:
+            logger.info(
+                f"upload_on_start disabled - {self.queue_manager.get_queue_size()} files "
+                f"queued for next scheduled upload"
+            )
+        # ===== END UPDATED =====
+        
         # Start scheduling thread
         self._running = True
         self._schedule_thread = threading.Thread(target=self._schedule_loop, daemon=True)
         self._schedule_thread.start()
         
         logger.info("System started successfully")
-        logger.info(f"Upload schedule: {self.config.get('upload.schedule')} daily")
+        logger.info(f"Upload schedule: {self.config.get('upload.schedule')}")
         logger.info(f"Monitoring directories: {len(self.config.get('log_directories'))}")
     
     def stop(self):
@@ -260,22 +292,33 @@ class TVMUploadSystem:
         
         logger.info("Shutdown complete")
     
-    def _on_file_ready(self, filepath: str):
+    def _on_file_ready(self, filepath: str) -> bool:
         """
         Callback when file monitor detects a stable file.
         
         Adds file to upload queue. Files are uploaded either:
-        1. At scheduled time (always)
-        2. Immediately if within operational hours (optional)
+        1. Immediately if within operational hours (optional)
+        2. At scheduled interval (always)
         
         Args:
             filepath: Path to stable file
+            
+        Returns:
+            bool: True if file was successfully uploaded, False if queued or failed
+            
+        Note:
+            Return value is used by file_monitor to decide whether to mark
+            file as processed in registry (only mark if upload succeeded).
+            
+            For batch uploads, registry marking happens in _process_upload_queue()
+            for all files in the batch, and this function returns the status for
+            the specific file that triggered the batch.
         """
         self.stats['files_detected'] += 1
         
         logger.info(f"File ready: {Path(filepath).name}")
         
-        # Always add to persistent queue
+        # Always add to persistent queue first
         self.queue_manager.add_file(filepath)
         
         # Check if operational hours allow immediate upload
@@ -284,15 +327,142 @@ class TVMUploadSystem:
         if op_hours.get('enabled', False):
             # Operational hours enabled - check if we can upload now
             if self._should_upload_now():
-                logger.info("Within operational hours, uploading immediately")
-                self._process_upload_queue()
+                logger.info("Within operational hours, uploading")
+                
+                if self.batch_upload_enabled:
+                    # Upload entire queue (maximizes WiFi opportunities)
+                    logger.info("Batch upload enabled - uploading entire queue")
+                    
+                    # ===== UPDATED: Use returned dict to check THIS file's status =====
+                    upload_results = self._process_upload_queue()
+                    
+                    # Return success status for THIS specific file
+                    # (all files in batch were already marked in _process_upload_queue)
+                    file_success = upload_results.get(filepath, False)
+                    
+                    if file_success:
+                        logger.info(f"✓ File uploaded successfully (batch): {Path(filepath).name}")
+                    else:
+                        logger.warning(f"✗ File upload failed (batch): {Path(filepath).name}")
+                    
+                    return file_success
+                    # ===== END UPDATED =====
+                else:
+                    # Upload only this single file
+                    logger.info("Batch upload disabled - uploading only this file")
+                    return self._upload_single_file_now(filepath)
             else:
                 logger.info("Outside operational hours, queued for scheduled upload")
+                return False  # Queued, not uploaded yet
         else:
             # Operational hours disabled - queue for scheduled upload only
-            logger.info(f"Queued for scheduled upload at {self.config.get('upload.schedule')}")
-            # Do NOT call _process_upload_queue() here!
+            logger.info(f"Queued for scheduled upload")
+            return False  # Queued, not uploaded yet
     
+    def _upload_single_file_now(self, filepath: str) -> bool:
+        """
+        Upload a single file immediately (for non-batch mode).
+        
+        Args:
+            filepath: Path to file to upload
+            
+        Returns:
+            bool: True if upload succeeded, False otherwise
+        """
+        file_path = Path(filepath)
+        
+        if not file_path.exists():
+            logger.warning(f"File disappeared before upload: {file_path.name}")
+            self.queue_manager.mark_uploaded(filepath)  # Remove from queue
+            return False
+        
+        try:
+            file_size = file_path.stat().st_size
+            
+            # Attempt upload
+            from upload_manager import PermanentUploadError
+            
+            try:
+                success = self.upload_manager.upload_file(filepath)
+            except PermanentUploadError as e:
+                logger.error(f"Permanent upload error: {e}")
+                self.queue_manager.mark_permanent_failure(filepath, str(e))
+                self.stats['files_failed'] += 1
+                return False
+            
+            if success:
+                # Upload succeeded
+                self.stats['files_uploaded'] += 1
+                self.stats['bytes_uploaded'] += file_size
+                self.cloudwatch.record_upload_success(file_size)
+                
+                # Remove from queue
+                self.queue_manager.mark_uploaded(filepath)
+                
+                # Handle file deletion based on policy
+                self._handle_post_upload_deletion(file_path, file_size)
+                
+                return True
+            else:
+                # Upload failed (temporary error - will retry later)
+                self.stats['files_failed'] += 1
+                self.cloudwatch.record_upload_failure()
+                self.queue_manager.mark_failed(filepath)
+                logger.error(f"Upload failed (temporary): {file_path.name}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"Unexpected error uploading {file_path.name}: {e}")
+            self.stats['files_failed'] += 1
+            return False
+
+
+    def _handle_post_upload_deletion(self, file_path: Path, file_size: int):
+        """
+        Handle file deletion after successful upload based on configured policy.
+        
+        Args:
+            file_path: Path to uploaded file
+            file_size: Size of uploaded file in bytes
+        """
+        after_upload_config = self.config.get('deletion.after_upload', {})
+        
+        if after_upload_config.get('enabled', True):
+            keep_days = after_upload_config.get('keep_days', 14)
+            
+            if keep_days == 0:
+                # Delete immediately
+                try:
+                    file_path.unlink()
+                    logger.info(
+                        f"Upload successful + DELETED: {file_path.name} "
+                        f"({file_size / (1024**2):.2f} MB)"
+                    )
+                except Exception as e:
+                    logger.error(f"Failed to delete {file_path.name}: {e}")
+                    # Fall back to marking for later cleanup
+                    self.disk_manager.mark_uploaded(str(file_path), keep_until_days=0)
+            else:
+                # Keep for N days
+                self.disk_manager.mark_uploaded(str(file_path), keep_until_days=keep_days)
+                logger.info(
+                    f"Upload successful, keeping for {keep_days} days: {file_path.name} "
+                    f"({file_size / (1024**2):.2f} MB)"
+                )
+            
+            # Run deferred deletion check
+            deleted_count = self.disk_manager.cleanup_deferred_deletions()
+            if deleted_count > 0:
+                logger.info(f"Deferred deletion: removed {deleted_count} expired files")
+        else:
+            # Deletion disabled - keep indefinitely
+            logger.info(
+                f"Upload successful, deletion DISABLED - keeping indefinitely: {file_path.name} "
+                f"({file_size / (1024**2):.2f} MB)"
+            )
+
+            
+
     def _should_upload_now(self) -> bool:
         """
         Determine if uploads should happen now based on operational hours.
@@ -330,47 +500,128 @@ class TVMUploadSystem:
         """
         Background thread for scheduled uploads and cleanup.
         
-        Checks every minute for:
-        - Scheduled upload time
-        - Age-based cleanup time (NEW v2.0)
+        Supports two scheduling modes (v2.1):
+        - Daily: Upload once per day at specific time
+        - Interval: Upload every N hours/minutes
         
-        Sleeps 1 hour after triggering to avoid multiple triggers.
+        Also handles age-based cleanup (runs daily at configured time).
+        
+        NEW v2.1: Marks successfully uploaded files in registry to prevent
+        duplicate uploads on restart.
         
         Note:
             Runs in daemon thread, logs errors but continues running
         """
         logger.info("Schedule loop started")
-    
-        last_upload_date = None
+
+        last_upload_time = None  # For interval mode (timestamp)
+        last_upload_date = None  # For daily mode (date)
         last_cleanup_date = None
         
         while self._running:
             try:
                 now = datetime.now()
                 
-                # ===== Scheduled upload check =====
-                schedule_time = datetime.strptime(
-                    self.config.get('upload.schedule'),
-                    '%H:%M'
-                ).time()
+                # ===== UPLOAD SCHEDULING =====
+                schedule_config = self.config.get('upload.schedule')
                 
-                if self._is_near_schedule_time(now.time(), schedule_time):
-                    if last_upload_date != now.date():
-                        logger.info(f"Scheduled upload time reached: {schedule_time}")
-                        
-                        if self._should_upload_now():
-                            self._process_upload_queue()
+                # Handle both old (string) and new (dict) format
+                if isinstance(schedule_config, str):
+                    # Legacy format: "15:00" (treat as daily)
+                    schedule_time = datetime.strptime(schedule_config, '%H:%M').time()
+                    
+                    if self._is_near_schedule_time(now.time(), schedule_time):
+                        if last_upload_date != now.date():
+                            logger.info(f"Scheduled upload time reached: {schedule_time}")
+                            
+                            # ===== UPDATED: Mark uploaded files in registry =====
+                            upload_results = self._process_upload_queue()
+                            
+                            # Note: _process_upload_queue() already marks files internally,
+                            # but we log the summary here for scheduled uploads
+                            successful_count = sum(1 for s in upload_results.values() if s)
+                            failed_count = len(upload_results) - successful_count
+                            
+                            if successful_count > 0:
+                                logger.info(
+                                    f"Scheduled upload complete: {successful_count} files uploaded, "
+                                    f"{failed_count} failed (will retry at next schedule)"
+                                )
+                            else:
+                                logger.warning("Scheduled upload: all files failed")
+                            # ===== END UPDATED =====
+                            
                             last_upload_date = now.date()
-                        else:
-                            logger.info("Upload skipped: outside operational hours")
-                        
-                        # Sleep 1 hour to avoid multiple triggers
-                        time.sleep(3600)
+                            time.sleep(3600)  # Sleep 1 hour to avoid multiple triggers
                 
-                # ===== NEW: Age-based cleanup check (v2.0) =====
+                elif isinstance(schedule_config, dict):
+                    mode = schedule_config.get('mode', 'daily')
+                    
+                    if mode == 'daily':
+                        # Daily mode: Upload at specific time
+                        daily_time = datetime.strptime(
+                            schedule_config.get('daily_time', '15:00'), 
+                            '%H:%M'
+                        ).time()
+                        
+                        if self._is_near_schedule_time(now.time(), daily_time):
+                            if last_upload_date != now.date():
+                                logger.info(f"Daily scheduled upload at {daily_time}")
+                                
+                                # ===== UPDATED: Mark uploaded files in registry =====
+                                upload_results = self._process_upload_queue()
+                                
+                                successful_count = sum(1 for s in upload_results.values() if s)
+                                failed_count = len(upload_results) - successful_count
+                                
+                                if successful_count > 0:
+                                    logger.info(
+                                        f"Daily upload complete: {successful_count} files uploaded, "
+                                        f"{failed_count} failed"
+                                    )
+                                else:
+                                    logger.warning("Daily upload: all files failed")
+                                # ===== END UPDATED =====
+                                
+                                last_upload_date = now.date()
+                                time.sleep(3600)
+                    
+                    elif mode == 'interval':
+                        # Interval mode: Upload every N hours/minutes
+                        interval_hours = schedule_config.get('interval_hours', 0)
+                        interval_minutes = schedule_config.get('interval_minutes', 0)
+                        interval_seconds = (interval_hours * 3600) + (interval_minutes * 60)
+                        
+                        # Check if enough time has passed since last upload
+                        if last_upload_time is None or \
+                        (now.timestamp() - last_upload_time) >= interval_seconds:
+                            logger.info(
+                                f"Interval upload triggered "
+                                f"(every {interval_hours}h {interval_minutes}m)"
+                            )
+                            
+                            # ===== UPDATED: Mark uploaded files in registry =====
+                            upload_results = self._process_upload_queue()
+                            
+                            successful_count = sum(1 for s in upload_results.values() if s)
+                            failed_count = len(upload_results) - successful_count
+                            
+                            if successful_count > 0:
+                                logger.info(
+                                    f"Interval upload complete: {successful_count} files uploaded, "
+                                    f"{failed_count} failed (will retry at next interval)"
+                                )
+                            else:
+                                logger.warning("Interval upload: all files failed")
+                            # ===== END UPDATED =====
+                            
+                            last_upload_time = now.timestamp()
+                            time.sleep(10)  # Brief sleep to avoid tight loop
+                
+                # ===== AGE-BASED CLEANUP (unchanged) =====
                 age_config = self.config.get('deletion.age_based', {})
                 
-                if age_config.get('enabled', True):  # Default: enabled
+                if age_config.get('enabled', True):
                     cleanup_time = datetime.strptime(
                         age_config.get('schedule_time', '02:00'),
                         '%H:%M'
@@ -380,7 +631,7 @@ class TVMUploadSystem:
                         if last_cleanup_date != now.date():
                             logger.info("=== Running scheduled age-based cleanup ===")
                             
-                            max_age_days = age_config.get('max_age_days', 7)  # Default: 7 (Maeda-san)
+                            max_age_days = age_config.get('max_age_days', 7)
                             deleted = self.disk_manager.cleanup_by_age(max_age_days)
                             
                             logger.info(f"Age-based cleanup complete: {deleted} files deleted")
@@ -390,12 +641,12 @@ class TVMUploadSystem:
                             usage, _, _ = self.disk_manager.get_disk_usage()
                             self.cloudwatch.publish_metrics(disk_usage_percent=usage * 100)
                             
-                            # Sleep 1 hour to avoid multiple triggers
                             time.sleep(3600)
-                # ===== END NEW =====
                 
             except Exception as e:
                 logger.error(f"Error in schedule loop: {e}")
+                import traceback
+                logger.debug(traceback.format_exc())
             
             # Check every minute
             time.sleep(60)
@@ -423,42 +674,86 @@ class TVMUploadSystem:
         
         return  abs(now_minutes - schedule_minutes) <= 1
     
-    def _process_upload_queue(self):
+    def _process_upload_queue(self) -> dict:
         """
         Process all files in upload queue.
         
         Uploads all queued files and checks disk space afterward.
-        Runs cleanup if disk space is low after uploads (NEW v2.0: only if emergency enabled).
+        Runs cleanup if disk space is low after uploads (only if emergency enabled).
         
+        NEW v2.1: Returns upload results and marks successfully uploaded files
+        in registry to prevent duplicate uploads on restart.
+        
+        Returns:
+            dict: {filepath: success_bool} - Upload result for each file
+            
         Note:
-            Thread-safe - uses lock to snapshot and clear queue atomically
+            Thread-safe - uses queue_manager's internal locking
         """
         batch = self.queue_manager.get_next_batch(max_files=50)
-    
+
         if len(batch) == 0:
-            return
+            logger.debug("Upload queue empty, nothing to process")
+            return {}
         
         logger.info(f"Processing {len(batch)} files for upload")
         
-        for filepath in batch:
-            self._upload_file(filepath)
+        # Track upload results for each file
+        upload_results = {}
         
-        # NEW v2.0: Check if emergency cleanup is enabled
+        for filepath in batch:
+            # Check if file is in queue before upload attempt
+            was_in_queue = any(
+                entry['filepath'] == filepath 
+                for entry in self.queue_manager.queue
+            )
+            
+            # Attempt upload
+            self._upload_file(filepath)
+            
+            # Check if file was removed from queue (= upload succeeded)
+            is_in_queue_after = any(
+                entry['filepath'] == filepath 
+                for entry in self.queue_manager.queue
+            )
+            
+            # Success = was in queue before, not in queue after
+            success = was_in_queue and not is_in_queue_after
+            upload_results[filepath] = success
+            
+            # ===== NEW: Mark successfully uploaded files in registry =====
+            if success:
+                # Tell file_monitor to mark this file as processed
+                # This prevents duplicate uploads on service restart
+                self.file_monitor.mark_file_as_processed_externally(filepath)
+            # ===== END NEW =====
+        
+        # Log summary
+        successful_count = sum(1 for s in upload_results.values() if s)
+        failed_count = len(upload_results) - successful_count
+        logger.info(
+            f"Upload batch complete: {successful_count} succeeded, "
+            f"{failed_count} failed"
+        )
+        
+        # ===== Disk space management (unchanged) =====
         emergency_enabled = self.config.get('deletion.emergency.enabled', False)
-
+        
         if emergency_enabled:
             usage, _, _ = self.disk_manager.get_disk_usage()
             
             if usage >= self.disk_manager.critical_threshold:  # >95%
-                logger.error(" CRITICAL: Disk usage >95% - triggering EMERGENCY cleanup")
+                logger.error("🚨 CRITICAL: Disk usage >95% - triggering EMERGENCY cleanup")
                 deleted = self.disk_manager.emergency_cleanup_all_files()
-                logger.warning(f" Emergency cleanup: {deleted} files deleted (ANY files, not just uploaded)")
+                logger.warning(f"🚨 Emergency cleanup: {deleted} files deleted (ANY files, not just uploaded)")
             elif not self.disk_manager.check_disk_space():  # >90%
                 logger.warning("Disk usage >90% - cleaning uploaded files only")
                 deleted = self.disk_manager.cleanup_old_files()
                 logger.info(f"Standard cleanup: {deleted} uploaded files deleted")
         else:
             logger.debug("Emergency cleanup disabled - skipping disk check")
+        
+        return upload_results
 
     
     def _upload_file(self, filepath: str):
@@ -468,6 +763,7 @@ class TVMUploadSystem:
         Updates statistics based on success/failure.
         Records CloudWatch metrics on success/failure.
         Handles file deletion based on configured policy (NEW v2.0).
+        Handles permanent upload errors (NEW v2.1).
         
         Args:
             filepath: Path to file to upload
@@ -476,14 +772,26 @@ class TVMUploadSystem:
             Logs warning if file disappeared before upload
         """
         file_path = Path(filepath)
-    
+
         if not file_path.exists():
             logger.warning(f"File disappeared: {file_path.name}")
             self.queue_manager.mark_uploaded(filepath)  # Remove from queue
             return
         
         file_size = file_path.stat().st_size
-        success = self.upload_manager.upload_file(filepath)
+        
+        # ===== NEW: Handle permanent errors (v2.1) =====
+        from upload_manager import PermanentUploadError
+        
+        try:
+            success = self.upload_manager.upload_file(filepath)
+        except PermanentUploadError as e:
+            logger.error(f"Permanent upload error: {e}")
+            self.queue_manager.mark_permanent_failure(filepath, str(e))
+            self.stats['files_failed'] += 1
+            self.cloudwatch.record_upload_failure()
+            return
+        # ===== END NEW =====
         
         if success:
             self.stats['files_uploaded'] += 1
@@ -493,37 +801,9 @@ class TVMUploadSystem:
             # Remove from queue
             self.queue_manager.mark_uploaded(filepath)
             
-            # ===== NEW: Configurable deletion after upload (v2.0) =====
-            after_upload_config = self.config.get('deletion.after_upload', {})
-            
-            if after_upload_config.get('enabled', True):
-                keep_days = self.config.get('deletion.after_upload.keep_days', 14)  # Default: 14 (Maeda-san)
-                
-                if keep_days == 0:
-                    # Option A1: Delete immediately
-                    try:
-                        file_path.unlink()
-                        logger.info(f"Upload successful + DELETED: {file_path.name} "
-                                f"({file_size / (1024**2):.2f} MB)")
-                    except Exception as e:
-                        logger.error(f"Failed to delete {file_path.name}: {e}")
-                        # Fall back to marking for later cleanup
-                        self.disk_manager.mark_uploaded(filepath, keep_until_days=0)
-                else:
-                    # Option A2: Keep for N days
-                    self.disk_manager.mark_uploaded(filepath, keep_until_days=keep_days)
-                    logger.info(f"Upload successful, keeping for {keep_days} days: {file_path.name} "
-                            f"({file_size / (1024**2):.2f} MB)")
-                
-                # Run deferred deletion check (deletes files whose keep_until expired)
-                deleted_count = self.disk_manager.cleanup_deferred_deletions()
-                if deleted_count > 0:
-                    logger.info(f"Deferred deletion: removed {deleted_count} expired files")
-            
-            else:
-                # ← NEW: Deletion disabled branch
-                logger.info(f"Upload successful, deletion DISABLED - keeping indefinitely: {file_path.name} "
-                      f"({file_size / (1024**2):.2f} MB)")
+            # ===== UPDATED: Use helper function for deletion (v2.1) =====
+            self._handle_post_upload_deletion(file_path, file_size)
+            # ===== END UPDATED =====
             
         else:
             self.stats['files_failed'] += 1

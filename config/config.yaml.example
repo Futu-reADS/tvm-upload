@@ -1,5 +1,9 @@
+# ============================================
 # TVM Log Upload System - Production Configuration
+# ============================================
 # For vehicles deployed in China
+#
+# Version: 2.1 - Interval scheduling + Source-based organization
 #
 # Copy this file to /etc/tvm-upload/config.yaml and customize
 # for your specific vehicle deployment.
@@ -7,126 +11,523 @@
 # ============================================
 # VEHICLE IDENTIFICATION
 # ============================================
+# Unique identifier for this vehicle
 # IMPORTANT: Change this for each vehicle!
+# Format: vehicle-{region}-{number}
+# Examples: vehicle-CN-001, vehicle-CN-002, vehicle-JP-001
 vehicle_id: "vehicle-CN-001"
 
 # ============================================
 # LOG DIRECTORIES TO MONITOR
 # ============================================
+# Four log sources are monitored:
+# 1. Terminal logs: .parcel/log/terminal/ - Terminal session logs with timestamps
+# 2. ROS logs: .ros/log/ - ROS run folders + loose files
+# 3. System logs: /var/log - System logs including syslog
+# 4. ROS2 logs: rosLog/ - ROS2 node logs
+#
+# Files are automatically organized in S3 by source type:
+# - terminal/ - All terminal logs
+# - ros/ - All ROS logs (folder structure preserved)
+# - syslog/ - System logs
+# - ros2/ - ROS2 logs
+#
+# NOTE: Update the ros2_ws/log path to match your actual installation!
 log_directories:
-  - /var/log/autoware/bags     # MCAP bag files
-  - /var/log/autoware/system   # System logs
+  - /home/autoware/.parcel/log/terminal   # Terminal logs
+  - /home/autoware/.ros/log                # ROS logs (folders + loose files)
+  - /var/log                               # System logs (includes syslog)
+  - /home/autoware/ros2_ws/log             # ROS2 logs (UPDATE THIS PATH!)
 
 # ============================================
 # AWS S3 CONFIGURATION (China Region)
 # ============================================
 s3:
+  # S3 bucket name for log storage
   bucket: t01logs
-  region: cn-north-1            # Beijing region (or cn-northwest-1 for Ningxia)
+  
+  # AWS China region
+  # Options: cn-north-1 (Beijing), cn-northwest-1 (Ningxia)
+  region: cn-north-1
+  
+  # Path to AWS credentials directory
+  # Should contain credentials and config files
   credentials_path: /home/autoware/.aws
-  profile: china                # AWS profile name
+  
+  # AWS profile name to use
+  # Profile must be configured in ~/.aws/credentials and ~/.aws/config
+  profile: china
 
 # ============================================
 # UPLOAD SETTINGS
 # ============================================
 upload:
-  # Daily upload time (HH:MM format, 24-hour)
-  schedule: "16:55"             # 3:00 PM local time
+  # ==========================================
+  # SCHEDULE CONFIGURATION
+  # ==========================================
+  # Two upload mechanisms work in parallel:
+  # 1. Immediate upload: When file becomes ready + within operational hours
+  # 2. Scheduled upload: Process entire queue at regular intervals
+  #
+  # Both mechanisms can trigger uploads independently
   
-  # File stability check (seconds)
-  file_stable_seconds: 60       # Wait 60s for file to stop changing
+  schedule:
+    # Upload mode
+    # Options:
+    #   "daily" - Upload queue once per day at specific time
+    #   "interval" - Upload queue every N hours/minutes
+    mode: "interval"
+    
+    # Daily mode settings (only used if mode="daily")
+    # Time to upload queue once per day (HH:MM format, 24-hour)
+    daily_time: "15:00"
+    
+    # Interval mode settings (only used if mode="interval")
+    # Upload queue every interval_hours + interval_minutes
+    # Examples:
+    #   interval_hours: 1, interval_minutes: 0  → Every 1 hour
+    #   interval_hours: 2, interval_minutes: 0  → Every 2 hours
+    #   interval_hours: 0, interval_minutes: 30 → Every 30 minutes
+    #   interval_hours: 2, interval_minutes: 30 → Every 2.5 hours
+    #
+    # Minimum interval: 5 minutes
+    # Maximum interval: 24 hours
+    #
+    # RECOMMENDED for mobile vehicles: 2 hours
+    # (Balances upload frequency with network availability)
+    interval_hours: 2
+    interval_minutes: 0
   
-  # Operational hours (prevent uploads during critical times)
+  # ==========================================
+  # FILE STABILITY CHECK
+  # ==========================================
+  # Files must be unchanged for this duration before upload
+  # This ensures files are completely written before processing
+  # RECOMMENDED: 60 seconds for most use cases
+  file_stable_seconds: 60
+  
+  # ==========================================
+  # OPERATIONAL HOURS
+  # ==========================================
+  # Controls IMMEDIATE uploads only (not scheduled uploads)
+  # When a file becomes ready (after stability check):
+  #   - Within operational hours → Upload immediately
+  #   - Outside operational hours → Add to queue for scheduled upload
+  #
+  # Scheduled batch uploads ALWAYS run regardless of operational hours
+  #
+  # Use case: Prevent uploads during critical vehicle operation times
+  # (e.g., active driving, customer service)
   operational_hours:
-    enabled: false
-    start: "09:00"              # Start uploads at 9 AM
-    end: "16:00"                # Stop uploads at 4 PM
+    # Enable operational hours restriction
+    # Set to false to allow immediate uploads 24/7
+    enabled: true
+    
+    # Start time for immediate uploads (HH:MM format, 24-hour)
+    start: "09:00"
+    
+    # End time for immediate uploads (HH:MM format, 24-hour)
+    end: "16:00"
   
-  # Queue persistence
+  # ==========================================
+  # BATCH UPLOAD SETTINGS
+  # ==========================================
+  # When enabled: New file trigger uploads entire queue
+  # When disabled: New file uploads only that file
+  #
+  # RECOMMENDED: true (maximizes WiFi opportunities)
+  #
+  # Example with batch_upload enabled:
+  #   09:00 - Scheduled upload uploads 10 files, 2 fail
+  #   10:05 - New file becomes ready
+  #   10:05 - Uploads new file + 2 failed files (entire queue)
+  #
+  # Example with batch_upload disabled:
+  #   09:00 - Scheduled upload uploads 10 files, 2 fail
+  #   10:05 - New file becomes ready
+  #   10:05 - Uploads only new file (2 failed files wait until 11:00)
+  batch_upload:
+    enabled: true
+  
+  # ==========================================
+  # UPLOAD ON SERVICE START
+  # ==========================================
+  # Controls whether to upload immediately when service starts/restarts
+  #
+  # If true:
+  #   Service starts → Scans for files → Uploads immediately
+  #   Use case: After vehicle reboot, upload recent logs ASAP
+  #
+  # If false:
+  #   Service starts → Scans for files → Adds to queue → Waits for next interval
+  #   Use case: Defer upload to avoid network spike at startup
+  #
+  # RECOMMENDED: true for mobile vehicles
+  # (Ensures recent logs uploaded quickly after restart)
+  upload_on_start: true
+  
+  # ==========================================
+  # QUEUE PERSISTENCE
+  # ==========================================
+  # Path to queue file (stores pending uploads across restarts)
+  # Queue survives daemon restarts, system reboots, crashes
   queue_file: /var/lib/tvm-upload/queue.json
   
-  # Startup scan (upload existing files on daemon start)
+  # ==========================================
+  # STARTUP SCAN
+  # ==========================================
+  # Scan directories for existing files when service starts
+  # Finds files that:
+  #   1. Were created/modified within max_age_days
+  #   2. Have NOT been uploaded yet (checked via processed_files_registry)
+  #   3. Are stable (unchanged for file_stable_seconds)
+  #
+  # Combined with upload_on_start:
+  #   enabled: true, upload_on_start: true
+  #     → Scan + upload immediately (RECOMMENDED)
+  #
+  #   enabled: true, upload_on_start: false
+  #     → Scan + queue for next scheduled upload
+  #
+  #   enabled: false
+  #     → No scan at startup (only monitor new files)
   scan_existing_files:
+    # Enable startup scan
     enabled: true
-    max_age_days: 3             # Upload files from last 3 days
+    
+    # Maximum age of files to upload (days)
+    # Files older than this are ignored
+    # RECOMMENDED: 3 days (balances coverage with upload volume)
+    max_age_days: 3
+  
+  # ==========================================
+  # PROCESSED FILES REGISTRY
+  # ==========================================
+  # Tracks uploaded files to prevent duplicate uploads
+  #
+  # How it works:
+  #   - Each uploaded file is recorded with: filepath + size + mtime
+  #   - On startup/restart, checks registry before uploading
+  #   - Same filename on different days = different file (both uploaded)
+  #
+  # Example:
+  #   terminal_2025-10-20_10-00-00.log created Oct 20 → Uploaded
+  #   terminal_2025-10-20_10-00-00.log created Oct 21 → Different file, uploaded
+  #
+  # Registry is automatically cleaned (removes entries older than retention_days)
+  processed_files_registry:
+    # Path to registry file
+    registry_file: /var/lib/tvm-upload/processed_files.json
+    
+    # How long to keep registry entries (days)
+    # Entries older than this are automatically removed
+    # RECOMMENDED: 30 days (keeps registry size manageable)
+    retention_days: 30
 
 # ============================================
 # DELETION POLICIES
 # ============================================
+# Three deletion mechanisms work together:
+# 1. After upload: Delete files after successful upload (keep_days)
+# 2. Age-based: Delete files older than max_age_days (safety net)
+# 3. Emergency: Delete when disk critically full (>95%)
 deletion:
-  # Delete after successful upload
+  # ==========================================
+  # DELETE AFTER UPLOAD
+  # ==========================================
+  # Delete files after successful upload
+  #
+  # Options:
+  #   keep_days: 0  - Delete immediately after upload (saves space)
+  #   keep_days: 14 - Keep for 14 days after upload (for local debugging)
+  #
+  # If disabled, files are kept indefinitely (until age-based or emergency cleanup)
   after_upload:
+    # Enable deletion after upload
     enabled: true
-    keep_days: 14                # 0 = delete immediately (saves disk space)
-                                # 14 = keep for 14 days after upload
+    
+    # Days to keep file after upload
+    # 0 = delete immediately, 14 = keep for 2 weeks
+    keep_days: 14
   
-  # Age-based cleanup (safety net)
+  # ==========================================
+  # AGE-BASED CLEANUP (Safety Net)
+  # ==========================================
+  # Delete files older than max_age_days, regardless of upload status
+  # Runs daily at scheduled time
+  #
+  # Use case: Prevent old files from accumulating
+  # (e.g., files that failed to upload, orphaned files)
+  #
+  # RECOMMENDED: max_age_days < keep_days
+  # (This ensures age-based cleanup doesn't delete files too early)
   age_based:
+    # Enable age-based cleanup
     enabled: true
-    max_age_days: 7             # Delete files older than 7 days
-    schedule_time: "02:00"      # Run daily at 2 AM
+    
+    # Maximum file age (days)
+    # Files older than this are deleted
+    max_age_days: 7
+    
+    # Time to run daily cleanup (HH:MM format, 24-hour)
+    # RECOMMENDED: 02:00 (low activity period)
+    schedule_time: "02:00"
   
-  # Emergency cleanup (CRITICAL!)
+  # ==========================================
+  # EMERGENCY CLEANUP (CRITICAL!)
+  # ==========================================
+  # When disk usage exceeds 95%, delete oldest uploaded files
+  # to prevent disk from filling up completely
+  #
+  # MUST be enabled for production vehicles!
+  #
+  # Behavior:
+  #   Disk 90% full → Delete oldest uploaded files (warning)
+  #   Disk 95% full → Delete ANY old files (emergency)
   emergency:
-    enabled: true               # MUST be true for production
-                                # Prevents disk from filling up
+    # Enable emergency cleanup
+    # MUST be true for production!
+    enabled: true
 
 # ============================================
 # DISK MANAGEMENT
 # ============================================
 disk:
-  reserved_gb: 70               # Keep 70 GB free for new logs
-  warning_threshold: 0.90       # Warn at 90% usage
-  critical_threshold: 0.95      # Emergency cleanup at 95%
+  # Minimum free space to maintain (GB)
+  # System tries to keep at least this much space free
+  # RECOMMENDED: 70 GB for high-volume logging vehicles
+  reserved_gb: 70
+  
+  # Disk usage threshold for warnings (0-1)
+  # At 90% usage, start cleaning uploaded files
+  warning_threshold: 0.90
+  
+  # Disk usage threshold for emergency cleanup (0-1)
+  # At 95% usage, delete ANY old files (critical)
+  critical_threshold: 0.95
 
 # ============================================
 # MONITORING (CloudWatch)
 # ============================================
+# Publishes metrics to AWS CloudWatch for monitoring
+# Requires CloudWatch permissions in IAM policy
 monitoring:
+  # Enable CloudWatch metrics publishing
+  # Set to false for testing (but enable for production)
   cloudwatch_enabled: true
   
-  # Publish interval
-  publish_interval_seconds: 3600  # Every 1 hour
+  # How often to publish metrics (seconds)
+  # RECOMMENDED: 3600 (every 1 hour)
+  publish_interval_seconds: 3600
   
-  # Alarm thresholds
-  low_upload_threshold_mb: 100    # Alert if <100MB uploaded
-  alarm_evaluation_periods: 3     # Alert after 3 consecutive periods
+  # Alert threshold for low upload volume (MB)
+  # CloudWatch alarm triggers if daily upload < this value
+  low_upload_threshold_mb: 100
+  
+  # Number of consecutive periods before alarm
+  # Alarm triggers after this many consecutive low-upload periods
+  alarm_evaluation_periods: 3
 
 # ============================================
 # S3 LIFECYCLE MANAGEMENT
 # ============================================
+# How long to keep files in S3 before automatic deletion
+# NOTE: This requires setting up AWS S3 Lifecycle Policy separately
+# (This config value is for documentation only)
 s3_lifecycle:
-  retention_days: 14            # Delete from S3 after 14 days
-                                # (Set up AWS lifecycle policy separately)
+  # Days to retain files in S3
+  # Files older than this are automatically deleted by AWS
+  retention_days: 14
 
 # ============================================
-# CONFIGURATION NOTES
+# S3 FOLDER STRUCTURE
 # ============================================
 #
-# VEHICLE_ID:
-#   - Must be unique for each vehicle
-#   - Format: vehicle-{region}-{number}
-#   - Example: vehicle-CN-001, vehicle-CN-002, vehicle-JP-001
+# Files are organized in S3 by:
+# - Vehicle ID: Identifies which vehicle uploaded the files
+# - Date: Based on file modification time (not upload time)
+# - Source: terminal, ros, syslog, ros2
 #
-# OPERATIONAL_HOURS:
-#   - Prevents uploads during peak network usage
-#   - Adjust based on vehicle operation schedule
-#   - Disable if 24/7 operation needed (set enabled: false)
+# Structure:
+#   s3://t01logs/
+#   └── vehicle-CN-001/
+#       ├── 2025-10-20/
+#       │   ├── terminal/
+#       │   │   ├── terminal_2025-10-20_10-30-15.log
+#       │   │   └── terminal_2025-10-20_14-22-03.log
+#       │   ├── ros/
+#       │   │   ├── 2025-10-20-15-30-00-123456-mini01-NucBox-K6-67890/
+#       │   │   │   ├── launch.log
+#       │   │   │   └── rosout.log
+#       │   │   └── some-loose-file.log
+#       │   ├── syslog/
+#       │   │   └── syslog_2025-10-20
+#       │   └── ros2/
+#       │       └── ros2_node_2025-10-20.log
+#       │
+#       └── 2025-10-21/
+#           ├── terminal/
+#           │   └── terminal_2025-10-21_09-15-42.log
+#           ├── ros/
+#           │   └── 2025-10-21-10-00-00-555555-mini01-NucBox-K6-11111/
+#           │       ├── launch.log
+#           │       └── rosout.log
+#           ├── syslog/
+#           │   └── syslog_2025-10-21
+#           └── ros2/
+#               └── ros2_node_2025-10-21.log
 #
-# DELETION POLICY:
-#   - keep_days=0: Delete immediately after upload (saves space)
-#   - keep_days=14: Keep for 2 weeks (for local debugging)
-#   - age_based: Safety net to prevent old files accumulating
-#   - emergency: MUST be enabled to prevent disk full
+# Benefits:
+# - Clear organization by source type
+# - ROS folder structure preserved completely
+# - Files grouped by creation date (handles delayed uploads correctly)
+# - Easy to download all logs from specific date or source
 #
-# DISK THRESHOLDS:
-#   - 90%: Start cleaning uploaded files
-#   - 95%: Emergency cleanup (delete ANY old files)
-#   - Adjust reserved_gb based on logging rate
+# Examples:
+#   Download all logs from Oct 20:
+#     aws s3 sync s3://t01logs/vehicle-CN-001/2025-10-20/ ./logs/
 #
-# CLOUDWATCH:
-#   - Publishes metrics to AWS CloudWatch
-#   - Requires CloudWatch permissions in IAM policy
-#   - Can be disabled for testing (but enable for production)
+#   Download only ROS logs from Oct 20:
+#     aws s3 sync s3://t01logs/vehicle-CN-001/2025-10-20/ros/ ./ros-logs/
+#
+#   Download only terminal logs from Oct 20:
+#     aws s3 sync s3://t01logs/vehicle-CN-001/2025-10-20/terminal/ ./terminal-logs/
+
+# ============================================
+# UPLOAD WORKFLOW EXPLAINED
+# ============================================
+#
+# Complete step-by-step behavior:
+#
+# 1. SERVICE STARTS (e.g., 9:30 AM)
+#    ├─ Load processed_files_registry (prevents duplicate uploads)
+#    ├─ Scan directories for files < max_age_days old
+#    ├─ Filter out files already in processed_files_registry
+#    ├─ Add new files to queue
+#    └─ If upload_on_start: true → Upload immediately at 9:30
+#        If upload_on_start: false → Wait for next interval (11:00)
+#
+# 2. FILE BECOMES READY (after 60s stability check)
+#    ├─ Check operational_hours
+#    ├─ If WITHIN hours (09:00-16:00):
+#    │  ├─ If batch_upload: true → Upload entire queue
+#    │  └─ If batch_upload: false → Upload only this file
+#    └─ If OUTSIDE hours (not 09:00-16:00):
+#       └─ Add to queue (wait for scheduled upload)
+#
+# 3. SCHEDULED INTERVAL (e.g., every 2 hours: 09:00, 11:00, 13:00, 15:00)
+#    └─ Upload entire queue (includes any failed immediate uploads)
+#
+# 4. AFTER SUCCESSFUL UPLOAD
+#    ├─ Add to processed_files_registry (prevents duplicate on restart)
+#    ├─ If deletion.after_upload.enabled: true
+#    │  ├─ If keep_days: 0 → Delete immediately
+#    │  └─ If keep_days: 14 → Mark for deletion in 14 days
+#    └─ If deletion.after_upload.enabled: false → Keep indefinitely
+#
+# 5. AGE-BASED CLEANUP (daily at 02:00)
+#    └─ Delete files older than max_age_days (7 days)
+#       (Safety net for files that failed to upload)
+#
+# 6. EMERGENCY CLEANUP (when disk >95% full)
+#    └─ Delete oldest uploaded files to free space
+#       (Prevents system from becoming unusable)
+
+# ============================================
+# CONFIGURATION EXAMPLES
+# ============================================
+#
+# Example 1: Mobile vehicle with intermittent WiFi
+#   schedule:
+#     mode: "interval"
+#     interval_hours: 2
+#     interval_minutes: 0
+#   operational_hours:
+#     enabled: true
+#     start: "09:00"
+#     end: "16:00"
+#   batch_upload:
+#     enabled: true
+#   upload_on_start: true
+#
+#   → Uploads immediately when file ready (09:00-16:00)
+#   → Retries every 2 hours (maximizes upload opportunities)
+#   → Uploads on restart (doesn't lose recent logs)
+#
+# Example 2: Depot vehicle with stable WiFi at 3 PM
+#   schedule:
+#     mode: "daily"
+#     daily_time: "15:00"
+#   operational_hours:
+#     enabled: false
+#   batch_upload:
+#     enabled: true
+#   upload_on_start: false
+#
+#   → All files queue throughout the day
+#   → Single bulk upload at 3 PM when vehicle is parked
+#   → Minimizes network usage during operation
+#
+# Example 3: Frequent uploads (every 30 minutes)
+#   schedule:
+#     mode: "interval"
+#     interval_hours: 0
+#     interval_minutes: 30
+#   operational_hours:
+#     enabled: false
+#   batch_upload:
+#     enabled: true
+#   upload_on_start: true
+#
+#   → Uploads every 30 minutes around the clock
+#   → Maximum freshness (logs uploaded quickly)
+#   → Higher network usage
+
+# ============================================
+# RECOMMENDED CONFIGURATION FOR MOBILE VEHICLE
+# ============================================
+#
+# The current configuration above is optimized for mobile vehicles with:
+# ✅ Intermittent WiFi connectivity
+# ✅ Need for recent logs after restart
+# ✅ Balance between upload frequency and network usage
+# ✅ Automatic organization by source type
+# ✅ Preservation of ROS folder structure
+# ✅ Correct date grouping (uses file creation date)
+#
+# Key settings:
+# - mode: "interval" with 2-hour intervals (4 uploads per day)
+# - operational_hours: 09:00-16:00 (immediate uploads during operation)
+# - batch_upload: true (maximizes WiFi opportunities)
+# - upload_on_start: true (uploads on restart)
+# - Source-based organization (terminal/ros/syslog/ros2)
+# - File modification date for S3 paths (handles delayed uploads)
+#
+# ============================================
+
+# ============================================
+# TROUBLESHOOTING
+# ============================================
+#
+# Files not uploading?
+#   1. Check operational_hours (might be outside upload window)
+#   2. Check queue file: cat /var/lib/tvm-upload/queue.json
+#   3. Check processed_files_registry (might already be uploaded)
+#   4. Check logs: journalctl -u tvm-upload -f
+#
+# Disk full?
+#   1. Check deletion.emergency.enabled (must be true)
+#   2. Check disk.reserved_gb (might need to increase)
+#   3. Manual cleanup: Run age-based cleanup manually
+#
+# Duplicate uploads?
+#   1. Check processed_files_registry.enabled
+#   2. Check registry file exists and is readable
+#   3. Registry file corrupted? Delete and restart service
+#
+# Wrong S3 folder?
+#   1. Files use modification time, not upload time
+#   2. Check file mtime: stat <filename>
+#   3. For syslog: Uses upload date (not file date)
 #
 # ============================================

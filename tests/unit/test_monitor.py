@@ -2,7 +2,8 @@
 """
 Tests for File Monitor
 """
-
+import json
+import os
 import pytest
 import time
 import tempfile
@@ -44,14 +45,16 @@ def temp_dir():
 
 @pytest.fixture
 def callback_tracker():
-    """Fixture to track callback calls"""
+    """Fixture to track callback calls with return values"""
     class CallbackTracker:
         def __init__(self):
             self.called_files = []
+            self.return_value = True  # ADD THIS - Default: simulate successful upload
         
         def callback(self, filepath):
             self.called_files.append(filepath)
             print(f"[Test] Callback received: {filepath}")
+            return self.return_value  # ADD THIS - Return success/failure
     
     return CallbackTracker()
 
@@ -391,3 +394,406 @@ def test_startup_scan_no_config(temp_dir, callback_tracker):
     monitor.stop()
     
     assert result, "File should be detected with default startup scan"
+
+# ============================================
+# NEW TESTS FOR v2.1 PROCESSED FILES REGISTRY
+# ============================================
+
+def test_registry_initialization(temp_dir):
+    """Test registry file is created on initialization"""
+    registry_file = temp_dir / "processed_files.json"
+    
+    config = {
+        'upload': {
+            'processed_files_registry': {
+                'registry_file': str(registry_file),
+                'retention_days': 30
+            }
+        }
+    }
+    
+    monitor = FileMonitor(
+        [str(temp_dir)],
+        lambda f: True,
+        config=config
+    )
+    
+    # Registry file is NOT created until first save
+    # Instead, check that registry is initialized in memory
+    assert monitor.processed_files is not None
+    assert isinstance(monitor.processed_files, dict)
+    assert len(monitor.processed_files) == 0
+
+
+def test_mark_file_as_processed(temp_dir, callback_tracker):
+    """Test marking file as processed after successful upload"""
+    registry_file = temp_dir / "registry.json"
+    
+    config = {
+        'upload': {
+            'processed_files_registry': {
+                'registry_file': str(registry_file),
+                'retention_days': 30
+            }
+        }
+    }
+    
+    monitor = FileMonitor(
+        [str(temp_dir)],
+        callback_tracker.callback,
+        stability_seconds=2,
+        config=config
+    )
+    monitor.start()
+    
+    # Create test file
+    test_file = temp_dir / "test.log"
+    test_file.write_text("test data")
+    
+    # Wait for upload
+    result = wait_until(
+        lambda: len(callback_tracker.called_files) >= 1,
+        timeout=5
+    )
+    
+    assert result, "File should be uploaded"
+    
+    # Check registry
+    with open(registry_file) as f:
+        data = json.load(f)
+        files = data['files']
+        assert len(files) > 0, "Registry should contain processed file"
+        
+        # Verify file identity format (filepath::size::mtime)
+        file_identity = list(files.keys())[0]
+        assert '::' in file_identity, "File identity should contain ::"
+    
+    monitor.stop()
+
+
+def test_duplicate_prevention_on_restart(temp_dir, callback_tracker):
+    """Test file marked as processed is not uploaded again on restart"""
+    # Create separate directories for logs and registry
+    log_dir = temp_dir / "logs"
+    log_dir.mkdir()
+    
+    registry_file = temp_dir / "registry.json"
+    
+    config = {
+        'upload': {
+            'processed_files_registry': {
+                'registry_file': str(registry_file),
+                'retention_days': 30
+            },
+            'scan_existing_files': {
+                'enabled': True,
+                'max_age_days': 30
+            }
+        }
+    }
+    
+    # Create test file in log directory only
+    test_file = log_dir / "test.log"
+    test_file.write_text("test data")
+    
+    # First monitor instance - uploads file
+    monitor1 = FileMonitor(
+        [str(log_dir)],  # Monitor log_dir, not temp_dir
+        callback_tracker.callback,
+        stability_seconds=2,
+        config=config
+    )
+    monitor1.start()
+    
+    # Wait for upload
+    result = wait_until(
+        lambda: len(callback_tracker.called_files) >= 1,
+        timeout=5
+    )
+    assert result, "File should be uploaded first time"
+    
+    monitor1.stop()
+    
+    # Reset callback tracker
+    first_upload_count = len(callback_tracker.called_files)
+    
+    # Second monitor instance - should NOT upload same file
+    monitor2 = FileMonitor(
+        [str(log_dir)],  # Monitor log_dir, not temp_dir
+        callback_tracker.callback,
+        stability_seconds=2,
+        config=config
+    )
+    monitor2.start()
+    
+    # Wait a bit
+    time.sleep(3)
+    
+    # Should NOT have uploaded again
+    assert len(callback_tracker.called_files) == first_upload_count, \
+        f"File should not be uploaded twice. Got {len(callback_tracker.called_files)} uploads"
+    
+    monitor2.stop()
+
+
+def test_same_filename_different_content_uploads(temp_dir, callback_tracker):
+    """Test same filename with different content is treated as new file"""
+    registry_file = temp_dir / "registry.json"
+    
+    config = {
+        'upload': {
+            'processed_files_registry': {
+                'registry_file': str(registry_file),
+                'retention_days': 30
+            },
+            'scan_existing_files': {
+                'enabled': True,
+                'max_age_days': 30
+            }
+        }
+    }
+    
+    test_file = temp_dir / "test.log"
+    
+    # Create file with content A
+    test_file.write_text("content A")
+    
+    monitor1 = FileMonitor(
+        [str(temp_dir)],
+        callback_tracker.callback,
+        stability_seconds=2,
+        config=config
+    )
+    monitor1.start()
+    
+    # Wait for first upload
+    result = wait_until(
+        lambda: len(callback_tracker.called_files) >= 1,
+        timeout=5
+    )
+    assert result
+    
+    monitor1.stop()
+    
+    # Modify file (different size/mtime = different file)
+    test_file.write_text("content B - much longer")
+    
+    # Reset tracker
+    callback_tracker.called_files.clear()
+    
+    # Start new monitor
+    monitor2 = FileMonitor(
+        [str(temp_dir)],
+        callback_tracker.callback,
+        stability_seconds=2,
+        config=config
+    )
+    monitor2.start()
+    
+    # Should upload again (different file)
+    result = wait_until(
+        lambda: len(callback_tracker.called_files) >= 1,
+        timeout=5
+    )
+    
+    assert result, "Modified file should be uploaded as new file"
+    
+    monitor2.stop()
+
+
+def test_failed_upload_not_marked_as_processed(temp_dir, callback_tracker):
+    """Test failed uploads are not marked in registry"""
+    registry_file = temp_dir / "registry.json"
+    
+    config = {
+        'upload': {
+            'processed_files_registry': {
+                'registry_file': str(registry_file),
+                'retention_days': 30
+            }
+        }
+    }
+    
+    # Simulate upload failure
+    callback_tracker.return_value = False
+    
+    monitor = FileMonitor(
+        [str(temp_dir)],
+        callback_tracker.callback,
+        stability_seconds=2,
+        config=config
+    )
+    monitor.start()
+    
+    # Create test file
+    test_file = temp_dir / "test.log"
+    test_file.write_text("test data")
+    
+    # Wait for callback
+    result = wait_until(
+        lambda: len(callback_tracker.called_files) >= 1,
+        timeout=5
+    )
+    
+    assert result, "Callback should be called even if upload fails"
+    
+    monitor.stop()
+    
+    # Check registry - should be empty OR not exist (failed uploads not saved)
+    if registry_file.exists():
+        with open(registry_file) as f:
+            data = json.load(f)
+            files = data['files']
+            assert len(files) == 0, "Failed uploads should not be in registry"
+    else:
+        # Registry file not created (no successful uploads)
+        assert True, "Registry not created is acceptable (no successful uploads)"
+
+def test_registry_cleanup_old_entries(temp_dir):
+    """Test registry automatically removes old entries"""
+    registry_file = temp_dir / "registry.json"
+    
+    # Create registry with old entry
+    old_entry_time = time.time() - (40 * 24 * 3600)  # 40 days old
+    
+    registry_data = {
+        '_metadata': {
+            'last_updated': time.time(),
+            'total_entries': 1,
+            'retention_days': 30
+        },
+        'files': {
+            '/tmp/old.log::1024::123456.0': {
+                'processed_at': old_entry_time,
+                'size': 1024,
+                'mtime': 123456.0,
+                'filepath': '/tmp/old.log',
+                'filename': 'old.log'
+            }
+        }
+    }
+    
+    with open(registry_file, 'w') as f:
+        json.dump(registry_data, f)
+    
+    config = {
+        'upload': {
+            'processed_files_registry': {
+                'registry_file': str(registry_file),
+                'retention_days': 30
+            }
+        }
+    }
+    
+    # Load monitor - should clean old entries
+    monitor = FileMonitor(
+        [str(temp_dir)],
+        lambda f: True,
+        config=config
+    )
+    
+    # Check registry was cleaned
+    assert len(monitor.processed_files) == 0, \
+        "Old entries should be removed (40 days > 30 day retention)"
+
+
+def test_external_marking(temp_dir):
+    """Test mark_file_as_processed_externally method"""
+    registry_file = temp_dir / "registry.json"
+    
+    config = {
+        'upload': {
+            'processed_files_registry': {
+                'registry_file': str(registry_file),
+                'retention_days': 30
+            }
+        }
+    }
+    
+    monitor = FileMonitor(
+        [str(temp_dir)],
+        lambda f: True,
+        config=config
+    )
+    
+    # Create test file
+    test_file = temp_dir / "test.log"
+    test_file.write_text("test data")
+    
+    # Mark externally (simulates main.py marking after batch upload)
+    monitor.mark_file_as_processed_externally(str(test_file))
+    
+    # Check registry
+    with open(registry_file) as f:
+        data = json.load(f)
+        files = data['files']
+        assert len(files) == 1, "File should be in registry"
+
+
+def test_startup_scan_skips_processed_files(temp_dir, callback_tracker):
+    """Test startup scan skips files already in registry"""
+    # Create separate directories for logs and registry
+    log_dir = temp_dir / "logs"
+    log_dir.mkdir()
+    
+    registry_file = temp_dir / "registry.json"
+    
+    # Create test file in log directory
+    test_file = log_dir / "test.log"
+    test_file.write_text("test data")
+    
+    # Pre-populate registry with this file
+    file_stat = test_file.stat()
+    file_identity = f"{test_file.resolve()}::{file_stat.st_size}::{file_stat.st_mtime}"
+    
+    registry_data = {
+        '_metadata': {
+            'last_updated': time.time(),
+            'total_entries': 1,
+            'retention_days': 30
+        },
+        'files': {
+            file_identity: {
+                'processed_at': time.time(),
+                'size': file_stat.st_size,
+                'mtime': file_stat.st_mtime,
+                'filepath': str(test_file.resolve()),
+                'filename': test_file.name
+            }
+        }
+    }
+    
+    # Create parent directory and save registry
+    registry_file.parent.mkdir(parents=True, exist_ok=True)
+    with open(registry_file, 'w') as f:
+        json.dump(registry_data, f)
+    
+    config = {
+        'upload': {
+            'processed_files_registry': {
+                'registry_file': str(registry_file),
+                'retention_days': 30
+            },
+            'scan_existing_files': {
+                'enabled': True,
+                'max_age_days': 30
+            }
+        }
+    }
+    
+    monitor = FileMonitor(
+        [str(log_dir)],  # Monitor log_dir, not temp_dir
+        callback_tracker.callback,
+        stability_seconds=2,
+        config=config
+    )
+    monitor.start()
+    
+    # Wait a bit
+    time.sleep(3)
+    
+    # Should NOT have uploaded (already in registry)
+    assert len(callback_tracker.called_files) == 0, \
+        f"Processed files should be skipped during startup scan. Got {callback_tracker.called_files}"
+    
+    monitor.stop()
