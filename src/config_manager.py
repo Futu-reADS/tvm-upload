@@ -110,15 +110,66 @@ class ConfigManager:
         Called automatically when SIGHUP signal is received.
         If reload fails, keeps the existing configuration.
         
+        **IMPORTANT**: Configuration changes require service restart to take effect.
+        Hot-reload only updates the internal config dict but does NOT update:
+        - Schedule intervals (cached in _schedule_loop)
+        - File monitor settings (cached in FileMonitor)
+        - Disk thresholds (cached in DiskManager)
+        - S3 credentials (cached in UploadManager)
+        
+        To apply config changes:
+        1. Edit config file
+        2. Restart service: sudo systemctl restart tvm-upload
+        
+        SIGHUP is primarily for validation testing, not hot-reload.
+        
         Returns:
             dict: Reloaded configuration (or existing if reload failed)
             
         Note:
-            Safe to call - never leaves system without valid config
+            Safe to call - never leaves system without valid config.
+            Logs warning that restart is required for changes to take effect.
         """
         logger.info("Reloading configuration...")
+        logger.warning(
+            "Config reload detected (SIGHUP). "
+            "Note: Most config changes require SERVICE RESTART to take effect. "
+            "Only validation is performed on reload."
+        )
+        
         try:
-            return self.load_config()
+            old_config = self.config.copy()
+            new_config = self.load_config()
+            
+            # Check if critical settings changed
+            critical_changes = []
+            
+            if old_config.get('upload', {}).get('schedule') != new_config.get('upload', {}).get('schedule'):
+                critical_changes.append('upload.schedule')
+            
+            if old_config.get('upload', {}).get('file_stable_seconds') != new_config.get('upload', {}).get('file_stable_seconds'):
+                critical_changes.append('upload.file_stable_seconds')
+            
+            if old_config.get('s3') != new_config.get('s3'):
+                critical_changes.append('s3.*')
+            
+            if old_config.get('disk') != new_config.get('disk'):
+                critical_changes.append('disk.*')
+            
+            if critical_changes:
+                logger.warning(
+                    f"CRITICAL CONFIG CHANGES DETECTED: {', '.join(critical_changes)}"
+                )
+                logger.warning(
+                    "These changes will NOT take effect until service restart!"
+                )
+                logger.warning(
+                    "Action required: sudo systemctl restart tvm-upload"
+                )
+            
+            logger.info("Config validation successful (changes require restart)")
+            return new_config
+            
         except Exception as e:
             logger.error(f"Failed to reload config: {e}")
             logger.info("Keeping existing configuration")

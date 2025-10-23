@@ -48,7 +48,7 @@ class TVMUploadSystem:
     - Deletion policies (NEW v2.0)
     
     Architecture:
-    1. File Monitor detects stable files → adds to upload queue
+    1. File Monitor detects stable files â†’ adds to upload queue
     2. Scheduler triggers upload at configured time
     3. Upload Manager uploads files to S3 with retry
     4. Disk Manager tracks uploaded files and cleans up based on policy
@@ -219,7 +219,7 @@ class TVMUploadSystem:
         # Q2: After upload deletion (FIXED)
         after_upload_config = self.config.get('deletion.after_upload', {})
         
-        if after_upload_config.get('enabled', True):  # ← NEW: Check enabled
+        if after_upload_config.get('enabled', True):  #NEW: Check enabled
             keep_days = after_upload_config.get('keep_days', 14)
             if keep_days == 0:
                 logger.info("After upload: DELETE IMMEDIATELY")
@@ -405,9 +405,9 @@ class TVMUploadSystem:
                     if filepath in upload_results:
                         success = upload_results[filepath]
                         if success:
-                            logger.debug(f"✓ Batch upload succeeded for trigger file: {Path(filepath).name}")
+                            logger.debug(f" Batch upload succeeded for trigger file: {Path(filepath).name}")
                         else:
-                            logger.debug(f"✗ Batch upload failed for trigger file: {Path(filepath).name}")
+                            logger.debug(f" Batch upload failed for trigger file: {Path(filepath).name}")
                         # Return FALSE regardless - registry already marked in _process_upload_queue()
                         return False
                     else:
@@ -887,10 +887,10 @@ class TVMUploadSystem:
         success = self.file_monitor.save_registry()
         
         if success:
-            logger.info(f"✓ {checkpoint_type} saved: {len(files_to_mark)} files marked")
+            logger.info(f" {checkpoint_type} saved: {len(files_to_mark)} files marked")
         else:
             logger.error(
-                f"✗ {checkpoint_type} save failed: {len(files_to_mark)} files "
+                f" {checkpoint_type} save failed: {len(files_to_mark)} files "
                 f"may not be marked (will retry upload on restart)"
             )
 
@@ -1005,7 +1005,12 @@ def signal_handler(signum, frame):
     """
     Handle shutdown signals (SIGTERM, SIGINT).
     
-    Gracefully stops the system and exits.
+    SIGTERM/SIGINT: Gracefully stops the system and exits.
+    
+    Note on SIGHUP:
+    - SIGHUP triggers config validation but does NOT apply changes
+    - Config changes require full service restart: sudo systemctl restart tvm-upload
+    - SIGHUP is handled by ConfigManager, not this handler
     
     Args:
         signum: Signal number
