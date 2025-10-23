@@ -38,18 +38,73 @@ class QueueManager:
         
         Args:
             queue_file: Path to queue JSON file
+            
+        Raises:
+            PermissionError: If queue directory is not writable (CRITICAL)
+            OSError: If queue directory cannot be created
+            
+        Note:
+            Queue file MUST be in a persistent location (/var/lib or similar).
+            /tmp is NOT acceptable as it's cleared on reboot, causing data loss.
         """
         self.queue_file = Path(queue_file)
         self.queue: List[Dict[str, Any]] = []
         
-        # Ensure directory exists
+        # ===== IMPROVED: Fail fast if directory not writable =====
+        # Ensure directory exists and is writable
         try:
+            # Try to create directory
             self.queue_file.parent.mkdir(parents=True, exist_ok=True)
+            
+            # Verify directory is writable by attempting a test write
+            test_file = self.queue_file.parent / '.write_test'
+            try:
+                test_file.touch()
+                test_file.unlink()
+                logger.info(f"Queue directory verified writable: {self.queue_file.parent}")
+            except (PermissionError, OSError) as write_error:
+                logger.error("="*60)
+                logger.error("CRITICAL: Queue directory is NOT writable")
+                logger.error(f"Path: {self.queue_file.parent}")
+                logger.error(f"Error: {write_error}")
+                logger.error("")
+                logger.error("Queue persistence is REQUIRED for production operation")
+                logger.error("Without persistent queue:")
+                logger.error("  - Files will be lost on service restart")
+                logger.error("  - Files will be lost on system reboot")
+                logger.error("  - Upload retry logic will not work")
+                logger.error("")
+                logger.error("Action required:")
+                logger.error(f"  1. Fix permissions: sudo mkdir -p {self.queue_file.parent}")
+                logger.error(f"  2. Set ownership: sudo chown $(whoami) {self.queue_file.parent}")
+                logger.error(f"  3. Or change queue_file path in config.yaml to a writable location")
+                logger.error("")
+                logger.error("REFUSING to use /tmp as fallback (queue would not persist)")
+                logger.error("="*60)
+                raise PermissionError(
+                    f"Queue directory not writable: {self.queue_file.parent}. "
+                    f"Fix permissions or change queue_file in config.yaml"
+                )
+                
         except PermissionError:
-            # If permission denied, use /tmp instead (for tests)
-            self.queue_file = Path('/tmp/tvm-upload') / self.queue_file.name
-            self.queue_file.parent.mkdir(parents=True, exist_ok=True)
-            logger.warning(f"Permission denied for queue directory, using: {self.queue_file}")
+            # Re-raise permission errors (already logged above)
+            raise
+            
+        except OSError as e:
+            logger.error("="*60)
+            logger.error("CRITICAL: Cannot create queue directory")
+            logger.error(f"Path: {self.queue_file.parent}")
+            logger.error(f"Error: {e}")
+            logger.error("")
+            logger.error("Possible causes:")
+            logger.error("  - Parent directory doesn't exist and cannot be created")
+            logger.error("  - Filesystem is read-only")
+            logger.error("  - Disk is full")
+            logger.error("")
+            logger.error("Action required: Fix filesystem issue or change queue_file path")
+            logger.error("="*60)
+            raise OSError(f"Cannot create queue directory: {self.queue_file.parent}: {e}")
+        # ===== END IMPROVED =====
         
         # Load existing queue
         self.load_queue()
@@ -201,6 +256,9 @@ class QueueManager:
         
         Creates a backup before overwriting to enable recovery from corruption.
         Uses atomic write (temp file + rename) for safety.
+        
+        Raises:
+            OSError: If queue cannot be saved (CRITICAL - system cannot continue)
         """
         try:
             # Create backup of existing queue file before overwriting
@@ -224,8 +282,41 @@ class QueueManager:
             
             logger.debug(f"Queue saved: {len(self.queue)} files")
             
+        except PermissionError as e:
+            logger.error("="*60)
+            logger.error("CRITICAL: Cannot save queue file - permission denied")
+            logger.error(f"Queue file: {self.queue_file}")
+            logger.error(f"Error: {e}")
+            logger.error("")
+            logger.error("DANGER: Queue changes are NOT persisted!")
+            logger.error("  - Files added to queue since last save will be LOST on restart")
+            logger.error("  - Upload progress tracking is BROKEN")
+            logger.error("")
+            logger.error("Action required: Fix permissions immediately")
+            logger.error(f"  sudo chown $(whoami) {self.queue_file}")
+            logger.error("="*60)
+            raise OSError(f"Cannot save queue - permission denied: {self.queue_file}")
+            
+        except OSError as e:
+            logger.error("="*60)
+            logger.error("CRITICAL: Cannot save queue file - disk I/O error")
+            logger.error(f"Queue file: {self.queue_file}")
+            logger.error(f"Error: {e}")
+            logger.error("")
+            logger.error("Possible causes:")
+            logger.error("  - Disk full (check: df -h)")
+            logger.error("  - Filesystem errors (check: dmesg | tail)")
+            logger.error("  - Directory deleted")
+            logger.error("")
+            logger.error("DANGER: Queue is NOT saved - data will be lost on restart")
+            logger.error("="*60)
+            raise OSError(f"Cannot save queue - I/O error: {e}")
+            
         except Exception as e:
-            logger.error(f"Failed to save queue: {e}")
+            logger.error(f"CRITICAL: Unexpected error saving queue: {e}")
+            import traceback
+            logger.error(traceback.format_exc())
+            raise
     
     def load_queue(self):
         """
