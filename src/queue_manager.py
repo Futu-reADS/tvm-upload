@@ -196,41 +196,145 @@ class QueueManager:
         return sum(entry['size'] for entry in self.queue)
     
     def save_queue(self):
-        """Save queue to JSON file."""
+        """
+        Save queue to JSON file with backup.
+        
+        Creates a backup before overwriting to enable recovery from corruption.
+        Uses atomic write (temp file + rename) for safety.
+        """
         try:
-            with open(self.queue_file, 'w') as f:
+            # Create backup of existing queue file before overwriting
+            if self.queue_file.exists():
+                backup_file = self.queue_file.with_suffix('.json.bak')
+                try:
+                    import shutil
+                    shutil.copy2(self.queue_file, backup_file)
+                    logger.debug(f"Queue backup created: {backup_file}")
+                except Exception as e:
+                    logger.warning(f"Failed to create queue backup: {e}")
+                    # Continue anyway - backup failure shouldn't block save
+            
+            # Write to temporary file first (atomic write)
+            temp_file = self.queue_file.with_suffix('.json.tmp')
+            with open(temp_file, 'w') as f:
                 json.dump(self.queue, f, indent=2)
+            
+            # Atomic rename (overwrites existing file)
+            temp_file.replace(self.queue_file)
+            
             logger.debug(f"Queue saved: {len(self.queue)} files")
+            
         except Exception as e:
             logger.error(f"Failed to save queue: {e}")
     
     def load_queue(self):
-        """Load queue from JSON file."""
-        if not self.queue_file.exists():
-            logger.info("No existing queue file, starting fresh")
-            return
+        """
+        Load queue from JSON file with automatic recovery from backup.
         
-        try:
-            with open(self.queue_file, 'r') as f:
-                self.queue = json.load(f)
+        If primary queue file is corrupted:
+        1. Try to load from backup (.json.bak)
+        2. If backup also fails, start with empty queue
+        3. Remove files that no longer exist from loaded queue
+        """
+        backup_file = self.queue_file.with_suffix('.json.bak')
+        
+        # Try loading primary queue file
+        if self.queue_file.exists():
+            try:
+                with open(self.queue_file, 'r') as f:
+                    self.queue = json.load(f)
+                
+                logger.info(f"Loaded queue from primary file: {len(self.queue)} files")
+                self._cleanup_missing_files()
+                return
+                
+            except json.JSONDecodeError as e:
+                logger.error(f"Primary queue file corrupted: {e}")
+                logger.warning("Attempting to recover from backup...")
+                
+                # Try loading from backup
+                if backup_file.exists():
+                    try:
+                        with open(backup_file, 'r') as f:
+                            self.queue = json.load(f)
+                        
+                        logger.warning(
+                            f"✓ Recovered queue from backup: {len(self.queue)} files "
+                            f"(may have lost recent additions)"
+                        )
+                        
+                        # Save recovered queue as new primary
+                        self.save_queue()
+                        self._cleanup_missing_files()
+                        return
+                        
+                    except Exception as backup_error:
+                        logger.error(f"Backup file also corrupted: {backup_error}")
+                        logger.error("Cannot recover queue - starting fresh")
+                        self.queue = []
+                else:
+                    logger.error("No backup file available - starting with empty queue")
+                    self.queue = []
             
-            # Remove files that no longer exist
-            original_count = len(self.queue)
-            self.queue = [
-                entry for entry in self.queue
-                if Path(entry['filepath']).exists()
-            ]
-            removed = original_count - len(self.queue)
-            
-            if removed > 0:
-                logger.warning(f"Removed {removed} missing files from queue")
-                self.save_queue()
-            
-            logger.info(f"Loaded queue: {len(self.queue)} files ({self.get_queue_bytes() / (1024**3):.2f} GB)")
-            
-        except Exception as e:
-            logger.error(f"Failed to load queue: {e}")
+            except Exception as e:
+                logger.error(f"Failed to load queue: {e}")
+                
+                # Try backup as last resort
+                if backup_file.exists():
+                    try:
+                        with open(backup_file, 'r') as f:
+                            self.queue = json.load(f)
+                        logger.warning(f"Recovered from backup: {len(self.queue)} files")
+                        self.save_queue()
+                        self._cleanup_missing_files()
+                        return
+                    except Exception:
+                        pass
+                
+                logger.error("Starting with empty queue")
+                self.queue = []
+        
+        elif backup_file.exists():
+            # Primary doesn't exist but backup does - recover
+            logger.warning("Primary queue missing but backup exists - recovering")
+            try:
+                with open(backup_file, 'r') as f:
+                    self.queue = json.load(f)
+                logger.info(f"Recovered from backup: {len(self.queue)} files")
+                self.save_queue()  # Restore as primary
+                self._cleanup_missing_files()
+                return
+            except Exception as e:
+                logger.error(f"Failed to recover from backup: {e}")
+                self.queue = []
+        
+        else:
+            # Neither file exists - fresh start
+            logger.info("No existing queue file, starting fresh")
             self.queue = []
+
+    def _cleanup_missing_files(self):
+        """
+        Remove files that no longer exist from queue.
+        
+        Called after loading queue to ensure all entries are valid.
+        """
+        original_count = len(self.queue)
+        self.queue = [
+            entry for entry in self.queue
+            if Path(entry['filepath']).exists()
+        ]
+        removed = original_count - len(self.queue)
+        
+        if removed > 0:
+            logger.warning(f"Removed {removed} missing files from queue")
+            self.save_queue()
+        
+        if len(self.queue) > 0:
+            logger.info(
+                f"Queue contains {len(self.queue)} files "
+                f"({self.get_queue_bytes() / (1024**3):.2f} GB)"
+            )
     
     def clear_queue(self):
         """Clear entire queue (for testing)."""
