@@ -397,12 +397,27 @@ class TVMUploadSystem:
                     # Upload entire queue (maximizes WiFi opportunities)
                     logger.info("Batch upload enabled - uploading entire queue")
                     
-                    # Process entire queue with batch registry optimization
+                    # ===== IMPROVED: Use explicit result from _process_upload_queue =====
+                    # Instead of inferring success from queue state, use actual upload results
                     upload_results = self._process_upload_queue()
                     
-                    # Return FALSE - all registry marking already done in _process_upload_queue()
-                    # Prevents file_monitor from attempting to mark again
-                    return False
+                    # Check explicit result for this specific file
+                    if filepath in upload_results:
+                        success = upload_results[filepath]
+                        if success:
+                            logger.debug(f"✓ Batch upload succeeded for trigger file: {Path(filepath).name}")
+                        else:
+                            logger.debug(f"✗ Batch upload failed for trigger file: {Path(filepath).name}")
+                        # Return FALSE regardless - registry already marked in _process_upload_queue()
+                        return False
+                    else:
+                        # File not in results (shouldn't happen, but handle gracefully)
+                        logger.warning(
+                            f"Trigger file not in batch results: {Path(filepath).name} "
+                            f"(possibly removed from queue before upload)"
+                        )
+                        return False
+                    # ===== END IMPROVED =====
                 else:
                     # Upload only this single file
                     logger.info("Batch upload disabled - uploading only this file")
@@ -741,6 +756,7 @@ class TVMUploadSystem:
         Process all files in upload queue with batch registry optimization.
         
         Features:
+        - Returns explicit success/failure status for each file
         - Only marks successfully uploaded files in registry
         - Failed files remain in queue for retry
         - Batch registry saves for efficiency (single disk write per batch)
@@ -752,7 +768,8 @@ class TVMUploadSystem:
         
         Returns:
             dict: {filepath: success_bool} - Upload result for each file
-            
+                success_bool is True if uploaded successfully, False otherwise
+                
         Note:
             Thread-safe - uses queue_manager's internal locking
         """
@@ -771,24 +788,11 @@ class TVMUploadSystem:
         
         try:
             for idx, filepath in enumerate(batch, start=1):
-                # Check if file is in queue before upload attempt
-                was_in_queue = any(
-                    entry['filepath'] == filepath 
-                    for entry in self.queue_manager.queue
-                )
-                
-                # Attempt upload
-                self._upload_file(filepath)
-                
-                # Check if file was removed from queue (= upload succeeded)
-                is_in_queue_after = any(
-                    entry['filepath'] == filepath 
-                    for entry in self.queue_manager.queue
-                )
-                
-                # Success = was in queue before, not in queue after
-                success = was_in_queue and not is_in_queue_after
+                # ===== IMPROVED: Get explicit success/failure from _upload_file =====
+                # _upload_file now returns True/False instead of inferring from queue
+                success = self._upload_file(filepath)
                 upload_results[filepath] = success
+                # ===== END IMPROVED =====
                 
                 # Collect successful uploads for registry marking
                 if success:
@@ -799,7 +803,7 @@ class TVMUploadSystem:
                 if len(files_to_mark) >= checkpoint_interval:
                     self._save_registry_checkpoint(files_to_mark, is_final=False)
                     files_to_mark = []  # Clear saved files
-            
+                
         except Exception as e:
             logger.error(f"Error during batch upload: {e}")
             import traceback
@@ -818,7 +822,7 @@ class TVMUploadSystem:
             f"{failed_count} failed"
         )
         
-        # ===== FIXED: Mutually exclusive disk cleanup conditions =====
+        # Disk cleanup (unchanged)
         emergency_enabled = self.config.get('deletion.emergency.enabled', False)
         
         if emergency_enabled:
@@ -826,9 +830,9 @@ class TVMUploadSystem:
             
             # Critical threshold (>95%) - Delete ANY old files
             if usage >= self.disk_manager.critical_threshold:
-                logger.error("🚨 CRITICAL: Disk usage >95% - triggering EMERGENCY cleanup")
+                logger.error(" CRITICAL: Disk usage >95% - triggering EMERGENCY cleanup")
                 deleted = self.disk_manager.emergency_cleanup_all_files()
-                logger.warning(f"🚨 Emergency cleanup: {deleted} files deleted (ANY files, not just uploaded)")
+                logger.warning(f" Emergency cleanup: {deleted} files deleted (ANY files, not just uploaded)")
             
             # Warning threshold (90-95%) - Delete uploaded files only
             elif usage >= self.disk_manager.warning_threshold:
@@ -841,7 +845,6 @@ class TVMUploadSystem:
                 logger.debug(f"Disk usage OK: {usage*100:.1f}%")
         else:
             logger.debug("Emergency cleanup disabled - skipping disk check")
-        # ===== END FIXED =====
         
         return upload_results
 
@@ -892,7 +895,7 @@ class TVMUploadSystem:
             )
 
     
-    def _upload_file(self, filepath: str):
+    def _upload_file(self, filepath: str) -> bool:
         """
         Upload single file to S3.
         
@@ -903,6 +906,9 @@ class TVMUploadSystem:
         
         Args:
             filepath: Path to file to upload
+            
+        Returns:
+            bool: True if upload succeeded, False otherwise
             
         Note:
             Logs warning if file disappeared before upload
@@ -923,11 +929,11 @@ class TVMUploadSystem:
                 )
             
             self.queue_manager.remove_from_queue(filepath)
-            return
+            return False  # Not a success
         
         file_size = file_path.stat().st_size
         
-        # ===== NEW: Handle permanent errors (v2.1) =====
+        # ===== Handle permanent errors (v2.1) =====
         from upload_manager import PermanentUploadError
         
         try:
@@ -937,8 +943,7 @@ class TVMUploadSystem:
             self.queue_manager.mark_permanent_failure(filepath, str(e))
             self.stats['files_failed'] += 1
             self.cloudwatch.record_upload_failure()
-            return
-        # ===== END NEW =====
+            return False  # Failed permanently
         
         if success:
             self.stats['files_uploaded'] += 1
@@ -948,9 +953,10 @@ class TVMUploadSystem:
             # Remove from queue
             self.queue_manager.remove_from_queue(filepath)
             
-            # ===== UPDATED: Use helper function for deletion (v2.1) =====
+            # Handle post-upload deletion
             self._handle_post_upload_deletion(file_path, file_size)
-            # ===== END UPDATED =====
+            
+            return True  # Success
             
         else:
             self.stats['files_failed'] += 1
@@ -960,6 +966,7 @@ class TVMUploadSystem:
             self.queue_manager.mark_failed(filepath)
             
             logger.error(f"Upload failed: {file_path.name}")
+            return False  # Failed (temporary)
         
     def _print_statistics(self):
         """
