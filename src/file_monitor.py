@@ -54,10 +54,10 @@ class FileMonitor:
     """
     
     def __init__(self, 
-             directories: List[str], 
-             callback: Callable[[str], None],
-             stability_seconds: int = 60,
-             config: dict = None):
+         directories: List[str], 
+         callback: Callable[[str], None],
+         stability_seconds: int = 60,
+            config: dict = None):
         """
         Initialize file monitor.
         
@@ -66,6 +66,9 @@ class FileMonitor:
             callback: Function to call when file is ready (receives file path)
             stability_seconds: Seconds file must be unchanged to be "complete"
             config: Configuration dict for startup scan settings (NEW v2.0)
+            
+        Raises:
+            PermissionError: If registry file cannot be written
             
         Note:
             Directories will be created if they don't exist
@@ -90,6 +93,33 @@ class FileMonitor:
         
         # Load processed files registry
         self.processed_files: Dict[str, dict] = self._load_processed_registry()
+        
+        # ===== NEW: Validate registry is writable at startup =====
+        logger.info(f"Validating registry writability: {self.registry_file}")
+        try:
+            # Ensure directory exists
+            parent_dir = self.registry_file.parent
+            if not parent_dir.exists():
+                parent_dir.mkdir(parents=True, exist_ok=True)
+            
+            # Test write by saving current registry (even if empty)
+            self._save_processed_registry()
+            logger.info("✓ Registry file is writable")
+            
+        except (PermissionError, OSError) as e:
+            logger.error(f"✗ Registry file is NOT writable: {e}")
+            logger.error("="*60)
+            logger.error("FATAL: Cannot write to registry file")
+            logger.error(f"Path: {self.registry_file}")
+            logger.error("Registry persistence is REQUIRED for production operation")
+            logger.error("Without persistent registry, files will be uploaded multiple times")
+            logger.error("")
+            logger.error("Action required:")
+            logger.error("  1. Fix permissions: sudo chmod 666 {registry_file}")
+            logger.error("  2. Or change registry_file path in config.yaml")
+            logger.error("="*60)
+            raise  # Fail fast - cannot continue without writable registry
+        # ===== END NEW =====
         
         # Watchdog components
         self.observer = Observer()
@@ -330,15 +360,22 @@ class FileMonitor:
         
         Saves in JSON format with metadata for debugging and monitoring.
         Creates parent directories if they don't exist.
+        
+        Raises:
+            PermissionError: If registry file cannot be written (CRITICAL)
+            OSError: If disk I/O fails (CRITICAL)
         """
         try:
             # Ensure directory exists
             parent_dir = self.registry_file.parent
             if not parent_dir.exists():
-                parent_dir.mkdir(parents=True, exist_ok=True)
-            if not parent_dir.exists():
-                logger.error(f"Cannot create registry directory: {parent_dir}")
-                return
+                try:
+                    parent_dir.mkdir(parents=True, exist_ok=True)
+                except PermissionError as e:
+                    logger.error(f"CRITICAL: Cannot create registry directory: {parent_dir}")
+                    logger.error(f"Permission denied: {e}")
+                    logger.error("Registry persistence is REQUIRED for production operation")
+                    raise  # Fail fast - this is critical
             
             # Build registry data with metadata
             registry_data = {
@@ -361,14 +398,30 @@ class FileMonitor:
             logger.debug(f"Saved {len(self.processed_files)} entries to registry")
             
         except PermissionError as e:
-            logger.error(f"Permission denied writing registry: {e}")
-            logger.warning("Processed files will not persist across restarts!")
-        except FileNotFoundError as e:
-            logger.error(f"Registry path not found: {e}")
-            logger.warning("Processed files will not persist across restarts!")
+            logger.error(f"CRITICAL: Permission denied writing registry: {e}")
+            logger.error(f"Registry file: {self.registry_file}")
+            logger.error("="*60)
+            logger.error("SYSTEM CANNOT CONTINUE WITHOUT PERSISTENT REGISTRY")
+            logger.error("Registry persistence is REQUIRED to prevent duplicate uploads")
+            logger.error("Action required: Fix permissions or change registry_file path in config")
+            logger.error("="*60)
+            raise  # Fail fast - don't continue without registry
+            
+        except OSError as e:
+            logger.error(f"CRITICAL: Disk I/O error writing registry: {e}")
+            logger.error(f"Registry file: {self.registry_file}")
+            logger.error("="*60)
+            logger.error("SYSTEM CANNOT CONTINUE - DISK I/O FAILURE")
+            logger.error("Action required: Check disk space and filesystem health")
+            logger.error("="*60)
+            raise  # Fail fast - disk issues are critical
+            
         except Exception as e:
-            logger.error(f"Failed to save processed registry: {e}")
-
+            logger.error(f"CRITICAL: Unexpected error saving registry: {e}")
+            logger.error(f"Registry file: {self.registry_file}")
+            import traceback
+            logger.error(traceback.format_exc())
+            raise  # Fail fast for any unexpected errors
 
     def _is_file_processed(self, file_path: Path) -> bool:
         """
