@@ -532,8 +532,8 @@ class UploadManager:
         """
         Verify that THIS specific file (same content) exists in S3.
         
-        Checks by comparing file size across multiple date paths.
-        Now uses source-based S3 structure.
+        Checks by comparing BOTH file size AND content hash (ETag/MD5).
+        This prevents false positives when different files have the same size.
         
         Date checking strategy:
         - Syslog files: Only check expected date (mtime), no date range check
@@ -544,6 +544,11 @@ class UploadManager:
             
         Returns:
             bool: True if this exact file already exists in S3, False otherwise
+            
+        Note:
+            Uses MD5 hash for content verification. For multipart uploads,
+            ETag format is different (MD5-of-MD5s), so we fall back to
+            size-only comparison for those cases.
         """
         file_path = Path(local_path)
         
@@ -553,23 +558,17 @@ class UploadManager:
         except (OSError, FileNotFoundError):
             return False
         
+        # Calculate local file MD5 hash for verification
+        local_md5 = self._calculate_md5(file_path)
+        if local_md5 is None:
+            logger.warning(f"Cannot calculate MD5 for {file_path.name}, skipping verification")
+            return False
+        
         # Check using file's actual modification date first (most likely match)
         s3_key = self._build_s3_key(file_path)  # Uses mtime internally for syslog
-        try:
-            response = self.s3_client.head_object(Bucket=self.bucket, Key=s3_key)
-            s3_size = response['ContentLength']
-            
-            if s3_size == local_size:
-                logger.info(f"File already in S3 (same size: {local_size} bytes), skipping: {file_path.name}")
-                return True
-            else:
-                logger.debug(f"S3 key exists but different size (local: {local_size}, S3: {s3_size})")
-                return False
-                
-        except ClientError as e:
-            if e.response['Error']['Code'] != '404':
-                logger.debug(f"S3 check error: {e}")
-            pass
+        
+        if self._verify_s3_object(s3_key, local_size, local_md5, file_path.name):
+            return True
         
         # Determine if this is a syslog file
         file_str = str(file_path.resolve())
@@ -580,7 +579,6 @@ class UploadManager:
         
         if is_syslog:
             # Syslog: Only check expected date (no date range check)
-            # Syslog files are dated by mtime, so if not found at expected date, it's a new file
             logger.debug(f"Syslog file not found in S3 for expected date: {file_path.name}")
             return False
         
@@ -596,29 +594,117 @@ class UploadManager:
             date_str = check_date.strftime("%Y-%m-%d")
             
             # Rebuild S3 key with different date
-            # Extract source and relative_path from original key
             original_parts = s3_key.split('/', 3)  # [vehicle_id, date, source, relative_path]
             if len(original_parts) >= 4:
                 vehicle_id, _, source, relative_path = original_parts
                 alternate_key = f"{vehicle_id}/{date_str}/{source}/{relative_path}"
                 
-                try:
-                    response = self.s3_client.head_object(Bucket=self.bucket, Key=alternate_key)
-                    s3_size = response['ContentLength']
-                    
-                    if s3_size == local_size:
-                        logger.info(
-                            f"File already in S3 ({days_offset:+d} days offset, same size), "
-                            f"skipping: {file_path.name}"
-                        )
-                        return True
-                        
-                except ClientError:
-                    continue
+                if self._verify_s3_object(alternate_key, local_size, local_md5, file_path.name, days_offset):
+                    return True
         
-        # File not found in S3 (or all found files have different sizes)
+        # File not found in S3 (or all found files have different content)
         logger.debug(f"File not found in S3 or different content: {file_path.name}")
         return False
+    
+    def _calculate_md5(self, file_path: Path) -> str:
+        """
+        Calculate MD5 hash of file for content verification.
+        
+        Reads file in chunks to handle large files efficiently.
+        
+        Args:
+            file_path: Path to file
+            
+        Returns:
+            str: Hex MD5 hash, or None if calculation fails
+        """
+        import hashlib
+        
+        try:
+            md5_hash = hashlib.md5()
+            
+            with open(file_path, 'rb') as f:
+                # Read in 8MB chunks for efficiency
+                for chunk in iter(lambda: f.read(8 * 1024 * 1024), b''):
+                    md5_hash.update(chunk)
+            
+            return md5_hash.hexdigest()
+            
+        except Exception as e:
+            logger.error(f"Failed to calculate MD5 for {file_path.name}: {e}")
+            return None
+    
+    def _verify_s3_object(self, s3_key: str, local_size: int, local_md5: str, 
+                         filename: str, days_offset: int = 0) -> bool:
+        """
+        Verify S3 object matches local file by size and content hash.
+        
+        Args:
+            s3_key: S3 object key
+            local_size: Local file size in bytes
+            local_md5: Local file MD5 hash (hex)
+            filename: Filename for logging
+            days_offset: Days offset from expected date (for logging)
+            
+        Returns:
+            bool: True if S3 object matches local file
+        """
+        try:
+            response = self.s3_client.head_object(Bucket=self.bucket, Key=s3_key)
+            s3_size = response['ContentLength']
+            s3_etag = response['ETag'].strip('"')
+            
+            # Check size first (fast check)
+            if s3_size != local_size:
+                logger.debug(
+                    f"S3 object size mismatch: {filename} "
+                    f"(local: {local_size}, S3: {s3_size})"
+                )
+                return False
+            
+            # Check content hash (ETag)
+            # Note: For multipart uploads, ETag format is "MD5-of-MD5s-partcount"
+            # For single-part uploads, ETag is just the MD5 hash
+            
+            if '-' in s3_etag:
+                # Multipart upload - ETag is not simple MD5
+                # Fall back to size-only comparison (already checked above)
+                logger.debug(
+                    f"S3 object is multipart upload (ETag: {s3_etag}), "
+                    f"using size-only verification: {filename}"
+                )
+                
+                offset_msg = f" ({days_offset:+d} days offset)" if days_offset else ""
+                logger.info(
+                    f"File already in S3{offset_msg} (same size: {local_size} bytes, "
+                    f"multipart upload), skipping: {filename}"
+                )
+                return True
+            
+            # Single-part upload - ETag is MD5 hash
+            if s3_etag.lower() == local_md5.lower():
+                offset_msg = f" ({days_offset:+d} days offset)" if days_offset else ""
+                logger.info(
+                    f"File already in S3{offset_msg} (size: {local_size} bytes, "
+                    f"MD5 match), skipping: {filename}"
+                )
+                return True
+            else:
+                logger.debug(
+                    f"S3 object content mismatch: {filename} "
+                    f"(local MD5: {local_md5}, S3 ETag: {s3_etag})"
+                )
+                return False
+                
+        except ClientError as e:
+            if e.response['Error']['Code'] == '404':
+                logger.debug(f"S3 object not found: {s3_key}")
+            else:
+                logger.debug(f"S3 check error for {s3_key}: {e}")
+            return False
+        except Exception as e:
+            logger.error(f"Unexpected error verifying S3 object {s3_key}: {e}")
+            return False
 
 if __name__ == '__main__':
     import sys
