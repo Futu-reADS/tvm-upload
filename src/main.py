@@ -818,22 +818,30 @@ class TVMUploadSystem:
             f"{failed_count} failed"
         )
         
-        # ===== Disk space management (unchanged) =====
+        # ===== FIXED: Mutually exclusive disk cleanup conditions =====
         emergency_enabled = self.config.get('deletion.emergency.enabled', False)
         
         if emergency_enabled:
             usage, _, _ = self.disk_manager.get_disk_usage()
             
-            if usage >= self.disk_manager.critical_threshold:  # >95%
+            # Critical threshold (>95%) - Delete ANY old files
+            if usage >= self.disk_manager.critical_threshold:
                 logger.error("🚨 CRITICAL: Disk usage >95% - triggering EMERGENCY cleanup")
                 deleted = self.disk_manager.emergency_cleanup_all_files()
                 logger.warning(f"🚨 Emergency cleanup: {deleted} files deleted (ANY files, not just uploaded)")
-            elif not self.disk_manager.check_disk_space():  # >90%
-                logger.warning("Disk usage >90% - cleaning uploaded files only")
+            
+            # Warning threshold (90-95%) - Delete uploaded files only
+            elif usage >= self.disk_manager.warning_threshold:
+                logger.warning(f"Disk usage at {usage*100:.1f}% (>90%) - cleaning uploaded files")
                 deleted = self.disk_manager.cleanup_old_files()
                 logger.info(f"Standard cleanup: {deleted} uploaded files deleted")
+            
+            # Below warning threshold - No cleanup needed
+            else:
+                logger.debug(f"Disk usage OK: {usage*100:.1f}%")
         else:
             logger.debug("Emergency cleanup disabled - skipping disk check")
+        # ===== END FIXED =====
         
         return upload_results
 
