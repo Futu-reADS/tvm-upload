@@ -37,10 +37,14 @@ class CloudWatchManager:
             region: AWS region (e.g., 'cn-north-1')
             vehicle_id: Vehicle identifier for dimensions
             enabled: Enable/disable CloudWatch (False for testing)
+            
+        Raises:
+            RuntimeError: If CloudWatch explicitly enabled but initialization fails
         """
         self.region = region
         self.vehicle_id = vehicle_id
         self.enabled = enabled
+        self.cw_client = None
         
         # Metric accumulators (reset after publish)
         self.bytes_uploaded = 0
@@ -50,13 +54,85 @@ class CloudWatchManager:
         # Initialize CloudWatch client
         if self.enabled:
             try:
-                self.cw_client = boto3.client('cloudwatch', region_name=region)
-                logger.info(f"CloudWatch initialized for region: {region}")
+                import os
+                
+                # Check for LocalStack (testing environment)
+                endpoint_url = os.getenv('AWS_ENDPOINT_URL')
+                
+                if endpoint_url:
+                    # Testing mode with LocalStack
+                    logger.info(f"CloudWatch in TEST mode (endpoint: {endpoint_url})")
+                    client_kwargs = {
+                        'region_name': region,
+                        'endpoint_url': endpoint_url,
+                        'aws_access_key_id': os.getenv('AWS_ACCESS_KEY_ID', 'test'),
+                        'aws_secret_access_key': os.getenv('AWS_SECRET_ACCESS_KEY', 'test')
+                    }
+                    self.cw_client = boto3.client('cloudwatch', **client_kwargs)
+                    logger.info("CloudWatch client created (TEST mode)")
+                else:
+                    # Production mode
+                    self.cw_client = boto3.client('cloudwatch', region_name=region)
+                    logger.info(f"CloudWatch initialized for region: {region}")
+                    
+                    # ===== NEW: Test CloudWatch permissions =====
+                    # Verify we can actually publish metrics (catch IAM issues early)
+                    try:
+                        # Try to publish a test metric (harmless startup marker)
+                        self.cw_client.put_metric_data(
+                            Namespace='TVM/Upload',
+                            MetricData=[{
+                                'MetricName': 'ServiceStartup',
+                                'Value': 1,
+                                'Unit': 'Count',
+                                'Timestamp': datetime.utcnow(),
+                                'Dimensions': [
+                                    {'Name': 'VehicleId', 'Value': self.vehicle_id}
+                                ]
+                            }]
+                        )
+                        logger.info("✓ CloudWatch permissions verified (test metric published)")
+                    except Exception as perm_error:
+                        logger.error(f"✗ CloudWatch permission test FAILED: {perm_error}")
+                        logger.error("="*60)
+                        logger.error("CRITICAL: CloudWatch is enabled but cannot publish metrics")
+                        logger.error("This indicates IAM permission issues")
+                        logger.error("")
+                        logger.error("Required IAM permissions:")
+                        logger.error("  - cloudwatch:PutMetricData")
+                        logger.error("  - cloudwatch:PutMetricAlarm (for alarms)")
+                        logger.error("")
+                        logger.error("Action required:")
+                        logger.error("  1. Fix IAM policy for this vehicle's credentials")
+                        logger.error("  2. Or set monitoring.cloudwatch_enabled: false in config")
+                        logger.error("="*60)
+                        raise RuntimeError(f"CloudWatch enabled but cannot publish metrics: {perm_error}")
+                    # ===== END NEW =====
+                    
+            except RuntimeError:
+                # Re-raise RuntimeError (permission test failure)
+                raise
+                
             except Exception as e:
-                logger.warning(f"CloudWatch client creation failed: {e}")
-                self.enabled = False
+                logger.error(f"CloudWatch client creation failed: {e}")
+                logger.error("="*60)
+                logger.error("CRITICAL: CloudWatch initialization failed")
+                logger.error(f"Region: {region}")
+                logger.error(f"Vehicle ID: {vehicle_id}")
+                logger.error("")
+                logger.error("Possible causes:")
+                logger.error("  1. Invalid AWS credentials")
+                logger.error("  2. Invalid region name")
+                logger.error("  3. Network connectivity issues")
+                logger.error("  4. Missing boto3 dependencies")
+                logger.error("")
+                logger.error("Action required:")
+                logger.error("  - If CloudWatch monitoring is required, fix the issue above")
+                logger.error("  - If monitoring is optional, set monitoring.cloudwatch_enabled: false")
+                logger.error("="*60)
+                raise RuntimeError(f"CloudWatch initialization failed: {e}")
         else:
-            logger.info("CloudWatch disabled")
+            logger.info("CloudWatch disabled (enabled=False)")
     
     def record_upload_success(self, file_size: int):
         """
@@ -86,6 +162,10 @@ class CloudWatchManager:
         """
         if not self.enabled:
             logger.debug("CloudWatch disabled, skipping publish")
+            return
+        
+        if self.cw_client is None:
+            logger.error("CloudWatch client not initialized, cannot publish metrics")
             return
         
         try:
