@@ -72,8 +72,8 @@ class UploadManager:
     """
     
     def __init__(self, bucket: str, region: str, vehicle_id: str, 
-             max_retries: int = 10, profile_name: str = None,
-             log_directories: List[str] = None):
+         max_retries: int = 10, profile_name: str = None,
+         log_directories: List = None):  # ← Changed type hint
         """
         Initialize upload manager.
         
@@ -83,14 +83,49 @@ class UploadManager:
             vehicle_id: Vehicle identifier for S3 prefix
             max_retries: Maximum retry attempts (default: 10)
             profile_name: AWS profile name (default: None uses default profile)
-            log_directories: List of monitored directories (for source detection)
+            log_directories: List of directory configs (dict) or paths (str, legacy)
         """
         self.bucket = bucket
         self.region = region
         self.vehicle_id = vehicle_id
         self.max_retries = max_retries
-        self.log_directories = log_directories or []  # ← NEW LINE
         
+        # Parse log directories configuration
+        # Support both legacy (string list) and new (dict list) formats
+        self.log_directory_configs = []
+        
+        if log_directories:
+            for item in log_directories:
+                if isinstance(item, str):
+                    # Legacy format: ["/path/to/log"]
+                    # Auto-detect source from path
+                    self.log_directory_configs.append({
+                        'path': item,
+                        'source': self._guess_source_from_path(item)
+                    })
+                    logger.warning(
+                        f"Using legacy log_directories format for {item}. "
+                        f"Auto-detected source: {self._guess_source_from_path(item)}"
+                    )
+                elif isinstance(item, dict):
+                    # New format: [{path: "/path", source: "ros"}]
+                    if 'path' not in item or 'source' not in item:
+                        logger.error(f"Invalid log directory config: {item}")
+                        continue
+                    self.log_directory_configs.append(item)
+                else:
+                    logger.error(f"Unknown log directory format: {item}")
+        
+        if not self.log_directory_configs:
+            error_msg = (
+                "No valid log directories configured. "
+                "System cannot organize files by source. "
+                "Check config.yaml log_directories format."
+            )
+            logger.error(error_msg)
+            raise ValueError(error_msg)
+
+
         # Initialize S3 client with China endpoint support
         import os
         
@@ -125,6 +160,8 @@ class UploadManager:
         logger.info(f"Initialized for bucket: {bucket}")
         logger.info(f"Vehicle ID: {vehicle_id}")
         logger.info(f"Max retries: {max_retries}")
+        logger.info(f"Configured sources: {[c['source'] for c in self.log_directory_configs]}")
+
     
     def upload_file(self, local_path: str) -> bool:
         """
@@ -265,6 +302,39 @@ class UploadManager:
         
         return False
     
+
+    def _guess_source_from_path(self, path: str) -> str:
+        """
+        Guess source name from path (for legacy format).
+        
+        Args:
+            path: Directory path
+            
+        Returns:
+            str: Guessed source name
+            
+        Note:
+            This is a fallback for legacy config format.
+            New format should explicitly specify source.
+        """
+        from pathlib import Path
+        path_obj = Path(path)
+        
+        # Smart detection based on path patterns
+        path_str = str(path_obj).lower()
+        
+        if 'terminal' in path_str:
+            return 'terminal'
+        elif '.ros/log' in path_str or 'ros_log' in path_str:
+            return 'ros'
+        elif 'ros2' in path_str or 'ros2_ws' in path_str:
+            return 'ros2'
+        elif path_str.startswith('/var/log'):
+            return 'syslog'
+        else:
+            # Fallback to last directory name
+            return path_obj.name
+
     def _build_s3_key(self, file_path: Path) -> str:
         """
         Build S3 key with source-based organization.
@@ -273,17 +343,14 @@ class UploadManager:
         
         Source Detection:
         - Matches file path against configured log_directories
-        - Uses directory name as source (e.g., 'terminal', 'log', 'rosLog')
-        - Special case: /var/log → 'syslog' (always uses upload date, not file mtime)
+        - Uses explicit 'source' from config
         
         Date Logic:
-        - Normal files: Use file modification time (handles delayed uploads)
-        - Syslog files: Use current date (always latest version in today's folder)
+        - Normal files: Use file creation time (st_ctime)
+        - Syslog files: Use file modification time (st_mtime)
         
         Folder Structure:
         - Preserves full folder structure relative to monitored directory
-        - Example: /home/autoware/.ros/log/run-123/launch.log
-        -       → vehicle-001/2025-10-20/log/run-123/launch.log
         
         Args:
             file_path: Local file path
@@ -292,78 +359,89 @@ class UploadManager:
             str: S3 object key
             
         Examples:
-            Config: log_directories: ["/home/autoware/.parcel/log/terminal"]
+            Config: [{path: "/home/autoware/.parcel/log/terminal", source: "terminal"}]
             File: /home/autoware/.parcel/log/terminal/session.log
             Result: vehicle-001/2025-10-20/terminal/session.log
             
-            Config: log_directories: ["/home/autoware/.ros/log"]
+            Config: [{path: "/home/autoware/.ros/log", source: "ros"}]
             File: /home/autoware/.ros/log/run-123/launch.log
-            Result: vehicle-001/2025-10-20/log/run-123/launch.log
+            Result: vehicle-001/2025-10-20/ros/run-123/launch.log
             
-            Config: log_directories: ["/var/log"]
+            Config: [{path: "/var/log", source: "syslog"}]
             File: /var/log/syslog (modified 3 days ago)
-            Result: vehicle-001/2025-10-21/syslog/syslog (uses TODAY, not file mtime)
+            Result: vehicle-001/2025-10-18/syslog/syslog (uses mtime, not ctime)
         """
         file_str = str(file_path.resolve())
         
-        # Special case: /var/log (syslog) - ALWAYS use upload date, not file mtime
-        if file_str.startswith('/var/log'):
-            date_str = datetime.now().strftime("%Y-%m-%d")  # Current date
-            source = 'syslog'
-            relative_path = file_path.name  # Just filename
+        # Get file timestamps
+        try:
+            stat = file_path.stat()
+            ctime = stat.st_ctime  # Creation/change time
+            mtime = stat.st_mtime  # Modification time
+        except (OSError, FileNotFoundError):
+            # Fallback to current date if file stat fails
+            logger.warning(f"Cannot stat file {file_path}, using current date")
+            date_str = datetime.now().strftime("%Y-%m-%d")
+            source = 'other'
+            relative_path = file_path.name
             
-            logger.debug(
-                f"Syslog file detected, using upload date: {file_path.name} "
-                f"→ {date_str}/syslog/{relative_path}"
+            s3_key = f"{self.vehicle_id}/{date_str}/{source}/{relative_path}"
+            logger.debug(f"Built S3 key (stat failed): {file_path.name} → {s3_key}")
+            return s3_key
+        
+        # Match file against configured directories
+        source = None
+        relative_path = None
+        use_mtime = False  # Flag to control which timestamp to use
+        
+        for dir_config in self.log_directory_configs:
+            log_dir = dir_config['path']
+            log_dir_resolved = str(Path(log_dir).resolve())
+            
+            # Check if file is under this directory
+            if file_str.startswith(log_dir_resolved):
+                # Use explicit source from config
+                source = dir_config['source']
+                
+                # Special case: Syslog uses modification time, not creation time
+                if source == 'syslog':
+                    use_mtime = True
+                    logger.debug(f"Syslog file detected, will use mtime: {file_path.name}")
+                
+                # Get relative path from monitored directory
+                # Preserves full folder structure
+                try:
+                    relative_path = str(file_path.relative_to(log_dir_resolved))
+                except ValueError:
+                    # Shouldn't happen, but fallback to filename
+                    relative_path = file_path.name
+                
+                logger.debug(
+                    f"Matched directory: {log_dir} → source='{source}', "
+                    f"relative='{relative_path}'"
+                )
+                break
+        
+        # Fallback if no match found
+        if source is None:
+            source = 'other'
+            relative_path = file_path.name
+            logger.warning(
+                f"File not under any configured log_directory: {file_path}"
             )
         
+        # Determine date to use
+        if use_mtime:
+            # Syslog: Use modification time
+            timestamp = mtime
+            logger.debug(f"Using mtime for date: {file_path.name}")
         else:
-            # Normal files: Use file modification time for date
-            try:
-                mtime = file_path.stat().st_mtime
-                date_str = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d")
-            except (OSError, FileNotFoundError):
-                # Fallback to current date if file stat fails
-                date_str = datetime.now().strftime("%Y-%m-%d")
-                logger.warning(f"Cannot get mtime for {file_path}, using current date")
-            
-            # Match file against configured directories
-            source = None
-            relative_path = None
-            
-            # Get configured directories from config
-            for log_dir in self.log_directories:
-                log_dir_resolved = str(Path(log_dir).resolve())
-                
-                # Check if file is under this directory
-                if file_str.startswith(log_dir_resolved):
-                    # Extract source name from directory path
-                    # Use the last component of the directory path as source
-                    # Example: /home/autoware/.ros/log → 'log'
-                    #          /home/autoware/.parcel/log/terminal → 'terminal'
-                    source = Path(log_dir).name
-                    
-                    # Get relative path from monitored directory
-                    # Preserves full folder structure
-                    try:
-                        relative_path = str(file_path.relative_to(log_dir_resolved))
-                    except ValueError:
-                        # Shouldn't happen, but fallback to filename
-                        relative_path = file_path.name
-                    
-                    logger.debug(
-                        f"Matched directory: {log_dir} → source='{source}', "
-                        f"relative='{relative_path}'"
-                    )
-                    break
-            
-            # Fallback if no match found
-            if source is None:
-                source = 'other'
-                relative_path = file_path.name
-                logger.warning(
-                    f"File not under any configured log_directory: {file_path}"
-                )
+            # All others: Use creation time (st_ctime)
+            # On Linux, this is the earlier of creation or last metadata change
+            timestamp = ctime
+            logger.debug(f"Using ctime for date: {file_path.name}")
+        
+        date_str = datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
         
         # Build final S3 key
         s3_key = f"{self.vehicle_id}/{date_str}/{source}/{relative_path}"

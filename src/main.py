@@ -22,6 +22,7 @@ import time
 import logging
 from datetime import datetime, time as dt_time
 import threading
+from typing import List
 
 from config_manager import ConfigManager
 from file_monitor import FileMonitor
@@ -95,8 +96,17 @@ class TVMUploadSystem:
             log_directories=self.config.get('log_directories')  # ← NEW: Pass directories
         )
         
+        # Extract just the paths for disk management
+        log_dir_configs = self.config.get('log_directories')
+        if log_dir_configs and isinstance(log_dir_configs[0], dict):
+            # New format: extract 'path' field
+            disk_mgr_paths = [item['path'] for item in log_dir_configs]
+        else:
+            # Legacy format: use as-is
+            disk_mgr_paths = log_dir_configs
+
         self.disk_manager = DiskManager(
-            log_directories=self.config.get('log_directories'),
+            log_directories=disk_mgr_paths,
             reserved_gb=self.config.get('disk.reserved_gb'),
             warning_threshold=self.config.get('disk.warning_threshold', 0.90),
             critical_threshold=self.config.get('disk.critical_threshold', 0.95)
@@ -120,12 +130,20 @@ class TVMUploadSystem:
         self.disk_manager._on_file_deleted_callback = on_file_deleted
 
 
-        # Pass config to FileMonitor for startup scan (NEW v2.0)
+        # Extract just the paths for file monitoring
+        log_dir_configs = self.config.get('log_directories')
+        if log_dir_configs and isinstance(log_dir_configs[0], dict):
+            # New format: extract 'path' field
+            monitor_paths = [item['path'] for item in log_dir_configs]
+        else:
+            # Legacy format: use as-is
+            monitor_paths = log_dir_configs
+
         self.file_monitor = FileMonitor(
-            directories=self.config.get('log_directories'),
+            directories=monitor_paths,
             callback=self._on_file_ready,
             stability_seconds=self.config.get('upload.file_stable_seconds', 60),
-            config=self.config.config  # Pass full config dict
+            config=self.config.config
         )
 
         self.cloudwatch = CloudWatchManager(
@@ -255,10 +273,16 @@ class TVMUploadSystem:
             successful_count = sum(1 for s in upload_results.values() if s)
             failed_count = len(upload_results) - successful_count
             
-            logger.info(
-                f"Startup upload complete: {successful_count} files uploaded, "
-                f"{failed_count} failed"
-            )
+            if successful_count > 0:
+                logger.info(
+                    f"Scheduled upload complete: {successful_count} files uploaded, "
+                    f"{failed_count} failed (will retry at next schedule)"
+                )
+            elif failed_count > 0:
+                logger.warning(f"Scheduled upload: all {failed_count} files failed")
+            else:
+                logger.info("Scheduled upload: queue was empty")
+        
         elif not self.upload_on_start and self.queue_manager.get_queue_size() > 0:
             logger.info(
                 f"upload_on_start disabled - {self.queue_manager.get_queue_size()} files "
@@ -351,20 +375,12 @@ class TVMUploadSystem:
                     # Upload entire queue (maximizes WiFi opportunities)
                     logger.info("Batch upload enabled - uploading entire queue")
                     
-                    # ===== UPDATED: Use returned dict to check THIS file's status =====
+                    # Process entire queue with batch registry optimization
                     upload_results = self._process_upload_queue()
                     
-                    # Return success status for THIS specific file
-                    # (all files in batch were already marked in _process_upload_queue)
-                    file_success = upload_results.get(filepath, False)
-                    
-                    if file_success:
-                        logger.info(f"✓ File uploaded successfully (batch): {Path(filepath).name}")
-                    else:
-                        logger.warning(f"✗ File upload failed (batch): {Path(filepath).name}")
-                    
-                    return file_success
-                    # ===== END UPDATED =====
+                    # Return FALSE - all registry marking already done in _process_upload_queue()
+                    # Prevents file_monitor from attempting to mark again
+                    return False
                 else:
                     # Upload only this single file
                     logger.info("Batch upload disabled - uploading only this file")
@@ -565,6 +581,8 @@ class TVMUploadSystem:
                                     f"Scheduled upload complete: {successful_count} files uploaded, "
                                     f"{failed_count} failed (will retry at next schedule)"
                                 )
+                            elif failed_count > 0:
+                                logger.warning(f"Scheduled upload: all {failed_count} files failed")
                             else:
                                 logger.warning("Scheduled upload: all files failed")
                             # ===== END UPDATED =====
@@ -597,6 +615,8 @@ class TVMUploadSystem:
                                         f"Daily upload complete: {successful_count} files uploaded, "
                                         f"{failed_count} failed"
                                     )
+                                elif failed_count > 0:
+                                    logger.warning(f"Scheduled upload: all {failed_count} files failed")
                                 else:
                                     logger.warning("Daily upload: all files failed")
                                 # ===== END UPDATED =====
@@ -629,6 +649,8 @@ class TVMUploadSystem:
                                     f"Interval upload complete: {successful_count} files uploaded, "
                                     f"{failed_count} failed (will retry at next interval)"
                                 )
+                            elif failed_count > 0:
+                                logger.warning(f"Scheduled upload: all {failed_count} files failed")
                             else:
                                 logger.warning("Interval upload: all files failed")
                             # ===== END UPDATED =====
@@ -694,13 +716,17 @@ class TVMUploadSystem:
     
     def _process_upload_queue(self) -> dict:
         """
-        Process all files in upload queue.
+        Process all files in upload queue with batch registry optimization.
         
-        Uploads all queued files and checks disk space afterward.
-        Runs cleanup if disk space is low after uploads (only if emergency enabled).
+        Features:
+        - Only marks successfully uploaded files in registry
+        - Failed files remain in queue for retry
+        - Batch registry saves for efficiency (single disk write per batch)
+        - Periodic checkpoints for large batches (safety against crashes)
+        - try-finally ensures registry saved even on exception
         
-        NEW v2.1: Returns upload results and marks successfully uploaded files
-        in registry to prevent duplicate uploads on restart.
+        NEW v2.1: Marks successfully uploaded files in registry to prevent
+        duplicate uploads on restart.
         
         Returns:
             dict: {filepath: success_bool} - Upload result for each file
@@ -718,33 +744,49 @@ class TVMUploadSystem:
         
         # Track upload results for each file
         upload_results = {}
+        files_to_mark = []  # Collect successful uploads for registry
+        checkpoint_interval = 10  # Save registry every N successful uploads
         
-        for filepath in batch:
-            # Check if file is in queue before upload attempt
-            was_in_queue = any(
-                entry['filepath'] == filepath 
-                for entry in self.queue_manager.queue
-            )
+        try:
+            for idx, filepath in enumerate(batch, start=1):
+                # Check if file is in queue before upload attempt
+                was_in_queue = any(
+                    entry['filepath'] == filepath 
+                    for entry in self.queue_manager.queue
+                )
+                
+                # Attempt upload
+                self._upload_file(filepath)
+                
+                # Check if file was removed from queue (= upload succeeded)
+                is_in_queue_after = any(
+                    entry['filepath'] == filepath 
+                    for entry in self.queue_manager.queue
+                )
+                
+                # Success = was in queue before, not in queue after
+                success = was_in_queue and not is_in_queue_after
+                upload_results[filepath] = success
+                
+                # Collect successful uploads for registry marking
+                if success:
+                    files_to_mark.append(filepath)
+                
+                # Periodic checkpoint save for large batches
+                # This limits data loss to checkpoint_interval files if crash occurs
+                if len(files_to_mark) >= checkpoint_interval:
+                    self._save_registry_checkpoint(files_to_mark, is_final=False)
+                    files_to_mark = []  # Clear saved files
             
-            # Attempt upload
-            self._upload_file(filepath)
-            
-            # Check if file was removed from queue (= upload succeeded)
-            is_in_queue_after = any(
-                entry['filepath'] == filepath 
-                for entry in self.queue_manager.queue
-            )
-            
-            # Success = was in queue before, not in queue after
-            success = was_in_queue and not is_in_queue_after
-            upload_results[filepath] = success
-            
-            # ===== NEW: Mark successfully uploaded files in registry =====
-            if success:
-                # Tell file_monitor to mark this file as processed
-                # This prevents duplicate uploads on service restart
-                self.file_monitor.mark_file_as_processed_externally(filepath)
-            # ===== END NEW =====
+        except Exception as e:
+            logger.error(f"Error during batch upload: {e}")
+            import traceback
+            logger.debug(traceback.format_exc())
+        
+        finally:
+            # Final save for remaining files (always executes, even on exception)
+            if files_to_mark:
+                self._save_registry_checkpoint(files_to_mark, is_final=True)
         
         # Log summary
         successful_count = sum(1 for s in upload_results.values() if s)
@@ -772,6 +814,52 @@ class TVMUploadSystem:
             logger.debug("Emergency cleanup disabled - skipping disk check")
         
         return upload_results
+
+    def _save_registry_checkpoint(self, files_to_mark: List[str], is_final: bool = False):
+        """
+        Save registry checkpoint for batch of successful uploads.
+        
+        Marks all files in the list as processed in the registry with a single
+        disk write operation. This optimizes I/O for batch uploads.
+        
+        Args:
+            files_to_mark: List of successfully uploaded file paths
+            is_final: True if this is the final save for the batch
+        
+        Example:
+            # Checkpoint save (every 10 files)
+            >>> self._save_registry_checkpoint(['file1.log', 'file2.log'], is_final=False)
+            
+            # Final save (remaining files)
+            >>> self._save_registry_checkpoint(['file3.log'], is_final=True)
+        
+        Note:
+            This method uses save_immediately=False to batch all marks,
+            then calls save_registry() once for efficient disk I/O.
+        """
+        if not files_to_mark:
+            return
+        
+        checkpoint_type = "Final" if is_final else "Checkpoint"
+        logger.info(f"{checkpoint_type}: Marking {len(files_to_mark)} files in registry")
+        
+        # Mark all files with deferred save (in-memory only)
+        for filepath in files_to_mark:
+            self.file_monitor.mark_file_as_processed_externally(
+                filepath, 
+                save_immediately=False  # Defer save
+            )
+        
+        # Single registry save for all files
+        success = self.file_monitor.save_registry()
+        
+        if success:
+            logger.info(f"✓ {checkpoint_type} saved: {len(files_to_mark)} files marked")
+        else:
+            logger.error(
+                f"✗ {checkpoint_type} save failed: {len(files_to_mark)} files "
+                f"may not be marked (will retry upload on restart)"
+            )
 
     
     def _upload_file(self, filepath: str):

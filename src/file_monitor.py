@@ -402,7 +402,7 @@ class FileMonitor:
         return is_processed
 
 
-    def _mark_file_processed(self, file_path: Path):
+    def _mark_file_processed(self, file_path: Path, save_immediately: bool = True):
         """
         Mark file as processed with metadata.
         
@@ -414,6 +414,18 @@ class FileMonitor:
         
         Args:
             file_path: Path to mark as processed
+            save_immediately: If True, save registry to disk immediately.
+                            If False, only update in-memory dict (caller must save).
+                            Use False for batch operations, then call save_registry().
+        
+        Example:
+            # Single file (immediate save)
+            monitor._mark_file_processed(file_path)
+            
+            # Batch operation (deferred save)
+            for file_path in batch:
+                monitor._mark_file_processed(file_path, save_immediately=False)
+            monitor.save_registry()  # Single save for entire batch
         """
         file_identity = self._get_file_identity(file_path)
         
@@ -432,13 +444,19 @@ class FileMonitor:
                 'filename': file_path.name
             }
             
-            self._save_processed_registry()
-            
-            logger.info(
-                f"Marked as processed: {file_path.name} "
-                f"(size: {stat.st_size / (1024**2):.2f} MB)"
-            )
-            
+            # Only save if requested (allows batching)
+            if save_immediately:
+                self._save_processed_registry()
+                logger.info(
+                    f"Marked as processed: {file_path.name} "
+                    f"(size: {stat.st_size / (1024**2):.2f} MB)"
+                )
+            else:
+                logger.debug(
+                    f"Marked as processed (deferred save): {file_path.name} "
+                    f"(size: {stat.st_size / (1024**2):.2f} MB)"
+                )
+                
         except Exception as e:
             logger.error(f"Failed to mark file as processed: {e}")
 
@@ -621,7 +639,7 @@ class FileMonitor:
         """
         return [str(p) for p in self.file_tracker.keys()]
     
-    def mark_file_as_processed_externally(self, filepath: str):
+    def mark_file_as_processed_externally(self, filepath: str, save_immediately: bool = True):
         """
         Mark a file as processed externally (called by main.py).
         
@@ -633,20 +651,87 @@ class FileMonitor:
         
         Args:
             filepath: Path to file that was successfully uploaded
-            
+            save_immediately: If True, save registry to disk immediately.
+                            If False, caller must call save_registry() manually.
+                            Use False for batch operations to optimize disk I/O.
+                
         Example:
-            >>> # After successful batch upload in main.py
+            # Single file upload
             >>> file_monitor.mark_file_as_processed_externally('/var/log/file.log')
+            
+            # Batch upload (efficient)
+            >>> for filepath in batch:
+            ...     file_monitor.mark_file_as_processed_externally(filepath, save_immediately=False)
+            >>> file_monitor.save_registry()  # Single save for entire batch
         """
         file_path = Path(filepath)
         
         # Safety check: Only mark if not already processed
         if not self._is_file_processed(file_path):
-            self._mark_file_processed(file_path)
-            logger.info(f"✓ Marked as processed (external): {file_path.name}")
+            self._mark_file_processed(file_path, save_immediately=save_immediately)
+            
+            if save_immediately:
+                logger.info(f"✓ Marked as processed (external): {file_path.name}")
+            else:
+                logger.debug(f"✓ Marked as processed (external, deferred): {file_path.name}")
         else:
             logger.debug(f"Already marked as processed: {file_path.name}")
 
+
+    def save_registry(self):
+        """
+        Manually save registry to disk.
+        
+        Use after batch operations with save_immediately=False to write
+        all accumulated changes with a single disk I/O operation.
+        
+        Example:
+            >>> # Batch operation
+            >>> for filepath in batch:
+            ...     monitor.mark_file_as_processed_externally(filepath, save_immediately=False)
+            >>> monitor.save_registry()  # Single save for all files
+        
+        Note:
+            Includes retry logic for transient I/O errors.
+        """
+        max_retries = 3
+        retry_delay = 1  # seconds
+        
+        for attempt in range(1, max_retries + 1):
+            try:
+                self._save_processed_registry()
+                
+                if attempt > 1:
+                    logger.info(f"Registry saved successfully (after {attempt} attempts)")
+                else:
+                    logger.debug("Registry saved successfully")
+                
+                return True
+                
+            except OSError as e:
+                if attempt < max_retries:
+                    logger.warning(
+                        f"Registry save failed (attempt {attempt}/{max_retries}): {e}. "
+                        f"Retrying in {retry_delay}s..."
+                    )
+                    time.sleep(retry_delay)
+                else:
+                    logger.error(
+                        f"Registry save failed after {max_retries} attempts: {e}"
+                    )
+                    logger.error(
+                        "IN-MEMORY MARKS WILL BE LOST ON RESTART! "
+                        "Check disk space and permissions."
+                    )
+                    return False
+            
+            except Exception as e:
+                logger.error(f"Unexpected error saving registry: {e}")
+                import traceback
+                logger.debug(traceback.format_exc())
+                return False
+        
+        return False
 
 class LogFileHandler(FileSystemEventHandler):
     """

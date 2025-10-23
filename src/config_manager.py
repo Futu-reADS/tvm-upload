@@ -9,6 +9,7 @@ and comprehensive validation for the TVM log upload system.
 Version: 2.0 - Added deletion policy configuration support
 """
 
+import re
 import yaml
 import os
 import signal
@@ -122,6 +123,101 @@ class ConfigManager:
             logger.error(f"Failed to reload config: {e}")
             logger.info("Keeping existing configuration")
             return self.config
+        
+
+    def _validate_log_directories(self, log_dirs):
+        """
+        Validate log directories configuration.
+        
+        Supports two formats:
+        1. Legacy (string list): ["/path/to/log", ...]
+        2. New (dict list): [{path: "/path", source: "ros"}, ...]
+        
+        Args:
+            log_dirs: Log directories configuration
+            
+        Raises:
+            ConfigValidationError: If configuration is invalid
+        """
+        if not isinstance(log_dirs, list):
+            raise ConfigValidationError("log_directories must be a list")
+        
+        if len(log_dirs) == 0:
+            raise ConfigValidationError("log_directories cannot be empty")
+        
+        seen_sources = set()
+        seen_paths = set()
+        
+        for idx, item in enumerate(log_dirs):
+            # Support legacy string format
+            if isinstance(item, str):
+                logger.warning(
+                    f"log_directories[{idx}]: Using legacy string format. "
+                    f"Consider migrating to new format with explicit 'source' field."
+                )
+                # Legacy format is valid (backward compatibility)
+                path = item
+                if path in seen_paths:
+                    raise ConfigValidationError(
+                        f"Duplicate path in log_directories: {path}"
+                    )
+                seen_paths.add(path)
+                continue
+            
+            # New dict format validation
+            if not isinstance(item, dict):
+                raise ConfigValidationError(
+                    f"log_directories[{idx}]: Must be string or dict, got {type(item)}"
+                )
+            
+            # Validate 'path' field (required)
+            if 'path' not in item:
+                raise ConfigValidationError(
+                    f"log_directories[{idx}]: Missing required field 'path'"
+                )
+            
+            path = item['path']
+            if not isinstance(path, str) or not path:
+                raise ConfigValidationError(
+                    f"log_directories[{idx}].path: Must be non-empty string"
+                )
+            
+            # Check for duplicate paths
+            if path in seen_paths:
+                raise ConfigValidationError(
+                    f"log_directories[{idx}]: Duplicate path '{path}'"
+                )
+            seen_paths.add(path)
+            
+            # Validate 'source' field (required in new format)
+            if 'source' not in item:
+                raise ConfigValidationError(
+                    f"log_directories[{idx}]: Missing required field 'source'"
+                )
+            
+            source = item['source']
+            if not isinstance(source, str) or not source:
+                raise ConfigValidationError(
+                    f"log_directories[{idx}].source: Must be non-empty string"
+                )
+            
+            # Validate source naming (alphanumeric + underscore only)
+            if not re.match(r'^[a-zA-Z0-9_]+$', source):
+                raise ConfigValidationError(
+                    f"log_directories[{idx}].source: Must contain only letters, "
+                    f"numbers, and underscores. Got: '{source}'"
+                )
+            
+            # Check for duplicate source names
+            if source in seen_sources:
+                raise ConfigValidationError(
+                    f"log_directories[{idx}]: Duplicate source name '{source}'"
+                )
+            seen_sources.add(source)
+        
+        logger.info(f"Validated {len(log_dirs)} log directories")
+        if seen_sources:
+            logger.info(f"Sources: {', '.join(sorted(seen_sources))}")
     
     def validate_config(self, config: Dict[str, Any]) -> bool:
         """
@@ -153,11 +249,8 @@ class ConfigManager:
         if not isinstance(config['vehicle_id'], str) or not config['vehicle_id']:
             raise ConfigValidationError("vehicle_id must be a non-empty string")
         
-        # Validate log_directories
-        if not isinstance(config['log_directories'], list):
-            raise ConfigValidationError("log_directories must be a list")
-        if len(config['log_directories']) == 0:
-            raise ConfigValidationError("log_directories cannot be empty")
+        # Validate log_directories (NEW: Use dedicated validation method)
+        self._validate_log_directories(config['log_directories'])
         
         # Validate S3 config
         self._validate_s3_config(config['s3'])
