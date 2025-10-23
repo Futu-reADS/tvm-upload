@@ -24,9 +24,9 @@ from datetime import datetime, time as dt_time
 import threading
 from typing import List
 
-from config_manager import ConfigManager
+from config_manager import ConfigManager, ConfigValidationError
 from file_monitor import FileMonitor
-from upload_manager import UploadManager, PermanentUploadError
+from upload_manager import UploadManager
 from disk_manager import DiskManager
 from cloudwatch_manager import CloudWatchManager
 from queue_manager import QueueManager
@@ -94,7 +94,7 @@ class TVMUploadSystem:
         
         # Validate that log_directories exists and is not empty
         if not log_dir_configs:
-            raise self.config.ConfigValidationError(
+            raise ConfigValidationError(
                 "log_directories is required but not configured in config file"
             )
         
