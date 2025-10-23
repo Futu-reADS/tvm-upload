@@ -265,8 +265,41 @@ class UploadManager:
                     raise PermanentUploadError(f"Bucket does not exist: {self.bucket}")
                 
                 elif error_code == 'AccessDenied':
-                    logger.error(f"PERMANENT ERROR: Access denied - check IAM permissions")
-                    raise PermanentUploadError(f"IAM permissions denied for bucket {self.bucket}")
+                    # ===== NEW: Distinguish bucket policy from IAM errors =====
+                    # Parse error message to detect bucket policy denials
+                    policy_keywords = [
+                        'bucket policy',
+                        'policy does not allow',
+                        'policy denies',
+                        'explicit deny',
+                        'not authorized by bucket policy'
+                    ]
+                    
+                    is_bucket_policy_error = any(
+                        keyword in error_message.lower() 
+                        for keyword in policy_keywords
+                    )
+                    
+                    if is_bucket_policy_error:
+                        logger.error(
+                            f"PERMANENT ERROR: Bucket policy denies access - {error_message}"
+                        )
+                        logger.error(
+                            f"This vehicle's credentials are blocked by bucket policy. "
+                            f"Check bucket policy rules for bucket '{self.bucket}'"
+                        )
+                        raise PermanentUploadError(
+                            f"Bucket policy denies access: {error_message}"
+                        )
+                    else:
+                        # Generic IAM permission error
+                        logger.error(
+                            f"PERMANENT ERROR: Access denied - check IAM permissions - {error_message}"
+                        )
+                        raise PermanentUploadError(
+                            f"IAM permissions denied for bucket {self.bucket}: {error_message}"
+                        )
+                    # ===== END NEW =====
                 
                 elif error_code == 'EntityTooLarge':
                     logger.error(f"PERMANENT ERROR: File too large for S3")
