@@ -84,29 +84,55 @@ class TVMUploadSystem:
         """
         logger.info("Initializing TVM Upload System v2.1...")
         
-        # Load configuration
+        # =========================================================================
+        # STEP 1: Load and Validate Configuration
+        # =========================================================================
         self.config = ConfigManager(config_path)
         
-        # Initialize components
+        # Get log_directories once and validate
+        log_dir_configs = self.config.get('log_directories')
+        
+        # Validate that log_directories exists and is not empty
+        if not log_dir_configs:
+            raise self.config.ConfigValidationError(
+                "log_directories is required but not configured in config file"
+            )
+        
+        # =========================================================================
+        # STEP 2: Extract Paths and Full Configs (ONCE, not three times!)
+        # =========================================================================
+        
+        # Determine format and extract paths
+        is_new_format = isinstance(log_dir_configs[0], dict)
+        
+        if is_new_format:
+            # New format: [{path: "/path", source: "ros"}, ...]
+            monitor_paths = [item['path'] for item in log_dir_configs]
+        else:
+            # Legacy format: ["/path/to/log", ...]
+            monitor_paths = log_dir_configs
+        
+        logger.info(f"Configured {len(log_dir_configs)} log directories")
+        if is_new_format:
+            sources = [item['source'] for item in log_dir_configs]
+            logger.info(f"Sources: {', '.join(sources)}")
+        
+        # =========================================================================
+        # STEP 3: Initialize Components (pass appropriate format to each)
+        # =========================================================================
+        
+        # Upload Manager: Needs full config (with source info)
         self.upload_manager = UploadManager(
             bucket=self.config.get('s3.bucket'),
             region=self.config.get('s3.region'),
             vehicle_id=self.config.get('vehicle_id'),
             profile_name=self.config.get('s3.profile'),
-            log_directories=self.config.get('log_directories')  # ← NEW: Pass directories
+            log_directories=log_dir_configs  # Pass full config
         )
         
-        # Extract just the paths for disk management
-        log_dir_configs = self.config.get('log_directories')
-        if log_dir_configs and isinstance(log_dir_configs[0], dict):
-            # New format: extract 'path' field
-            disk_mgr_paths = [item['path'] for item in log_dir_configs]
-        else:
-            # Legacy format: use as-is
-            disk_mgr_paths = log_dir_configs
-
+        # Disk Manager: Only needs paths (doesn't care about sources)
         self.disk_manager = DiskManager(
-            log_directories=disk_mgr_paths,
+            log_directories=monitor_paths,  # Just paths
             reserved_gb=self.config.get('disk.reserved_gb'),
             warning_threshold=self.config.get('disk.warning_threshold', 0.90),
             critical_threshold=self.config.get('disk.critical_threshold', 0.95)
@@ -126,42 +152,38 @@ class TVMUploadSystem:
                         logger.debug(f"Removed from registry: {file_path.name}")
             except Exception as e:
                 logger.warning(f"Failed to remove from registry: {e}")
-
+        
         self.disk_manager._on_file_deleted_callback = on_file_deleted
-
-
-        # Extract just the paths for file monitoring
-        log_dir_configs = self.config.get('log_directories')
-        if log_dir_configs and isinstance(log_dir_configs[0], dict):
-            # New format: extract 'path' field
-            monitor_paths = [item['path'] for item in log_dir_configs]
-        else:
-            # Legacy format: use as-is
-            monitor_paths = log_dir_configs
-
+        
+        # File Monitor: Only needs paths (doesn't care about sources)
         self.file_monitor = FileMonitor(
-            directories=monitor_paths,
+            directories=monitor_paths,  # Just paths
             callback=self._on_file_ready,
             stability_seconds=self.config.get('upload.file_stable_seconds', 60),
             config=self.config.config
         )
-
+        
+        # CloudWatch Manager
         self.cloudwatch = CloudWatchManager(
             region=self.config.get('s3.region'),
             vehicle_id=self.config.get('vehicle_id'),
             enabled=self.config.get('monitoring.cloudwatch_enabled', True)
         )
-
+        
+        # Queue Manager
         self.queue_manager = QueueManager(
             queue_file=self.config.get('upload.queue_file', '/var/lib/tvm-upload/queue.json')
         )
         
-        # ===== NEW: Load additional config settings (v2.1) =====
+        # =========================================================================
+        # STEP 4: Load Additional Settings
+        # =========================================================================
         self.batch_upload_enabled = self.config.get('upload.batch_upload.enabled', True)
         self.upload_on_start = self.config.get('upload.upload_on_start', True)
-        # ===== END NEW =====
         
-        # Runtime state
+        # =========================================================================
+        # STEP 5: Initialize Runtime State
+        # =========================================================================
         self._running = False
         self._upload_queue = []
         self._upload_lock = threading.Lock()
@@ -175,7 +197,7 @@ class TVMUploadSystem:
             'bytes_uploaded': 0
         }
         
-        # Log deletion policy configuration (NEW v2.0)
+        # Log deletion policy configuration
         self._log_deletion_config()
         
         logger.info("Initialization complete")

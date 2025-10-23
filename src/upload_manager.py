@@ -73,7 +73,7 @@ class UploadManager:
     
     def __init__(self, bucket: str, region: str, vehicle_id: str, 
          max_retries: int = 10, profile_name: str = None,
-         log_directories: List = None):  # ← Changed type hint
+         log_directories: List = None):
         """
         Initialize upload manager.
         
@@ -84,6 +84,9 @@ class UploadManager:
             max_retries: Maximum retry attempts (default: 10)
             profile_name: AWS profile name (default: None uses default profile)
             log_directories: List of directory configs (dict) or paths (str, legacy)
+        
+        Raises:
+            ValueError: If no valid log directories configured
         """
         self.bucket = bucket
         self.region = region
@@ -116,16 +119,20 @@ class UploadManager:
                 else:
                     logger.error(f"Unknown log directory format: {item}")
         
+        # ===== IMPROVEMENT: Fail fast if no valid directories =====
         if not self.log_directory_configs:
             error_msg = (
                 "No valid log directories configured. "
-                "System cannot organize files by source. "
-                "Check config.yaml log_directories format."
+                "Cannot organize files by source. "
+                "Check 'log_directories' in config.yaml - ensure it has valid entries "
+                "with both 'path' and 'source' fields."
             )
             logger.error(error_msg)
-            raise ValueError(error_msg)
+            raise ValueError(error_msg)  # Fail fast!
+        # ===== END IMPROVEMENT =====
 
-
+        self._validate_directory_paths()
+        
         # Initialize S3 client with China endpoint support
         import os
         
@@ -135,6 +142,7 @@ class UploadManager:
         # Prepare boto3 client kwargs
         client_kwargs = {'region_name': region}
         import boto3.session
+        
         # Add profile if specified
         if profile_name:
             session = boto3.session.Session(profile_name=profile_name)
@@ -449,6 +457,26 @@ class UploadManager:
         logger.debug(f"Built S3 key: {file_path.name} → {s3_key}")
         
         return s3_key
+    
+    def _validate_directory_paths(self):
+        """
+        Validate that configured directories exist.
+        
+        Logs warnings for missing directories but doesn't fail startup.
+        This allows pre-configuration while still catching typos.
+        
+        Called during initialization.
+        """
+        for config in self.log_directory_configs:
+            path = config['path']
+            if not Path(path).exists():
+                logger.warning(
+                    f"Directory does not exist: {path} (source: {config['source']}). "
+                    f"Will be created on first file event. "
+                    f"If this is unexpected, check for typos in config.yaml"
+                )
+            else:
+                logger.debug(f"Directory exists: {path} (source: {config['source']})")
     
     def _calculate_backoff(self, attempt: int) -> int:
         """
