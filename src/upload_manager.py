@@ -377,7 +377,7 @@ class UploadManager:
             
             Config: [{path: "/var/log", source: "syslog"}]
             File: /var/log/syslog (modified 3 days ago)
-            Result: vehicle-001/2025-10-18/syslog/syslog (uses mtime, not ctime)
+            Result: vehicle-001/2025-10-18/syslog/syslog (uses mtime for date)
         """
         file_str = str(file_path.resolve())
         
@@ -411,10 +411,12 @@ class UploadManager:
                 # Use explicit source from config
                 source = dir_config['source']
                 
-                # Special case: Syslog uses modification time, not creation time
+                # Special case: Syslog uses modification time for date grouping
+                # This ensures syslog files are grouped by the date they were written,
+                # not by file metadata change time (which may differ from content date)
                 if source == 'syslog':
                     use_mtime = True
-                    logger.debug(f"Syslog file detected, will use mtime: {file_path.name}")
+                    logger.debug(f"Syslog file detected, using mtime for date: {file_path.name}")
                 
                 # Get relative path from monitored directory
                 # Preserves full folder structure
@@ -438,9 +440,10 @@ class UploadManager:
                 f"File not under any configured log_directory: {file_path}"
             )
         
-        # Determine date to use
+        # Determine date to use for S3 path
         if use_mtime:
             # Syslog: Use modification time
+            # Example: /var/log/syslog modified Oct 20 → 2025-10-20/syslog/
             timestamp = mtime
             logger.debug(f"Using mtime for date: {file_path.name}")
         else:
@@ -532,6 +535,10 @@ class UploadManager:
         Checks by comparing file size across multiple date paths.
         Now uses source-based S3 structure.
         
+        Date checking strategy:
+        - Syslog files: Only check expected date (mtime), no date range check
+        - Other files: Check ±5 days around mtime (handles delayed uploads)
+        
         Args:
             local_path: Local file path
             
@@ -547,7 +554,7 @@ class UploadManager:
             return False
         
         # Check using file's actual modification date first (most likely match)
-        s3_key = self._build_s3_key(file_path)  # Uses mtime internally
+        s3_key = self._build_s3_key(file_path)  # Uses mtime internally for syslog
         try:
             response = self.s3_client.head_object(Bucket=self.bucket, Key=s3_key)
             s3_size = response['ContentLength']
@@ -564,15 +571,21 @@ class UploadManager:
                 logger.debug(f"S3 check error: {e}")
             pass
         
-        # Check previous 30 days (file might have been uploaded with wrong date)
-        # Special case: Skip date checking for syslog (always uses current date)
+        # Determine if this is a syslog file
         file_str = str(file_path.resolve())
-        if file_str.startswith('/var/log'):
-            # Syslog uses upload date, so no need to check other dates
-            logger.debug(f"Syslog file not found in S3 for today: {file_path.name}")
+        is_syslog = any(
+            file_str.startswith(str(Path(cfg['path']).resolve())) and cfg['source'] == 'syslog'
+            for cfg in self.log_directory_configs
+        )
+        
+        if is_syslog:
+            # Syslog: Only check expected date (no date range check)
+            # Syslog files are dated by mtime, so if not found at expected date, it's a new file
+            logger.debug(f"Syslog file not found in S3 for expected date: {file_path.name}")
             return False
         
         # For non-syslog files, check ±5 days around file mtime
+        # (handles cases where upload was delayed or file date was wrong)
         base_date = datetime.fromtimestamp(local_mtime)
         
         for days_offset in range(-5, 6):  # Check ±5 days around file mtime
@@ -606,7 +619,6 @@ class UploadManager:
         # File not found in S3 (or all found files have different sizes)
         logger.debug(f"File not found in S3 or different content: {file_path.name}")
         return False
-
 
 if __name__ == '__main__':
     import sys
