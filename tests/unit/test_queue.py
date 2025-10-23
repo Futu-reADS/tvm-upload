@@ -62,13 +62,13 @@ class TestQueueManager:
         assert qm2.get_queue_size() == 1
         assert qm2.queue[0]['filepath'] == temp_test_file
     
-    def test_mark_uploaded(self, temp_queue_file, temp_test_file):
+    def test_remove_from_queue(self, temp_queue_file, temp_test_file):
         """Test removing uploaded file"""
         qm = QueueManager(temp_queue_file)
         qm.add_file(temp_test_file)
         assert qm.get_queue_size() == 1
         
-        qm.mark_uploaded(temp_test_file)
+        qm.remove_from_queue(temp_test_file)
         assert qm.get_queue_size() == 0
     
     def test_mark_failed(self, temp_queue_file, temp_test_file):
@@ -270,7 +270,7 @@ class TestQueueManager:
             assert qm.get_queue_size() == 4
             
             # Can still mark uploaded
-            qm.mark_uploaded(files[0])
+            qm.remove_from_queue(files[0])
             assert qm.get_queue_size() == 3
             
             # Can still mark failed (temporary)

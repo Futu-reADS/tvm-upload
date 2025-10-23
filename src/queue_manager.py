@@ -114,7 +114,7 @@ class QueueManager:
         logger.debug(f"Next batch: {len(batch)} files")
         return batch
     
-    def mark_uploaded(self, filepath: str):
+    def remove_from_queue(self, filepath: str):
         """
         Remove file from queue after successful upload.
         
@@ -263,7 +263,7 @@ if __name__ == '__main__':
     logger.info(f"Batch: {batch}")
     
     # Mark uploaded
-    qm.mark_uploaded('/tmp/test1.log')
+    qm.remove_from_queue('/tmp/test1.log')
     
     logger.info(f"Queue size: {qm.get_queue_size()}")
     

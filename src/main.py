@@ -429,7 +429,7 @@ class TVMUploadSystem:
         
         if not file_path.exists():
             logger.warning(f"File disappeared before upload: {file_path.name}")
-            self.queue_manager.mark_uploaded(filepath)  # Remove from queue
+            self.queue_manager.remove_from_queue(filepath)  # Remove from queue
             return False
         
         try:
@@ -453,7 +453,7 @@ class TVMUploadSystem:
                 self.cloudwatch.record_upload_success(file_size)
                 
                 # Remove from queue
-                self.queue_manager.mark_uploaded(filepath)
+                self.queue_manager.remove_from_queue(filepath)
                 
                 # Handle file deletion based on policy
                 self._handle_post_upload_deletion(file_path, file_size)
@@ -902,8 +902,19 @@ class TVMUploadSystem:
         file_path = Path(filepath)
 
         if not file_path.exists():
-            logger.warning(f"File disappeared: {file_path.name}")
-            self.queue_manager.mark_uploaded(filepath)  # Remove from queue
+            # Check if file was in processed registry
+            if self.file_monitor._is_file_processed(file_path):
+                logger.info(
+                    f"File already processed and deleted: {file_path.name} "
+                    f"(removed from queue, no re-upload needed)"
+                )
+            else:
+                logger.warning(
+                    f"File disappeared before upload: {file_path.name} "
+                    f"(possibly deleted by user/policy, removed from queue)"
+                )
+            
+            self.queue_manager.remove_from_queue(filepath)
             return
         
         file_size = file_path.stat().st_size
@@ -927,7 +938,7 @@ class TVMUploadSystem:
             self.cloudwatch.record_upload_success(file_size)
             
             # Remove from queue
-            self.queue_manager.mark_uploaded(filepath)
+            self.queue_manager.remove_from_queue(filepath)
             
             # ===== UPDATED: Use helper function for deletion (v2.1) =====
             self._handle_post_upload_deletion(file_path, file_size)
