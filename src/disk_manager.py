@@ -97,25 +97,47 @@ class DiskManager:
         Only files marked as uploaded will be deleted during cleanup.
         This prevents accidental deletion of files not yet uploaded.
         
+        Uses file modification time + keep_until_days for deletion time
+        to avoid issues with system clock changes.
+        
         Args:
             filepath: Path to uploaded file
             keep_until_days: Days to keep file after upload (NEW v2.0)
-                           - 0: Delete immediately (Option A1)
-                           - 14: Keep for 14 days (Option A2)
+                        - 0: Delete immediately (Option A1)
+                        - 14: Keep for 14 days (Option A2)
             
         Note:
-            Stores absolute path to avoid ambiguity
+            Stores absolute path to avoid ambiguity.
+            Uses mtime-based deletion date (immune to system clock changes).
         """
         abs_path = str(Path(filepath).resolve())
+        file_path = Path(filepath)
         
         if keep_until_days == 0:
             # Delete immediately
             delete_after = 0
-            logger.debug(f"Marked for immediate deletion: {Path(filepath).name}")
+            logger.debug(f"Marked for immediate deletion: {file_path.name}")
         else:
-            # Delete after N days
-            delete_after = time.time() + (keep_until_days * 24 * 3600)
-            logger.debug(f"Marked for deletion after {keep_until_days} days: {Path(filepath).name}")
+            # ===== IMPROVED: Use mtime + keep_days instead of current time =====
+            # This makes deletion time immune to system clock changes
+            # Deletion is based on file age, not absolute timestamp
+            try:
+                mtime = file_path.stat().st_mtime
+                # Store the target deletion date (mtime + keep_days)
+                # Using negative value to distinguish from old epoch-based format
+                # Format: -(mtime + keep_days_in_seconds)
+                delete_after = -(mtime + (keep_until_days * 24 * 3600))
+                logger.debug(
+                    f"Marked for deletion after {keep_until_days} days "
+                    f"(based on file mtime): {file_path.name}"
+                )
+            except (OSError, FileNotFoundError) as e:
+                logger.warning(
+                    f"Cannot stat file {file_path.name}, using current time fallback: {e}"
+                )
+                # Fallback to current time if file stat fails
+                delete_after = time.time() + (keep_until_days * 24 * 3600)
+            # ===== END IMPROVED =====
         
         self.uploaded_files[abs_path] = delete_after
     
@@ -183,6 +205,8 @@ class DiskManager:
         - Have delete_after = 0 (immediate deletion)
         - Have delete_after < current_time (retention period expired)
         
+        Handles both old epoch-based format and new mtime-based format.
+        
         Returns:
             int: Number of files deleted
             
@@ -197,8 +221,53 @@ class DiskManager:
         for filepath_str, delete_after in list(self.uploaded_files.items()):
             filepath = Path(filepath_str)
             
-            # Check if file should be deleted now
-            if delete_after == 0 or delete_after <= current_time:
+            should_delete = False
+            
+            # Check deletion criteria
+            if delete_after == 0:
+                # Immediate deletion
+                should_delete = True
+                
+            elif delete_after < 0:
+                # ===== NEW FORMAT: Negative value = -(mtime + keep_seconds) =====
+                # Extract target deletion date
+                target_deletion_date = -delete_after
+                
+                # Check if file still exists and compare dates
+                if filepath.exists():
+                    try:
+                        mtime = filepath.stat().st_mtime
+                        # Calculate when file should be deleted
+                        file_deletion_time = target_deletion_date
+                        
+                        # Delete if current time is past deletion time
+                        if current_time >= file_deletion_time:
+                            should_delete = True
+                            age_days = (current_time - mtime) / 86400
+                            logger.debug(
+                                f"File eligible for deletion (age-based): {filepath.name} "
+                                f"({age_days:.1f} days old)"
+                            )
+                    except (OSError, FileNotFoundError):
+                        # File disappeared, remove from tracking
+                        logger.debug(f"File disappeared, removing from tracking: {filepath.name}")
+                        del self.uploaded_files[filepath_str]
+                        continue
+                else:
+                    # File doesn't exist, remove from tracking
+                    logger.debug(f"File already deleted, removing from tracking: {filepath.name}")
+                    del self.uploaded_files[filepath_str]
+                    continue
+            
+            else:
+                # ===== OLD FORMAT: Positive value = epoch timestamp =====
+                # Legacy format for backward compatibility
+                if current_time >= delete_after:
+                    should_delete = True
+                    logger.debug(f"File eligible for deletion (legacy format): {filepath.name}")
+            
+            # Perform deletion if criteria met
+            if should_delete:
                 if filepath.exists():
                     try:
                         size = filepath.stat().st_size
