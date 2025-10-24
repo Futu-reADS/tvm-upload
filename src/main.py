@@ -570,16 +570,16 @@ class TVMUploadSystem:
     def _schedule_loop(self):
         """
         Background thread for scheduled uploads and cleanup.
-        
+
         Supports two scheduling modes (v2.1):
         - Daily: Upload once per day at specific time
         - Interval: Upload every N hours/minutes
-        
+
         Also handles age-based cleanup (runs daily at configured time).
-        
+
         NEW v2.1: Marks successfully uploaded files in registry to prevent
         duplicate uploads on restart.
-        
+
         Note:
             Runs in daemon thread, logs errors but continues running
         """
@@ -588,148 +588,157 @@ class TVMUploadSystem:
         last_upload_time = None  # For interval mode (timestamp)
         last_upload_date = None  # For daily mode (date)
         last_cleanup_date = None
-        
+
         while self._running:
             try:
                 now = datetime.now()
-                
-                # ===== UPLOAD SCHEDULING =====
-                schedule_config = self.config.get('upload.schedule')
-                
-                # Handle both old (string) and new (dict) format
-                if isinstance(schedule_config, str):
-                    # Legacy format: "15:00" (treat as daily)
-                    schedule_time = datetime.strptime(schedule_config, '%H:%M').time()
-                    
-                    if self._is_near_schedule_time(now.time(), schedule_time):
-                        if last_upload_date != now.date():
-                            logger.info(f"Scheduled upload time reached: {schedule_time}")
-                            
-                            # ===== UPDATED: Mark uploaded files in registry =====
-                            upload_results = self._process_upload_queue()
-                            
-                            # Note: _process_upload_queue() already marks files internally,
-                            # but we log the summary here for scheduled uploads
-                            successful_count = sum(1 for s in upload_results.values() if s)
-                            failed_count = len(upload_results) - successful_count
-                            
-                            if successful_count > 0:
-                                logger.info(
-                                    f"Scheduled upload complete: {successful_count} files uploaded, "
-                                    f"{failed_count} failed (will retry at next schedule)"
-                                )
-                            elif failed_count > 0:
-                                logger.warning(f"Scheduled upload: all {failed_count} files failed")
-                            else:
-                                logger.warning("Scheduled upload: all files failed")
-                            # ===== END UPDATED =====
-                            
-                            last_upload_date = now.date()
-                            time.sleep(3600)  # Sleep 1 hour to avoid multiple triggers
-                
-                elif isinstance(schedule_config, dict):
-                    mode = schedule_config.get('mode', 'daily')
-                    
-                    if mode == 'daily':
-                        # Daily mode: Upload at specific time
-                        daily_time = datetime.strptime(
-                            schedule_config.get('daily_time', '15:00'), 
-                            '%H:%M'
-                        ).time()
-                        
-                        if self._is_near_schedule_time(now.time(), daily_time):
-                            if last_upload_date != now.date():
-                                logger.info(f"Daily scheduled upload at {daily_time}")
-                                
-                                # ===== UPDATED: Mark uploaded files in registry =====
-                                upload_results = self._process_upload_queue()
-                                
-                                successful_count = sum(1 for s in upload_results.values() if s)
-                                failed_count = len(upload_results) - successful_count
-                                
-                                if successful_count > 0:
-                                    logger.info(
-                                        f"Daily upload complete: {successful_count} files uploaded, "
-                                        f"{failed_count} failed"
-                                    )
-                                elif failed_count > 0:
-                                    logger.warning(f"Scheduled upload: all {failed_count} files failed")
-                                else:
-                                    logger.warning("Daily upload: all files failed")
-                                # ===== END UPDATED =====
-                                
-                                last_upload_date = now.date()
-                                time.sleep(3600)
-                    
-                    elif mode == 'interval':
-                        # Interval mode: Upload every N hours/minutes
-                        interval_hours = schedule_config.get('interval_hours', 0)
-                        interval_minutes = schedule_config.get('interval_minutes', 0)
-                        interval_seconds = (interval_hours * 3600) + (interval_minutes * 60)
-                        
-                        # Check if enough time has passed since last upload
-                        if last_upload_time is None or \
-                        (now.timestamp() - last_upload_time) >= interval_seconds:
-                            logger.info(
-                                f"Interval upload triggered "
-                                f"(every {interval_hours}h {interval_minutes}m)"
-                            )
-                            
-                            # ===== UPDATED: Mark uploaded files in registry =====
-                            upload_results = self._process_upload_queue()
-                            
-                            successful_count = sum(1 for s in upload_results.values() if s)
-                            failed_count = len(upload_results) - successful_count
-                            
-                            if successful_count > 0:
-                                logger.info(
-                                    f"Interval upload complete: {successful_count} files uploaded, "
-                                    f"{failed_count} failed (will retry at next interval)"
-                                )
-                            elif failed_count > 0:
-                                logger.warning(f"Scheduled upload: all {failed_count} files failed")
-                            else:
-                                logger.warning("Interval upload: all files failed")
-                            # ===== END UPDATED =====
-                            
-                            last_upload_time = now.timestamp()
-                            time.sleep(10)  # Brief sleep to avoid tight loop
-                
-                # ===== AGE-BASED CLEANUP (unchanged) =====
-                age_config = self.config.get('deletion.age_based', {})
-                
-                if age_config.get('enabled', True):
-                    cleanup_time = datetime.strptime(
-                        age_config.get('schedule_time', '02:00'),
-                        '%H:%M'
-                    ).time()
-                    
-                    if self._is_near_schedule_time(now.time(), cleanup_time):
-                        if last_cleanup_date != now.date():
-                            logger.info("=== Running scheduled age-based cleanup ===")
-                            
-                            max_age_days = age_config.get('max_age_days', 7)
-                            deleted = self.disk_manager.cleanup_by_age(max_age_days)
-                            
-                            logger.info(f"Age-based cleanup complete: {deleted} files deleted")
-                            last_cleanup_date = now.date()
-                            
-                            # Publish metrics after cleanup
-                            usage, _, _ = self.disk_manager.get_disk_usage()
-                            self.cloudwatch.publish_metrics(disk_usage_percent=usage * 100)
-                            
-                            time.sleep(3600)
-                
+
+                # Handle scheduled uploads
+                last_upload_date, last_upload_time = self._handle_scheduled_uploads(
+                    now, last_upload_date, last_upload_time
+                )
+
+                # Handle age-based cleanup
+                last_cleanup_date = self._handle_age_based_cleanup(now, last_cleanup_date)
+
             except Exception as e:
                 logger.error(f"Error in schedule loop: {e}")
                 import traceback
                 logger.debug(traceback.format_exc())
-            
+
             # Check every minute
             time.sleep(60)
-        
+
         logger.info("Schedule loop stopped")
-    
+
+    def _handle_scheduled_uploads(self, now, last_upload_date, last_upload_time):
+        """
+        Handle scheduled upload logic (daily or interval mode).
+
+        Args:
+            now: Current datetime
+            last_upload_date: Last upload date (for daily mode)
+            last_upload_time: Last upload timestamp (for interval mode)
+
+        Returns:
+            Tuple[date, float]: Updated (last_upload_date, last_upload_time)
+        """
+        schedule_config = self.config.get('upload.schedule')
+
+        # Handle both old (string) and new (dict) format
+        if isinstance(schedule_config, str):
+            # Legacy format: "15:00" (treat as daily)
+            schedule_time = datetime.strptime(schedule_config, '%H:%M').time()
+
+            if self._is_near_schedule_time(now.time(), schedule_time):
+                if last_upload_date != now.date():
+                    logger.info(f"Scheduled upload time reached: {schedule_time}")
+                    upload_results = self._process_upload_queue()
+                    self._log_upload_results(upload_results, "Scheduled")
+
+                    last_upload_date = now.date()
+                    time.sleep(3600)  # Sleep 1 hour to avoid multiple triggers
+
+        elif isinstance(schedule_config, dict):
+            mode = schedule_config.get('mode', 'daily')
+
+            if mode == 'daily':
+                # Daily mode: Upload at specific time
+                daily_time = datetime.strptime(
+                    schedule_config.get('daily_time', '15:00'),
+                    '%H:%M'
+                ).time()
+
+                if self._is_near_schedule_time(now.time(), daily_time):
+                    if last_upload_date != now.date():
+                        logger.info(f"Daily scheduled upload at {daily_time}")
+                        upload_results = self._process_upload_queue()
+                        self._log_upload_results(upload_results, "Daily")
+
+                        last_upload_date = now.date()
+                        time.sleep(3600)
+
+            elif mode == 'interval':
+                # Interval mode: Upload every N hours/minutes
+                interval_hours = schedule_config.get('interval_hours', 0)
+                interval_minutes = schedule_config.get('interval_minutes', 0)
+                interval_seconds = (interval_hours * 3600) + (interval_minutes * 60)
+
+                # Check if enough time has passed since last upload
+                if last_upload_time is None or \
+                   (now.timestamp() - last_upload_time) >= interval_seconds:
+                    logger.info(
+                        f"Interval upload triggered "
+                        f"(every {interval_hours}h {interval_minutes}m)"
+                    )
+                    upload_results = self._process_upload_queue()
+                    self._log_upload_results(upload_results, "Interval")
+
+                    last_upload_time = now.timestamp()
+                    time.sleep(10)  # Brief sleep to avoid tight loop
+
+        return last_upload_date, last_upload_time
+
+    def _handle_age_based_cleanup(self, now, last_cleanup_date):
+        """
+        Handle age-based cleanup if scheduled time reached.
+
+        Args:
+            now: Current datetime
+            last_cleanup_date: Last cleanup date
+
+        Returns:
+            date: Updated last_cleanup_date if cleanup ran, otherwise unchanged
+        """
+        age_config = self.config.get('deletion.age_based', {})
+
+        if age_config.get('enabled', True):
+            cleanup_time = datetime.strptime(
+                age_config.get('schedule_time', '02:00'),
+                '%H:%M'
+            ).time()
+
+            if self._is_near_schedule_time(now.time(), cleanup_time):
+                if last_cleanup_date != now.date():
+                    logger.info("=== Running scheduled age-based cleanup ===")
+
+                    max_age_days = age_config.get('max_age_days', 7)
+                    deleted = self.disk_manager.cleanup_by_age(max_age_days)
+
+                    logger.info(f"Age-based cleanup complete: {deleted} files deleted")
+                    last_cleanup_date = now.date()
+
+                    # Publish metrics after cleanup
+                    usage, _, _ = self.disk_manager.get_disk_usage()
+                    self.cloudwatch.publish_metrics(disk_usage_percent=usage * 100)
+
+                    time.sleep(3600)
+
+        return last_cleanup_date
+
+    def _log_upload_results(self, upload_results: dict, upload_type: str):
+        """
+        Log summary of upload results.
+
+        Eliminates code duplication across different upload modes (Daily/Interval/Scheduled).
+
+        Args:
+            upload_results: Dict of {filepath: success_bool}
+            upload_type: Type of upload for logging ("Daily", "Interval", "Scheduled")
+        """
+        successful_count = sum(1 for s in upload_results.values() if s)
+        failed_count = len(upload_results) - successful_count
+
+        if successful_count > 0:
+            logger.info(
+                f"{upload_type} upload complete: {successful_count} files uploaded, "
+                f"{failed_count} failed"
+            )
+        elif failed_count > 0:
+            logger.warning(f"{upload_type} upload: all {failed_count} files failed")
+        else:
+            logger.warning(f"{upload_type} upload: all files failed")
+
     def _is_near_schedule_time(self, now: dt_time, schedule: dt_time) -> bool:
         """
         Check if current time is within 1 minute of scheduled time.

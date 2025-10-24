@@ -18,6 +18,13 @@ import os
 
 logger = logging.getLogger(__name__)
 
+# Time Constants
+SECONDS_PER_DAY = 86400  # 24 * 60 * 60
+BYTES_PER_GB = 1024**3
+
+# Deletion Policy Defaults
+IMMEDIATE_DELETION = 0  # keep_days value for immediate deletion
+
 
 class DiskManager:
     """
@@ -113,7 +120,7 @@ class DiskManager:
         abs_path = str(Path(filepath).resolve())
         file_path = Path(filepath)
         
-        if keep_until_days == 0:
+        if keep_until_days == IMMEDIATE_DELETION:
             # Delete immediately
             delete_after = 0
             logger.debug(f"Marked for immediate deletion: {file_path.name}")
@@ -126,7 +133,7 @@ class DiskManager:
                 # Store the target deletion date (mtime + keep_days)
                 # Using negative value to distinguish from old epoch-based format
                 # Format: -(mtime + keep_days_in_seconds)
-                delete_after = -(mtime + (keep_until_days * 24 * 3600))
+                delete_after = -(mtime + (keep_until_days * SECONDS_PER_DAY))
                 logger.debug(
                     f"Marked for deletion after {keep_until_days} days "
                     f"(based on file mtime): {file_path.name}"
@@ -136,7 +143,7 @@ class DiskManager:
                     f"Cannot stat file {file_path.name}, using current time fallback: {e}"
                 )
                 # Fallback to current time if file stat fails
-                delete_after = time.time() + (keep_until_days * 24 * 3600)
+                delete_after = time.time() + (keep_until_days * SECONDS_PER_DAY)
             # ===== END IMPROVED =====
         
         self.uploaded_files[abs_path] = delete_after
@@ -318,8 +325,8 @@ class DiskManager:
             return 0
         
         logger.info(f"Running age-based cleanup (max age: {max_age_days} days)")
-        
-        cutoff_time = time.time() - (max_age_days * 24 * 3600)
+
+        cutoff_time = time.time() - (max_age_days * SECONDS_PER_DAY)
         deleted_count = 0
         freed_bytes = 0
         

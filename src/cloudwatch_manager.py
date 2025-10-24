@@ -11,6 +11,20 @@ from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
+# CloudWatch Configuration
+CLOUDWATCH_NAMESPACE = 'TVM/Upload'
+
+# Metric Names
+METRIC_BYTES_UPLOADED = 'BytesUploaded'
+METRIC_FILE_COUNT = 'FileCount'
+METRIC_FAILURE_COUNT = 'FailureCount'
+METRIC_DISK_USAGE = 'DiskUsagePercent'
+METRIC_SERVICE_STARTUP = 'ServiceStartup'
+
+# Alarm Configuration
+DEFAULT_ALARM_EVALUATION_PERIODS = 3
+ALARM_PERIOD_SECONDS = 86400  # 1 day
+
 
 class CloudWatchManager:
     """
@@ -80,9 +94,9 @@ class CloudWatchManager:
                     try:
                         # Try to publish a test metric (harmless startup marker)
                         self.cw_client.put_metric_data(
-                            Namespace='TVM/Upload',
+                            Namespace=CLOUDWATCH_NAMESPACE,
                             MetricData=[{
-                                'MetricName': 'ServiceStartup',
+                                'MetricName': METRIC_SERVICE_STARTUP,
                                 'Value': 1,
                                 'Unit': 'Count',
                                 'Timestamp': datetime.utcnow(),
@@ -175,7 +189,7 @@ class CloudWatchManager:
             # Bytes uploaded metric
             if self.bytes_uploaded > 0:
                 metrics.append({
-                    'MetricName': 'BytesUploaded',
+                    'MetricName': METRIC_BYTES_UPLOADED,
                     'Value': self.bytes_uploaded,
                     'Unit': 'Bytes',
                     'Timestamp': timestamp,
@@ -183,11 +197,11 @@ class CloudWatchManager:
                         {'Name': 'VehicleId', 'Value': self.vehicle_id}
                     ]
                 })
-            
+
             # File count metric
             if self.files_uploaded > 0:
                 metrics.append({
-                    'MetricName': 'FileCount',
+                    'MetricName': METRIC_FILE_COUNT,
                     'Value': self.files_uploaded,
                     'Unit': 'Count',
                     'Timestamp': timestamp,
@@ -195,11 +209,11 @@ class CloudWatchManager:
                         {'Name': 'VehicleId', 'Value': self.vehicle_id}
                     ]
                 })
-            
+
             # Failure count metric
             if self.files_failed > 0:
                 metrics.append({
-                    'MetricName': 'FailureCount',
+                    'MetricName': METRIC_FAILURE_COUNT,
                     'Value': self.files_failed,
                     'Unit': 'Count',
                     'Timestamp': timestamp,
@@ -207,11 +221,11 @@ class CloudWatchManager:
                         {'Name': 'VehicleId', 'Value': self.vehicle_id}
                     ]
                 })
-            
+
             # Disk usage metric
             if disk_usage_percent is not None:
                 metrics.append({
-                    'MetricName': 'DiskUsagePercent',
+                    'MetricName': METRIC_DISK_USAGE,
                     'Value': disk_usage_percent,
                     'Unit': 'Percent',
                     'Timestamp': timestamp,
@@ -223,7 +237,7 @@ class CloudWatchManager:
             # Publish to CloudWatch
             if metrics:
                 self.cw_client.put_metric_data(
-                    Namespace='TVM/Upload',
+                    Namespace=CLOUDWATCH_NAMESPACE,
                     MetricData=metrics
                 )
                 logger.info(f"Published {len(metrics)} metrics to CloudWatch")
@@ -250,14 +264,14 @@ class CloudWatchManager:
         
         try:
             alarm_name = f"TVM-LowUpload-{self.vehicle_id}"
-            
+
             self.cw_client.put_metric_alarm(
                 AlarmName=alarm_name,
                 ComparisonOperator='LessThanThreshold',
-                EvaluationPeriods=3,
-                MetricName='BytesUploaded',
-                Namespace='TVM/Upload',
-                Period=86400,  # 1 day
+                EvaluationPeriods=DEFAULT_ALARM_EVALUATION_PERIODS,
+                MetricName=METRIC_BYTES_UPLOADED,
+                Namespace=CLOUDWATCH_NAMESPACE,
+                Period=ALARM_PERIOD_SECONDS,
                 Statistic='Sum',
                 Threshold=threshold_mb * 1024 * 1024,  # Convert to bytes
                 ActionsEnabled=False,  # Add SNS later if needed

@@ -22,6 +22,11 @@ from watchdog.events import FileSystemEventHandler, FileCreatedEvent, FileModifi
 
 logger = logging.getLogger(__name__)
 
+# Registry Configuration
+DEFAULT_REGISTRY_PATH = '/var/lib/tvm-upload/processed_files.json'
+DEFAULT_RETENTION_DAYS = 30  # Keep registry entries for 30 days
+FILE_IDENTITY_SEPARATOR = '::'  # Separator for filepath::size::mtime format
+
 
 class FileMonitor:
     """
@@ -86,10 +91,10 @@ class FileMonitor:
         # Load registry settings from config
         registry_config = self.config.get('upload', {}).get('processed_files_registry', {})
         self.registry_file = Path(registry_config.get(
-            'registry_file', 
-            '/var/lib/tvm-upload/processed_files.json'
+            'registry_file',
+            DEFAULT_REGISTRY_PATH
         ))
-        self.registry_retention_days = registry_config.get('retention_days', 30)
+        self.registry_retention_days = registry_config.get('retention_days', DEFAULT_RETENTION_DAYS)
         
         # Load processed files registry
         self.processed_files: Dict[str, dict] = self._load_processed_registry()
@@ -157,9 +162,9 @@ class FileMonitor:
             stat = file_path.stat()
             size = stat.st_size
             mtime = stat.st_mtime
-            
+
             # Create unique key: filepath::size::mtime
-            return f"{file_path.resolve()}::{size}::{mtime}"
+            return f"{file_path.resolve()}{FILE_IDENTITY_SEPARATOR}{size}{FILE_IDENTITY_SEPARATOR}{mtime}"
         except (OSError, FileNotFoundError) as e:
             logger.debug(f"Cannot get identity for {file_path}: {e}")
             return None

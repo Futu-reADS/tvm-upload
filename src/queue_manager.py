@@ -12,6 +12,12 @@ from datetime import datetime
 
 logger = logging.getLogger(__name__)
 
+# Queue Configuration
+DEFAULT_QUEUE_PATH = '/var/lib/tvm-upload/queue.json'
+QUEUE_FILE_SUFFIX = '.json'
+QUEUE_BACKUP_SUFFIX = '.json.bak'
+QUEUE_TEMP_SUFFIX = '.json.tmp'
+
 
 class QueueManager:
     """
@@ -32,7 +38,7 @@ class QueueManager:
     }
     """
     
-    def __init__(self, queue_file: str = '/var/lib/tvm-upload/queue.json'):
+    def __init__(self, queue_file: str = DEFAULT_QUEUE_PATH):
         """
         Initialize queue manager.
         
@@ -263,7 +269,7 @@ class QueueManager:
         try:
             # Create backup of existing queue file before overwriting
             if self.queue_file.exists():
-                backup_file = self.queue_file.with_suffix('.json.bak')
+                backup_file = self.queue_file.with_suffix(QUEUE_BACKUP_SUFFIX)
                 try:
                     import shutil
                     shutil.copy2(self.queue_file, backup_file)
@@ -273,7 +279,7 @@ class QueueManager:
                     # Continue anyway - backup failure shouldn't block save
             
             # Write to temporary file first (atomic write)
-            temp_file = self.queue_file.with_suffix('.json.tmp')
+            temp_file = self.queue_file.with_suffix(QUEUE_TEMP_SUFFIX)
             with open(temp_file, 'w') as f:
                 json.dump(self.queue, f, indent=2)
             
@@ -321,13 +327,13 @@ class QueueManager:
     def load_queue(self):
         """
         Load queue from JSON file with automatic recovery from backup.
-        
+
         If primary queue file is corrupted:
         1. Try to load from backup (.json.bak)
         2. If backup also fails, start with empty queue
         3. Remove files that no longer exist from loaded queue
         """
-        backup_file = self.queue_file.with_suffix('.json.bak')
+        backup_file = self.queue_file.with_suffix(QUEUE_BACKUP_SUFFIX)
         
         # Try loading primary queue file
         if self.queue_file.exists():

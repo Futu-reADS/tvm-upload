@@ -1,192 +1,235 @@
-The README is **mostly good** but has a few issues with the latest code. Here's the **updated version**:
-
----
-
 # TVM Log Upload System
 
-Automated log upload system for Autoware vehicles in China.
+Automated log upload daemon for Autoware vehicles in China. Monitors log directories, queues files, uploads them to AWS S3 China region on a schedule, and manages disk space through configurable deletion policies.
+
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![AWS China](https://img.shields.io/badge/AWS-China%20Region-orange.svg)](https://www.amazonaws.cn/)
 
 ## Features
 
-- ✅ Automatic file detection with 60s stability check
-- ✅ Scheduled daily uploads (configurable time)
-- ✅ Retry logic with exponential backoff (up to 10 attempts)
-- ✅ Queue persistence (survives daemon restarts)
-- ✅ Disk management (automatic cleanup at thresholds)
-- ✅ CloudWatch metrics and alarms
-- ✅ Operational hours control (9:00-16:00 configurable)
+- **Automatic file detection** with 60s stability check
+- **Flexible scheduling** - Daily uploads or interval-based (every N hours)
+- **Dual upload modes** - Immediate uploads during operational hours + scheduled batch uploads
+- **Source-based organization** - Files organized by type (terminal/ros/syslog/ros2)
+- **ROS folder preservation** - Maintains complete ROS log folder structure in S3
+- **Retry logic** with exponential backoff (up to 10 attempts)
+- **Queue persistence** - Survives daemon restarts and system reboots
+- **Duplicate prevention** - Processed files registry prevents re-uploading
+- **Smart disk management** - Three-tier deletion policies (deferred, age-based, emergency)
+- **CloudWatch integration** - Metrics and alarms for monitoring
+- **SIGHUP reload** - Update configuration without restart
+
+## Quick Start
+
+```bash
+# Clone and setup
+git clone git@github.com:Futu-reADS/tvm-upload.git
+cd tvm-upload
+
+# Install dependencies
+pip install -e ".[test]"
+
+# Configure
+cp config/config.yaml.example config/config.yaml
+nano config/config.yaml  # Edit: vehicle_id, S3 bucket, AWS profile
+
+# Test configuration
+python3 src/main.py --config config/config.yaml --test-config
+
+# Run
+python3 src/main.py --config config/config.yaml --log-level INFO
+```
 
 ## Installation
 
 ### Requirements
 
-- Linux (Ubuntu 20.04+ recommended)
-- Python 3.10+
-- AWS credentials for China region (cn-north-1 or cn-northwest-1)
+- **OS:** Linux (Ubuntu 20.04+, Debian 11+)
+- **Python:** 3.10 or higher
+- **AWS:** Credentials for China region (cn-north-1 or cn-northwest-1)
+- **Disk:** Minimum 100GB recommended for log storage
 
-### Setup
+### Development Setup
 
 ```bash
-# Clone repository
-git clone git@github.com:Futu-reADS/tvm-upload.git
-cd tvm-upload
-
 # Create virtual environment
 python3 -m venv venv
 source venv/bin/activate
 
-# Install in editable mode (recommended for development)
+# Install in editable mode with test dependencies
 pip install -e ".[test]"
-
-# OR install from requirements.txt
-pip install -r requirements.txt
-
-# Create configuration
-cp config/config.yaml.example config/config.yaml
-nano config/config.yaml
-
-# Test configuration
-python3 src/main.py --config config/config.yaml --test-config
-```
-===============================================
-# Complete clean setup from scratch
-cd ~/tvm-upload
-
-# Remove old venv
-rm -rf venv
-
-# Create new clean venv
-python3 -m venv venv
-
-# Activate
-source venv/bin/activate
-
-# Upgrade pip
-pip install --upgrade pip
-
-# Install dependencies
-pip install -r requirements.txt
-
-# Install package in development mode
-pip install -e .
 
 # Verify installation
 python -c "import src.config_manager; print('✓ Package installed')"
 
 # Run tests
 pytest tests/unit/ -v
+pytest tests/integration/ -v
+pytest tests/e2e/ -v
+```
 
-===============================================
+### Production Setup
+
+```bash
+# Install from requirements
+pip install -r requirements.txt
+
+# Create required directories
+sudo mkdir -p /var/lib/tvm-upload
+sudo mkdir -p /etc/tvm-upload
+
+# Copy and configure
+sudo cp config/config.yaml.example /etc/tvm-upload/config.yaml
+sudo nano /etc/tvm-upload/config.yaml
+
+# Install systemd service
+sudo cp systemd/tvm-upload.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl enable tvm-upload
+sudo systemctl start tvm-upload
+```
+
 ## Configuration
+
+### Essential Settings
 
 Edit `config/config.yaml`:
 
 ```yaml
-vehicle_id: "vehicle-001"
+# Unique identifier for this vehicle
+vehicle_id: "vehicle-CN-001"
 
+# Directories to monitor
 log_directories:
-  - /var/log/autoware/bags
-  - /var/log/autoware/system
+  - /home/autoware/.parcel/log/terminal   # Terminal logs
+  - /home/autoware/.ros/log                # ROS logs
+  - /var/log                               # System logs
+  - /home/autoware/ros2_ws/log             # ROS2 logs
 
+# AWS S3 Configuration
 s3:
-  bucket: tvm-logs
+  bucket: t01logs
   region: cn-north-1
-  credentials_path: ~/.aws
+  credentials_path: /home/autoware/.aws
+  profile: china
 
+# Upload Configuration
 upload:
-  schedule: "15:00"  # Daily upload time (HH:MM)
-  file_stable_seconds: 60
+  schedule:
+    mode: "interval"          # "daily" or "interval"
+    interval_hours: 2         # Upload every 2 hours
+    interval_minutes: 0
+
   operational_hours:
     enabled: true
-    start: "09:00"  # Start upload window
-    end: "16:00"    # End upload window
-  queue_file: /var/lib/tvm-upload/queue.json
+    start: "09:00"            # Immediate uploads 09:00-16:00
+    end: "16:00"
 
-disk:
-  reserved_gb: 70  # Minimum free space to maintain
-  warning_threshold: 0.90  # Warn at 90% usage
-  critical_threshold: 0.95  # Force cleanup at 95%
+  batch_upload:
+    enabled: true             # Upload entire queue when file ready
 
-monitoring:
-  cloudwatch_enabled: true
+  upload_on_start: true       # Upload immediately on service start
+
+# Deletion Policies
+deletion:
+  after_upload:
+    enabled: true
+    keep_days: 14             # Keep files 14 days after upload
+
+  age_based:
+    enabled: true
+    max_age_days: 7           # Delete files older than 7 days
+    schedule_time: "02:00"
+
+  emergency:
+    enabled: true             # Delete when disk >95% full
 ```
 
-See `config/config.yaml.example` for full documentation.
+See [config/config.yaml.example](config/config.yaml.example) for comprehensive documentation with all options.
+
+### Upload Modes Explained
+
+**Mode 1: Daily Upload**
+```yaml
+schedule:
+  mode: "daily"
+  daily_time: "15:00"  # Upload once per day at 3 PM
+```
+- Best for: Depot vehicles with stable WiFi at specific times
+- All files queue throughout the day, bulk upload at scheduled time
+
+**Mode 2: Interval Upload (Recommended for Mobile Vehicles)**
+```yaml
+schedule:
+  mode: "interval"
+  interval_hours: 2    # Upload every 2 hours
+  interval_minutes: 0
+```
+- Best for: Mobile vehicles with intermittent WiFi
+- Multiple upload opportunities throughout the day
+- Balances upload frequency with network usage
+
+### Operational Hours
+
+Controls **immediate uploads** only (not scheduled uploads):
+
+- **Within operational hours (09:00-16:00):** Files upload immediately when ready
+- **Outside operational hours:** Files queue for next scheduled upload
+- **Scheduled uploads:** Always run regardless of operational hours
+
+Set `enabled: false` to allow immediate uploads 24/7.
 
 ## Usage
 
-### Run as Foreground Process
+### Running as Foreground Process
 
 ```bash
-# Run with INFO logging
+# Standard operation
 python3 src/main.py --config config/config.yaml --log-level INFO
 
-# Run with DEBUG logging (verbose)
+# Debug mode (verbose logging)
 python3 src/main.py --config config/config.yaml --log-level DEBUG
 
-# Run with WARNING logging (quiet)
+# Quiet mode (warnings and errors only)
 python3 src/main.py --config config/config.yaml --log-level WARNING
+
+# Test configuration without running
+python3 src/main.py --config config/config.yaml --test-config
 ```
 
-### Install as systemd Service
+### Managing systemd Service
 
 ```bash
-# Copy service file
-sudo cp systemd/tvm-upload.service /etc/systemd/system/
-
-# Edit service file to set correct paths
-sudo nano /etc/systemd/system/tvm-upload.service
-
-# Enable and start service
-sudo systemctl daemon-reload
-sudo systemctl enable tvm-upload
+# Start/stop/restart
 sudo systemctl start tvm-upload
+sudo systemctl stop tvm-upload
+sudo systemctl restart tvm-upload
+
+# Check status
 sudo systemctl status tvm-upload
+
+# Enable/disable autostart
+sudo systemctl enable tvm-upload
+sudo systemctl disable tvm-upload
+
+# Reload configuration (no restart required)
+sudo systemctl reload tvm-upload
 ```
 
-### View Logs
+### Viewing Logs
 
 ```bash
 # Follow logs in real-time
 sudo journalctl -u tvm-upload -f
 
-# View last 100 lines
+# Last 100 lines
 sudo journalctl -u tvm-upload -n 100
 
-# View logs from today
+# Logs from today
 sudo journalctl -u tvm-upload --since today
-```
 
-### Reload Configuration
-
-```bash
-# Reload without restarting (SIGHUP)
-sudo systemctl reload tvm-upload
-
-# OR send signal directly
-sudo kill -HUP $(pgrep -f 'src/main.py')
-
-# OR restart service
-sudo systemctl restart tvm-upload
-```
-
-## Testing
-
-```bash
-# Run all tests
-pytest tests/ -v
-
-# Run with coverage report
-pytest tests/ --cov=src --cov-report=term-missing
-
-# Run specific test file
-pytest tests/test_upload.py -v
-
-# Run specific test
-pytest tests/test_main.py::TestTVMUploadSystem::test_init -v
-
-# Run with debug output
-pytest tests/test_main.py -v -s
+# Logs with specific log level
+sudo journalctl -u tvm-upload | grep ERROR
 ```
 
 ## Architecture
@@ -194,12 +237,13 @@ pytest tests/test_main.py -v -s
 ```
 ┌─────────────────────────────────────────────────────────┐
 │                    TVM Upload Daemon                    │
+│                     (src/main.py)                       │
 │                                                         │
 │  ┌────────────┐      ┌──────────────┐                 │
 │  │   Config   │─────>│ File Monitor │                 │
 │  │  Manager   │      │  (watchdog)  │                 │
 │  └────────────┘      └──────┬───────┘                 │
-│                             │ file stable              │
+│                             │ file stable (60s)        │
 │                             ↓                          │
 │                      ┌──────────────┐                 │
 │                      │    Queue     │                 │
@@ -217,7 +261,6 @@ pytest tests/test_main.py -v -s
 │  ┌─────────────────────────────────┐                  │
 │  │      CloudWatch Manager         │                  │
 │  └─────────────────────────────────┘                  │
-│                                                         │
 └─────────────────────────────────────────────────────────┘
            │                            │
            │ monitor                    │ upload
@@ -228,46 +271,273 @@ pytest tests/test_main.py -v -s
     └─────────────┘            └──────────────┘
 ```
 
+### Component Overview
+
+| Component | Purpose | File |
+|-----------|---------|------|
+| **TVMUploadSystem** | Main coordinator, signal handling | `src/main.py` |
+| **ConfigManager** | YAML config loading and validation | `src/config_manager.py` |
+| **FileMonitor** | Watchdog-based file detection | `src/file_monitor.py` |
+| **QueueManager** | Persistent upload queue (JSON) | `src/queue_manager.py` |
+| **UploadManager** | S3 uploads with retry logic | `src/upload_manager.py` |
+| **DiskManager** | Three-tier deletion policies | `src/disk_manager.py` |
+| **CloudWatchManager** | Metrics publishing | `src/cloudwatch_manager.py` |
+
+### Upload Workflow
+
+```
+1. SERVICE STARTS (9:30 AM)
+   ├─ Load processed_files_registry
+   ├─ Scan directories for files < 3 days old
+   ├─ Filter out already-uploaded files
+   ├─ Add to queue
+   └─ If upload_on_start: true → Upload immediately
+
+2. FILE BECOMES READY (after 60s stability)
+   ├─ Check operational_hours
+   ├─ WITHIN hours (09:00-16:00)
+   │  ├─ batch_upload=true → Upload entire queue
+   │  └─ batch_upload=false → Upload only this file
+   └─ OUTSIDE hours → Queue for scheduled upload
+
+3. SCHEDULED UPLOAD (every 2 hours: 09:00, 11:00, 13:00...)
+   └─ Upload entire queue (includes failed files)
+
+4. AFTER SUCCESSFUL UPLOAD
+   ├─ Add to processed_files_registry
+   ├─ If keep_days=0 → Delete immediately
+   ├─ If keep_days=14 → Mark for deletion in 14 days
+   └─ Remove from queue
+
+5. AGE-BASED CLEANUP (daily at 02:00)
+   └─ Delete files older than max_age_days (7 days)
+
+6. EMERGENCY CLEANUP (disk >95% full)
+   └─ Delete oldest uploaded files to free space
+```
+
+## S3 Folder Structure
+
+Files are organized by vehicle, date (file modification time), and source type:
+
+```
+s3://t01logs/
+└── vehicle-CN-001/
+    ├── 2025-10-20/
+    │   ├── terminal/
+    │   │   ├── terminal_2025-10-20_10-30-15.log
+    │   │   └── terminal_2025-10-20_14-22-03.log
+    │   ├── ros/
+    │   │   ├── 2025-10-20-15-30-00-123456-mini01-NucBox/
+    │   │   │   ├── launch.log
+    │   │   │   └── rosout.log
+    │   │   └── some-loose-file.log
+    │   ├── syslog/
+    │   │   └── syslog_2025-10-20
+    │   └── ros2/
+    │       └── ros2_node_2025-10-20.log
+    │
+    └── 2025-10-21/
+        ├── terminal/...
+        ├── ros/...
+        ├── syslog/...
+        └── ros2/...
+```
+
+**Benefits:**
+- Clear organization by source type
+- ROS folder structure completely preserved
+- Files grouped by creation date (handles delayed uploads correctly)
+- Easy to download specific log types or dates
+
+**Example Downloads:**
+```bash
+# All logs from Oct 20
+aws s3 sync s3://t01logs/vehicle-CN-001/2025-10-20/ ./logs/
+
+# Only ROS logs from Oct 20
+aws s3 sync s3://t01logs/vehicle-CN-001/2025-10-20/ros/ ./ros-logs/
+
+# Only terminal logs from Oct 20
+aws s3 sync s3://t01logs/vehicle-CN-001/2025-10-20/terminal/ ./terminal-logs/
+```
+
 ## Monitoring
 
 ### CloudWatch Metrics
 
-Namespace: `TVM/Upload`
+**Namespace:** `TVM/Upload`
 
-- `BytesUploaded` - Total bytes uploaded (Sum)
-- `FileCount` - Number of files uploaded (Count)
-- `FailureCount` - Number of failed uploads (Count)
-- `DiskUsagePercent` - Current disk usage (Gauge)
+| Metric | Type | Description |
+|--------|------|-------------|
+| `BytesUploaded` | Sum | Total bytes uploaded |
+| `FileCount` | Count | Number of files uploaded |
+| `FailureCount` | Count | Number of failed uploads |
+| `DiskUsagePercent` | Gauge | Current disk usage (0-100) |
 
-Dimension: `VehicleId=vehicle-001`
+**Dimension:** `VehicleId=vehicle-CN-001`
+
+**Viewing in AWS Console:**
+```
+CloudWatch → Metrics → TVM/Upload → VehicleId → Select metrics
+```
 
 ### Queue Status
 
 Check pending uploads:
 ```bash
+# Default location
 cat /var/lib/tvm-upload/queue.json
-# OR (if configured differently)
-cat /tmp/tvm-test-queue.json
+
+# Format:
+# {
+#   "files": [
+#     {
+#       "filepath": "/path/to/file.log",
+#       "size": 1024,
+#       "detected_at": "2025-10-20T10:30:00",
+#       "attempts": 0
+#     }
+#   ]
+# }
 ```
 
-### System Logs
+### Processed Files Registry
 
-Logs are written to:
-- **systemd journal** (when running as service)
-- **stdout/stderr** (when running in foreground)
+Check uploaded files:
+```bash
+cat /var/lib/tvm-upload/processed_files.json
 
-Log format:
+# Shows files already uploaded (prevents duplicates)
 ```
-2025-10-12 15:30:45 [main] [INFO] File ready: autoware.log
-2025-10-12 15:30:46 [upload_manager] [INFO] Uploading autoware.log (attempt 1/10)
-2025-10-12 15:30:50 [upload_manager] [INFO] SUCCESS: autoware.log -> s3://tvm-logs/vehicle-001/2025-10-12/autoware.log
+
+## Testing
+
+### Test Levels
+
+Three test levels with different purposes:
+
+```bash
+# Unit tests (fast, fully mocked, no AWS required)
+pytest tests/unit/ -v
+
+# Integration tests (mocked AWS, real file operations)
+pytest tests/integration/ -v
+
+# E2E tests (real AWS - only in CI/CD)
+pytest tests/e2e/ -m e2e -v
 ```
+
+### Common Test Commands
+
+```bash
+# Run all tests (excludes e2e by default)
+pytest tests/ -v
+
+# Run with coverage
+pytest tests/ --cov=src --cov-report=term-missing
+
+# Run specific test file
+pytest tests/unit/test_upload.py -v
+
+# Run specific test
+pytest tests/integration/test_main.py::TestTVMUploadSystem::test_init -v
+
+# Run with debug output
+pytest tests/unit/test_upload.py -v -s
+```
+
+### Test Markers
+
+Defined in `pytest.ini`:
+
+- `unit` - Fast unit tests with full mocking
+- `integration` - Integration tests with mocked AWS
+- `e2e` - End-to-end tests requiring real AWS credentials
+
+### Test Runner Script
+
+For convenience, use `scripts/run_tests.sh` - a professional test runner with automatic venv setup, coverage reporting, and colored output.
+
+**Basic Usage:**
+
+```bash
+# Run all tests (unit + integration + e2e)
+./scripts/run_tests.sh
+
+# Or specify a test mode
+./scripts/run_tests.sh unit          # Unit tests only (~5s)
+./scripts/run_tests.sh integration   # Integration tests only (~15s)
+./scripts/run_tests.sh e2e           # E2E tests only (~60s, requires AWS)
+./scripts/run_tests.sh fast          # Unit + integration (skip E2E)
+```
+
+**Options:**
+
+```bash
+# Generate coverage report (HTML output in htmlcov/)
+./scripts/run_tests.sh all --coverage
+
+# Verbose output for debugging
+./scripts/run_tests.sh unit --verbose
+
+# Combine options
+./scripts/run_tests.sh fast --coverage --verbose
+```
+
+**Environment Variables:**
+
+```bash
+# Use different AWS profile for E2E tests
+AWS_PROFILE=prod ./scripts/run_tests.sh e2e
+
+# Enable coverage via environment variable
+COVERAGE=true ./scripts/run_tests.sh all
+```
+
+**Test Modes:**
+
+| Mode | Tests Run | Duration | AWS Required |
+|------|-----------|----------|--------------|
+| `unit` | Unit tests only | ~5s | No |
+| `integration` | Integration tests only | ~15s | No |
+| `e2e` | E2E tests only | ~60s | Yes |
+| `all` | All tests (default) | ~80s | Yes (for E2E) |
+| `fast` | Unit + integration | ~20s | No |
+
+**Examples:**
+
+```bash
+# Quick local testing (no AWS needed)
+./scripts/run_tests.sh fast
+
+# Full test suite with coverage report
+./scripts/run_tests.sh all --coverage
+# Then open: htmlcov/index.html
+
+# E2E tests with production AWS profile
+AWS_PROFILE=prod ./scripts/run_tests.sh e2e
+
+# Debug failing unit tests
+./scripts/run_tests.sh unit --verbose
+
+# Help
+./scripts/run_tests.sh help
+```
+
+**Features:**
+
+- Automatic virtual environment setup
+- Colored output for better readability
+- Coverage reporting with HTML output
+- Time tracking for test execution
+- Supports all pytest options via pass-through
 
 ## Troubleshooting
 
-### Uploads Not Happening
+### Files Not Uploading
 
-**Check 1: Operational Hours**
+**1. Check Operational Hours**
 ```bash
 # View current config
 grep -A 5 "operational_hours" config/config.yaml
@@ -275,211 +545,288 @@ grep -A 5 "operational_hours" config/config.yaml
 # Check current time
 date +"%H:%M"
 
-# Uploads only happen between start and end times
+# Immediate uploads only happen within operational hours
+# Scheduled uploads always run regardless of hours
 ```
 
-**Check 2: Queue Status**
+**2. Check Queue Status**
 ```bash
 # View pending files
 cat /var/lib/tvm-upload/queue.json
 
-# If queue is empty, files haven't been detected yet
+# If empty, files haven't been detected yet
 # Wait 60 seconds after file creation for stability check
 ```
 
-**Check 3: Service Status**
+**3. Check Service Status**
 ```bash
-# Check if service is running
 sudo systemctl status tvm-upload
-
-# View recent logs
 sudo journalctl -u tvm-upload -n 50
 ```
 
-**Check 4: File Detection**
+**4. Check Processed Files Registry**
 ```bash
-# Verify log directories exist
-ls -la /var/log/autoware/bags
-
-# Check file permissions
-ls -l /var/log/autoware/bags/*.mcap
-
-# Files must be stable (unchanged) for 60 seconds
+# File might already be uploaded
+cat /var/lib/tvm-upload/processed_files.json | grep filename.log
 ```
 
 ### Disk Full
 
 **Automatic Cleanup:**
-- System automatically deletes oldest uploaded files at **90% disk usage**
-- Force cleanup at **95% usage** (may delete non-uploaded files)
+- **90% usage:** Delete oldest uploaded files (warning)
+- **95% usage:** Emergency cleanup (may delete non-uploaded files)
+
+**Check Disk Usage:**
+```bash
+df -h /
+```
+
+**Check Deletion Configuration:**
+```bash
+grep -A 10 "deletion:" config/config.yaml
+
+# Ensure emergency.enabled: true for production!
+```
 
 **Manual Cleanup:**
 ```bash
-# Check current disk usage
-df -h /
-
-# Manual cleanup (Python)
-python3 << EOF
+# Trigger age-based cleanup manually
+python3 -c "
 from src.disk_manager import DiskManager
-dm = DiskManager(['/var/log/autoware'], reserved_gb=70)
-deleted = dm.cleanup_old_files()
-print(f"Deleted {deleted} files")
-EOF
+from src.config_manager import ConfigManager
+config = ConfigManager('config/config.yaml')
+dm = DiskManager(config)
+deleted = dm.age_based_cleanup()
+print(f'Deleted {deleted} files')
+"
 ```
 
 ### AWS Credentials Issues
 
 **Verify Credentials:**
 ```bash
-# Check credentials file exists
+# Check credentials file
 cat ~/.aws/credentials
 
 # Should contain:
-# [default]
+# [china]
 # aws_access_key_id = YOUR_KEY
 # aws_secret_access_key = YOUR_SECRET
 
 # Test S3 access
-#aws s3 ls s3://tvm-logs --region cn-north-1
-aws s3 ls s3://t01logs   --region cn-north-1   --endpoint-url https://s3.cn-north-1.amazonaws.com.cn   --profile china
-
-# Test with boto3
-python3 -c "import boto3; print(boto3.client('s3', region_name='cn-north-1').list_buckets())"
+aws s3 ls s3://t01logs \
+  --region cn-north-1 \
+  --endpoint-url https://s3.cn-north-1.amazonaws.com.cn \
+  --profile china
 ```
 
 **Common Issues:**
-- **Wrong region:** Use `cn-north-1` or `cn-northwest-1` for China
-- **Credentials expired:** Refresh IAM credentials
-- **No permissions:** Ensure IAM role has `s3:PutObject` permission
-- **Network issues:** Check connectivity to China region
+- **Wrong region:** Must use `cn-north-1` or `cn-northwest-1` for China
+- **Wrong endpoint:** Must use `.amazonaws.com.cn` suffix
+- **Wrong profile:** Ensure `profile: china` matches your AWS credentials file
+- **No permissions:** IAM role needs `s3:PutObject` and `s3:GetObject` permissions
+- **Network:** Check connectivity to China region endpoints
 
 ### Upload Failures
 
-**Check Retry Logic:**
+**View Retry Attempts:**
 ```bash
-# View logs for retry attempts
 sudo journalctl -u tvm-upload | grep "Upload failed"
 
 # Should see exponential backoff: 1s, 2s, 4s, 8s, 16s...
 # Max 10 retries before giving up
 ```
 
-**Network Issues:**
+**Test S3 Connectivity:**
 ```bash
-# Test S3 connectivity
 curl -I https://s3.cn-north-1.amazonaws.com.cn
-
-# Check DNS resolution
 nslookup s3.cn-north-1.amazonaws.com.cn
 ```
 
 ### Configuration Errors
 
-**Validate Config:**
+**Validate Configuration:**
 ```bash
-# Test configuration syntax
 python3 src/main.py --config config/config.yaml --test-config
 
 # Should output:
-# Configuration valid!
-# Vehicle ID: vehicle-001
-# S3 Bucket: tvm-logs
+# ✓ Configuration valid!
+# Vehicle ID: vehicle-CN-001
+# S3 Bucket: t01logs
 # ...
 ```
 
-### Performance Issues
+**Common Config Issues:**
+- Missing required fields (vehicle_id, s3.bucket, s3.region)
+- Invalid time format (must be "HH:MM")
+- Invalid interval (minimum 5 minutes, maximum 24 hours)
+- Invalid paths (directories don't exist)
 
-**High CPU Usage:**
-- Check log level (DEBUG is verbose)
-- Reduce number of monitored directories
-- Increase `file_stable_seconds` to reduce checks
+### Duplicate Uploads
 
-**High Memory Usage:**
-- Reduce queue size (upload more frequently)
-- Check for large files (>1GB)
-- Monitor with: `ps aux | grep main.py`
+If files are being uploaded multiple times:
 
-## Project Structure
+```bash
+# Check processed files registry is enabled
+grep -A 3 "processed_files_registry" config/config.yaml
 
-```
-tvm-upload/
-├── src/
-│   ├── main.py              # Main coordinator
-│   ├── config_manager.py    # YAML configuration
-│   ├── file_monitor.py      # Watchdog file detection
-│   ├── upload_manager.py    # S3 uploads with retry
-│   ├── disk_manager.py      # Disk space management
-│   ├── queue_manager.py     # Persistent queue
-│   └── cloudwatch_manager.py # CloudWatch metrics
-├── tests/
-│   ├── test_config.py
-│   ├── test_monitor.py
-│   ├── test_upload.py
-│   ├── test_disk.py
-│   ├── test_queue.py
-│   ├── test_cloudwatch.py
-│   └── test_main.py
-├── config/
-│   └── config.yaml.example
-├── systemd/
-│   └── tvm-upload.service
-├── requirements.txt
-├── setup.py
-└── README.md
+# Check registry file exists and is readable
+ls -l /var/lib/tvm-upload/processed_files.json
+
+# If corrupted, delete and restart service
+sudo rm /var/lib/tvm-upload/processed_files.json
+sudo systemctl restart tvm-upload
 ```
 
 ## Development
 
-### Running Tests Locally
+### Project Structure
 
-```bash
-# All tests use mocks - no AWS credentials needed!
-pytest tests/ -v
-
-# Tests will pass even without AWS access
+```
+tvm-upload/
+├── src/
+│   ├── main.py                 # Main coordinator and entry point
+│   ├── config_manager.py       # YAML configuration management
+│   ├── file_monitor.py         # Watchdog file detection
+│   ├── upload_manager.py       # S3 uploads with retry logic
+│   ├── disk_manager.py         # Three-tier deletion policies
+│   ├── queue_manager.py        # Persistent JSON queue
+│   └── cloudwatch_manager.py   # CloudWatch metrics publishing
+├── tests/
+│   ├── unit/                   # Fast unit tests (mocked)
+│   ├── integration/            # Integration tests (mocked AWS)
+│   └── e2e/                    # End-to-end tests (real AWS)
+├── config/
+│   └── config.yaml.example     # Comprehensive config documentation
+├── systemd/
+│   └── tvm-upload.service      # systemd service definition
+├── requirements.txt            # Python dependencies
+├── setup.py                    # Package setup
+├── pytest.ini                  # Test configuration
+├── CLAUDE.md                   # Claude Code guidance
+└── README.md                   # This file
 ```
 
 ### Adding New Features
 
-1. Create feature branch
-2. Write tests first (TDD)
-3. Implement feature
-4. Ensure tests pass: `pytest tests/ -v`
-5. Check coverage: `pytest --cov=src --cov-report=term-missing`
-6. Submit PR
+1. **Write tests first** (TDD approach)
+2. **Unit test** in `tests/unit/` with full mocking
+3. **Integration test** in `tests/integration/` if component interaction needed
+4. **Update config schema** in `config_manager.py` if adding config options
+5. **Update config.yaml.example** with documentation
+6. **Run tests:** `pytest tests/ -v`
+7. **Check coverage:** `pytest --cov=src --cov-report=term-missing`
 
-### Code Style
+### Code Style Guidelines
 
-- Use type hints
-- Add docstrings to all functions
-- Follow PEP 8
-- Keep functions under 50 lines
-- Use descriptive variable names
+- Use **type hints** for all function parameters and return values
+- Add **docstrings** to all functions (Google style)
+- Follow **PEP 8** style guide
+- Keep functions **under 50 lines**
+- Use **descriptive variable names**
+- Use **pathlib.Path** for file operations
+- Convert to `str` only when required by external APIs
+
+### Dependencies
+
+- **watchdog** - File system monitoring
+- **boto3** - AWS S3 client
+- **pyyaml** - Configuration parsing
+- **pytest**, **pytest-cov**, **pytest-mock** - Testing framework
+
+## AWS China Specifics
+
+### Key Differences from Standard AWS
+
+1. **Endpoints:** Must use `.amazonaws.com.cn` suffix
+   ```python
+   # Correct for China
+   endpoint_url = "https://s3.cn-north-1.amazonaws.com.cn"
+
+   # Incorrect (standard AWS)
+   endpoint_url = "https://s3.cn-north-1.amazonaws.com"
+   ```
+
+2. **Regions:** Only `cn-north-1` (Beijing) or `cn-northwest-1` (Ningxia)
+
+3. **Credentials:** Use AWS profile configuration
+   ```yaml
+   s3:
+     profile: china  # Matches [china] section in ~/.aws/credentials
+   ```
+
+4. **IAM Policies:** Require separate China AWS account
+
+### LocalStack Support
+
+For local testing with LocalStack:
+
+```bash
+# Set environment variable
+export AWS_ENDPOINT_URL=http://localhost:4566
+
+# Run tests
+pytest tests/integration/ -v
+```
+
+See `upload_manager.py:99-103` for endpoint configuration logic.
+
+## Signal Handling
+
+The daemon responds to the following signals:
+
+| Signal | Behavior |
+|--------|----------|
+| `SIGTERM` / `SIGINT` | Graceful shutdown (upload remaining queue, stop monitoring) |
+| `SIGHUP` | Reload configuration without restart |
+
+**Reload configuration:**
+```bash
+# Via systemd
+sudo systemctl reload tvm-upload
+
+# Or send signal directly
+sudo kill -HUP $(pgrep -f 'src/main.py')
+```
+
+## Performance Notes
+
+### Resource Usage
+
+- **CPU:** Low (~1-2% on idle, 5-10% during uploads)
+- **Memory:** ~50-100MB depending on queue size
+- **Disk I/O:** Minimal (only during file detection and upload)
+- **Network:** Depends on upload frequency and file sizes
+
+### Optimization Tips
+
+**Reduce CPU usage:**
+- Use `log_level: WARNING` instead of `DEBUG`
+- Increase `file_stable_seconds` to reduce stability checks
+- Reduce number of monitored directories
+
+**Reduce memory usage:**
+- Upload more frequently (smaller queue)
+- Enable `deletion.after_upload` with `keep_days: 0`
+
+**Reduce network usage:**
+- Use `mode: daily` instead of `mode: interval`
+- Disable `batch_upload` for on-demand uploads only
 
 ## License
 
-[Your License]
+Copyright (c) 2025 Futu-reADS. All rights reserved.
 
 ## Support
 
 For issues and questions:
-- **Email:** support@yourcompany.com
-- **Slack:** #tvm-upload-support
-- **Documentation:** https://wiki.yourcompany.com/tvm-upload
+
+- **GitHub Issues:** https://github.com/Futu-reADS/tvm-upload/issues
+- **Documentation:** See [CLAUDE.md](CLAUDE.md) for Claude Code guidance
+- **Configuration Help:** See [config.yaml.example](config/config.yaml.example)
 
 ---
 
-## Key Changes Made
-
-1. ✅ **Changed installation:** Use `pip install -e ".[test]"` (editable install with setup.py)
-2. ✅ **Added log-level option:** `--log-level DEBUG/INFO/WARNING/ERROR`
-3. ✅ **Clarified log location:** Logs go to systemd journal or stdout (not a file by default)
-4. ✅ **Added operational hours explanation:** 9:00-16:00 upload window
-5. ✅ **Expanded troubleshooting:** More specific solutions
-6. ✅ **Added architecture diagram:** Visual system overview
-7. ✅ **CloudWatch metrics details:** Actual metric names from code
-8. ✅ **Queue file path:** Mentioned both default and configurable paths
-9. ✅ **Project structure:** Shows all modules
-10. ✅ **Development section:** For contributors
-
-**This README now matches your actual code implementation!**
+**Version:** 2.1
+**Last Updated:** 2025-10-24
+**Maintained by:** Futu-reADS Team
