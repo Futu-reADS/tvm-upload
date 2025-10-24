@@ -8,21 +8,21 @@ StartLimitIntervalSec=60
 
 [Service]
 Type=simple
-User=pankaj
-Group=pankaj
-WorkingDirectory=/home/pankaj/tvm-upload
+User=INSTALL_USER
+Group=INSTALL_USER
+WorkingDirectory=/home/INSTALL_USER/tvm-upload
 
 # Environment
-Environment="PATH=/home/pankaj/tvm-upload/venv/bin:/usr/local/bin:/usr/bin"
+Environment="PATH=/home/INSTALL_USER/tvm-upload/venv/bin:/usr/local/bin:/usr/bin"
 Environment="PYTHONUNBUFFERED=1"
 
-Environment="AWS_SHARED_CREDENTIALS_FILE=/home/pankaj/.aws/credentials"
-Environment="AWS_CONFIG_FILE=/home/pankaj/.aws/config"
+Environment="AWS_SHARED_CREDENTIALS_FILE=/home/INSTALL_USER/.aws/credentials"
+Environment="AWS_CONFIG_FILE=/home/INSTALL_USER/.aws/config"
 Environment="AWS_PROFILE=china"
 
 
 # Start command (ONLY ONE ExecStart allowed)
-ExecStart=/home/pankaj/tvm-upload/venv/bin/python3 src/main.py --config /etc/tvm-upload/config.yaml --log-level INFO
+ExecStart=/home/INSTALL_USER/tvm-upload/venv/bin/python3 src/main.py --config /etc/tvm-upload/config.yaml --log-level INFO
 
 # Reload configuration on SIGHUP
 ExecReload=/bin/kill -HUP $MAINPID
@@ -41,7 +41,7 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 # ProtectHome=true
-ReadWritePaths=/var/log/autoware /var/lib/tvm-upload /tmp
+ReadWritePaths=/var/lib/tvm-upload /tmp
 ProtectKernelTunables=true
 ProtectKernelModules=true
 ProtectControlGroups=true

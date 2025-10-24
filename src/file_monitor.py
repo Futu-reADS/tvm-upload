@@ -13,6 +13,7 @@ from typing import Callable, Dict, Tuple, List
 from datetime import datetime
 from watchdog.observers import Observer
 from watchdog.events import FileSystemEventHandler, FileCreatedEvent, FileModifiedEvent
+import fnmatch
 
 logger = logging.getLogger(__name__)
 
@@ -71,7 +72,25 @@ class FileMonitor:
         Note:
             Directories will be created if they don't exist
         """
-        self.directories = [Path(d) for d in directories]
+        # Parse directory configurations (path + pattern)
+        self.directory_configs = []
+        log_directories = config.get('log_directories', []) if config else []
+
+        for dir_path in directories:
+            # Find matching config for this directory
+            dir_config = None
+            for log_dir in log_directories:
+                if log_dir.get('path') == dir_path:
+                    dir_config = log_dir
+                    break
+
+            # Store directory with pattern (if specified)
+            self.directory_configs.append({
+                'path': Path(dir_path),
+                'pattern': dir_config.get('pattern') if dir_config else None
+            })
+
+        self.directories = [Path(d) for d in directories]  # Keep for backward compatibility
         self.callback = callback
         self.stability_seconds = stability_seconds
         self.config = config or {}
@@ -129,8 +148,42 @@ class FileMonitor:
         except (OSError, FileNotFoundError) as e:
             logger.debug(f"Cannot get identity for {file_path}: {e}")
             return None
-    
-    
+
+    def _matches_pattern(self, file_path: Path) -> bool:
+        """
+        Check if file matches the configured pattern for its directory.
+
+        Args:
+            file_path: Path to check
+
+        Returns:
+            bool: True if file matches pattern (or no pattern configured), False otherwise
+        """
+        # Find the directory config for this file
+        for dir_config in self.directory_configs:
+            dir_path = dir_config['path']
+
+            # Check if file is in this directory
+            try:
+                file_path.relative_to(dir_path)
+                # File is in this directory
+                pattern = dir_config.get('pattern')
+
+                if pattern is None:
+                    # No pattern configured - accept all files
+                    return True
+                else:
+                    # Check if filename matches pattern
+                    return fnmatch.fnmatch(file_path.name, pattern)
+
+            except ValueError:
+                # File is not in this directory, continue
+                continue
+
+        # File not in any configured directory - accept by default
+        return True
+
+
     def start(self):
         """Start monitoring directories (creates directories if needed, scans existing files)."""
         if self._running:
@@ -162,6 +215,10 @@ class FileMonitor:
 
                 for file_path in directory.iterdir():
                     if not file_path.is_file() or file_path.name.startswith('.'):
+                        continue
+
+                    # Check if file matches pattern
+                    if not self._matches_pattern(file_path):
                         continue
 
                     try:
@@ -444,7 +501,11 @@ class FileMonitor:
         # Skip hidden files and marker files
         if path.name.startswith('.'):
             return
-        
+
+        # Check if file matches pattern
+        if not self._matches_pattern(path):
+            return
+
         # Get current file size
         try:
             size = path.stat().st_size

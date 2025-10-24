@@ -17,27 +17,49 @@
 # Examples: vehicle-CN-001, vehicle-CN-002, vehicle-JP-001
 vehicle_id: "vehicle-CN-001"
 
-# ============================================
+## ============================================
 # LOG DIRECTORIES TO MONITOR
 # ============================================
-# Four log sources are monitored:
-# 1. Terminal logs: .parcel/log/terminal/ - Terminal session logs with timestamps
-# 2. ROS logs: .ros/log/ - ROS run folders + loose files
-# 3. System logs: /var/log - System logs including syslog
-# 4. ROS2 logs: rosLog/ - ROS2 node logs
+# Four log sources are monitored with explicit source names:
+# 1. Terminal logs: terminal/ in S3
+# 2. ROS logs: ros/ in S3
+# 3. System logs: syslog/ in S3
+# 4. ROS2 logs: ros2/ in S3
 #
-# Files are automatically organized in S3 by source type:
-# - terminal/ - All terminal logs
-# - ros/ - All ROS logs (folder structure preserved)
-# - syslog/ - System logs
-# - ros2/ - ROS2 logs
+# Each directory must specify:
+#   - path: Local filesystem path to monitor
+#   - source: Source name for S3 organization
+#   - pattern: (Optional) Glob pattern to filter files
 #
-# NOTE: Update the ros2_ws/log path to match your actual installation!
+# Pattern matching:
+#   - If pattern is specified, ONLY files matching the pattern are uploaded
+#   - If pattern is omitted, ALL files in the directory are uploaded
+#   - Supports wildcards: * (any characters), ? (single character)
+#   - Examples:
+#       pattern: "syslog*"       → Matches: syslog, syslog.1, syslog.2.gz
+#       pattern: "*.log"         → Matches: error.log, debug.log
+#       pattern: "test_*.mcap"   → Matches: test_2024.mcap, test_run1.mcap
+#
+# Files are automatically organized in S3 by source type.
+# NOTE: The install script automatically replaces 'USER' with your actual username.
+# If manually configuring, update all /home/USER paths to your actual home directory.
+
 log_directories:
-  - /home/autoware/.parcel/log/terminal   # Terminal logs
-  - /home/autoware/.ros/log                # ROS logs (folders + loose files)
-  - /var/log                               # System logs (includes syslog)
-  - /home/autoware/ros2_ws/log             # ROS2 logs (UPDATE THIS PATH!)
+  - path: /home/USER/.parcel/log/terminal
+    source: terminal
+    # No pattern specified → Uploads ALL files from this directory
+
+  - path: /home/USER/.ros/log
+    source: ros
+    # No pattern specified → Uploads ALL files from this directory
+
+  - path: /var/log
+    source: syslog
+    pattern: "syslog*"  # Only upload files matching "syslog*" (syslog, syslog.1, etc.)
+
+  - path: /home/USER/ros2_ws/log
+    source: ros2
+    # No pattern specified → Uploads ALL files from this directory
 
 # ============================================
 # AWS S3 CONFIGURATION (China Region)
@@ -52,7 +74,7 @@ s3:
   
   # Path to AWS credentials directory
   # Should contain credentials and config files
-  credentials_path: /home/autoware/.aws
+  credentials_path: /home/USER/.aws
   
   # AWS profile name to use
   # Profile must be configured in ~/.aws/credentials and ~/.aws/config
@@ -127,7 +149,7 @@ upload:
     start: "09:00"
     
     # End time for immediate uploads (HH:MM format, 24-hour)
-    end: "16:00"
+    end: "18:00"
   
   # ==========================================
   # BATCH UPLOAD SETTINGS
@@ -222,6 +244,7 @@ upload:
     # How long to keep registry entries (days)
     # Entries older than this are automatically removed
     # RECOMMENDED: 30 days (keeps registry size manageable)
+    # This value should always be more than deletion.after_upload.keep_days
     retention_days: 30
 
 # ============================================
@@ -314,7 +337,7 @@ disk:
 monitoring:
   # Enable CloudWatch metrics publishing
   # Set to false for testing (but enable for production)
-  cloudwatch_enabled: true
+  cloudwatch_enabled: false
   
   # How often to publish metrics (seconds)
   # RECOMMENDED: 3600 (every 1 hour)
