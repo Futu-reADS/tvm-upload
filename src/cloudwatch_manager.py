@@ -11,19 +11,14 @@ from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
-# CloudWatch Configuration
 CLOUDWATCH_NAMESPACE = 'TVM/Upload'
-
-# Metric Names
 METRIC_BYTES_UPLOADED = 'BytesUploaded'
 METRIC_FILE_COUNT = 'FileCount'
 METRIC_FAILURE_COUNT = 'FailureCount'
 METRIC_DISK_USAGE = 'DiskUsagePercent'
 METRIC_SERVICE_STARTUP = 'ServiceStartup'
-
-# Alarm Configuration
 DEFAULT_ALARM_EVALUATION_PERIODS = 3
-ALARM_PERIOD_SECONDS = 86400  # 1 day
+ALARM_PERIOD_SECONDS = 86400
 
 
 class CloudWatchManager:
@@ -44,37 +39,21 @@ class CloudWatchManager:
     """
     
     def __init__(self, region: str, vehicle_id: str, enabled: bool = True):
-        """
-        Initialize CloudWatch manager.
-        
-        Args:
-            region: AWS region (e.g., 'cn-north-1')
-            vehicle_id: Vehicle identifier for dimensions
-            enabled: Enable/disable CloudWatch (False for testing)
-            
-        Raises:
-            RuntimeError: If CloudWatch explicitly enabled but initialization fails
-        """
+        """Initialize CloudWatch manager."""
         self.region = region
         self.vehicle_id = vehicle_id
         self.enabled = enabled
         self.cw_client = None
-        
-        # Metric accumulators (reset after publish)
         self.bytes_uploaded = 0
         self.files_uploaded = 0
         self.files_failed = 0
-        
-        # Initialize CloudWatch client
+
         if self.enabled:
             try:
                 import os
-                
-                # Check for LocalStack (testing environment)
                 endpoint_url = os.getenv('AWS_ENDPOINT_URL')
-                
+
                 if endpoint_url:
-                    # Testing mode with LocalStack
                     logger.info(f"CloudWatch in TEST mode (endpoint: {endpoint_url})")
                     client_kwargs = {
                         'region_name': region,
@@ -85,14 +64,10 @@ class CloudWatchManager:
                     self.cw_client = boto3.client('cloudwatch', **client_kwargs)
                     logger.info("CloudWatch client created (TEST mode)")
                 else:
-                    # Production mode
                     self.cw_client = boto3.client('cloudwatch', region_name=region)
                     logger.info(f"CloudWatch initialized for region: {region}")
-                    
-                    # ===== NEW: Test CloudWatch permissions =====
-                    # Verify we can actually publish metrics (catch IAM issues early)
+
                     try:
-                        # Try to publish a test metric (harmless startup marker)
                         self.cw_client.put_metric_data(
                             Namespace=CLOUDWATCH_NAMESPACE,
                             MetricData=[{
@@ -121,12 +96,10 @@ class CloudWatchManager:
                         logger.error("  2. Or set monitoring.cloudwatch_enabled: false in config")
                         logger.error("="*60)
                         raise RuntimeError(f"CloudWatch enabled but cannot publish metrics: {perm_error}")
-                    # ===== END NEW =====
-                    
+
             except RuntimeError:
-                # Re-raise RuntimeError (permission test failure)
                 raise
-                
+
             except Exception as e:
                 logger.error(f"CloudWatch client creation failed: {e}")
                 logger.error("="*60)
@@ -147,33 +120,21 @@ class CloudWatchManager:
                 raise RuntimeError(f"CloudWatch initialization failed: {e}")
         else:
             logger.info("CloudWatch disabled (enabled=False)")
-    
+
+
     def record_upload_success(self, file_size: int):
-        """
-        Record successful file upload.
-        
-        Args:
-            file_size: Size of uploaded file in bytes
-        """
+        """Record successful file upload."""
         self.bytes_uploaded += file_size
         self.files_uploaded += 1
         logger.debug(f"Recorded upload: {file_size} bytes")
-    
+
     def record_upload_failure(self):
         """Record failed file upload."""
         self.files_failed += 1
         logger.debug("Recorded upload failure")
-    
+
     def publish_metrics(self, disk_usage_percent: Optional[float] = None):
-        """
-        Publish accumulated metrics to CloudWatch.
-        
-        Publishes all metrics and resets accumulators.
-        Call this periodically (e.g., hourly or daily).
-        
-        Args:
-            disk_usage_percent: Current disk usage (0-100)
-        """
+        """Publish accumulated metrics to CloudWatch and reset accumulators."""
         if not self.enabled:
             logger.debug("CloudWatch disabled, skipping publish")
             return
@@ -185,80 +146,58 @@ class CloudWatchManager:
         try:
             metrics = []
             timestamp = datetime.utcnow()
-            
-            # Bytes uploaded metric
+
             if self.bytes_uploaded > 0:
                 metrics.append({
                     'MetricName': METRIC_BYTES_UPLOADED,
                     'Value': self.bytes_uploaded,
                     'Unit': 'Bytes',
                     'Timestamp': timestamp,
-                    'Dimensions': [
-                        {'Name': 'VehicleId', 'Value': self.vehicle_id}
-                    ]
+                    'Dimensions': [{'Name': 'VehicleId', 'Value': self.vehicle_id}]
                 })
 
-            # File count metric
             if self.files_uploaded > 0:
                 metrics.append({
                     'MetricName': METRIC_FILE_COUNT,
                     'Value': self.files_uploaded,
                     'Unit': 'Count',
                     'Timestamp': timestamp,
-                    'Dimensions': [
-                        {'Name': 'VehicleId', 'Value': self.vehicle_id}
-                    ]
+                    'Dimensions': [{'Name': 'VehicleId', 'Value': self.vehicle_id}]
                 })
 
-            # Failure count metric
             if self.files_failed > 0:
                 metrics.append({
                     'MetricName': METRIC_FAILURE_COUNT,
                     'Value': self.files_failed,
                     'Unit': 'Count',
                     'Timestamp': timestamp,
-                    'Dimensions': [
-                        {'Name': 'VehicleId', 'Value': self.vehicle_id}
-                    ]
+                    'Dimensions': [{'Name': 'VehicleId', 'Value': self.vehicle_id}]
                 })
 
-            # Disk usage metric
             if disk_usage_percent is not None:
                 metrics.append({
                     'MetricName': METRIC_DISK_USAGE,
                     'Value': disk_usage_percent,
                     'Unit': 'Percent',
                     'Timestamp': timestamp,
-                    'Dimensions': [
-                        {'Name': 'VehicleId', 'Value': self.vehicle_id}
-                    ]
+                    'Dimensions': [{'Name': 'VehicleId', 'Value': self.vehicle_id}]
                 })
-            
-            # Publish to CloudWatch
+
             if metrics:
                 self.cw_client.put_metric_data(
                     Namespace=CLOUDWATCH_NAMESPACE,
                     MetricData=metrics
                 )
                 logger.info(f"Published {len(metrics)} metrics to CloudWatch")
-                
-                # Reset accumulators
                 self.bytes_uploaded = 0
                 self.files_uploaded = 0
                 self.files_failed = 0
-            
+
         except Exception as e:
             logger.error(f"Failed to publish CloudWatch metrics: {e}")
-    
+
     def create_low_upload_alarm(self, threshold_mb: int = 100):
-        """
-        Create CloudWatch alarm for low upload volume.
-        
-        Triggers if <threshold_mb uploaded for 3 consecutive days.
-        
-        Args:
-            threshold_mb: Minimum MB per day threshold
-        """
+        """Create CloudWatch alarm for low upload volume (triggers if <threshold_mb for 3 consecutive days)."""
         if not self.enabled:
             return
         

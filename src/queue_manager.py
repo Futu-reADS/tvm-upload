@@ -56,7 +56,6 @@ class QueueManager:
         self.queue_file = Path(queue_file)
         self.queue: List[Dict[str, Any]] = []
         
-        # ===== IMPROVED: Fail fast if directory not writable =====
         # Ensure directory exists and is writable
         try:
             # Try to create directory
@@ -110,7 +109,6 @@ class QueueManager:
             logger.error("Action required: Fix filesystem issue or change queue_file path")
             logger.error("="*60)
             raise OSError(f"Cannot create queue directory: {self.queue_file.parent}: {e}")
-        # ===== END IMPROVED =====
         
         # Load existing queue
         self.load_queue()
@@ -259,10 +257,15 @@ class QueueManager:
     def save_queue(self):
         """
         Save queue to JSON file with backup.
-        
-        Creates a backup before overwriting to enable recovery from corruption.
-        Uses atomic write (temp file + rename) for safety.
-        
+
+        Creates backup (.json.bak) before overwriting for safety.
+        Uses atomic write (temp file + rename) to prevent corruption.
+
+        Recovery from corrupted queue.json:
+        1. Stop service: sudo systemctl stop tvm-upload
+        2. Restore backup: cp queue.json.bak queue.json
+        3. Start service: sudo systemctl start tvm-upload
+
         Raises:
             OSError: If queue cannot be saved (CRITICAL - system cannot continue)
         """

@@ -2,17 +2,11 @@
 """
 TVM Log Upload System - Main Application
 Integrates all components for production use
-
-This is the main entry point that coordinates file monitoring,
-uploading, disk management, and scheduling.
-
-Version: 2.0 - Added configurable deletion policies
 """
 
 import sys
 from pathlib import Path
 
-# Add src to path for both direct execution and imports
 current_dir = Path(__file__).parent
 if str(current_dir) not in sys.path:
     sys.path.insert(0, str(current_dir))
@@ -30,7 +24,6 @@ from upload_manager import UploadManager
 from disk_manager import DiskManager
 from cloudwatch_manager import CloudWatchManager
 from queue_manager import QueueManager
-
 
 logger = logging.getLogger(__name__)
 
@@ -69,78 +62,45 @@ class TVMUploadSystem:
     """
     
     def __init__(self, config_path: str):
-        """
-        Initialize TVM upload system.
-        
-        Loads configuration and initializes all components.
-        Does not start monitoring - call start() to begin operation.
-        
-        Args:
-            config_path: Path to configuration file
-            
-        Raises:
-            FileNotFoundError: If config file doesn't exist
-            ConfigValidationError: If config is invalid
-        """
+        """Initialize TVM upload system with configuration."""
         logger.info("Initializing TVM Upload System v2.1...")
-        
-        # =========================================================================
-        # STEP 1: Load and Validate Configuration
-        # =========================================================================
+
         self.config = ConfigManager(config_path)
-        
-        # Get log_directories once and validate
         log_dir_configs = self.config.get('log_directories')
-        
-        # Validate that log_directories exists and is not empty
+
         if not log_dir_configs:
             raise ConfigValidationError(
                 "log_directories is required but not configured in config file"
             )
-        
-        # =========================================================================
-        # STEP 2: Extract Paths and Full Configs (ONCE, not three times!)
-        # =========================================================================
-        
-        # Determine format and extract paths
+
         is_new_format = isinstance(log_dir_configs[0], dict)
-        
+
         if is_new_format:
-            # New format: [{path: "/path", source: "ros"}, ...]
             monitor_paths = [item['path'] for item in log_dir_configs]
         else:
-            # Legacy format: ["/path/to/log", ...]
             monitor_paths = log_dir_configs
-        
+
         logger.info(f"Configured {len(log_dir_configs)} log directories")
         if is_new_format:
             sources = [item['source'] for item in log_dir_configs]
             logger.info(f"Sources: {', '.join(sources)}")
-        
-        # =========================================================================
-        # STEP 3: Initialize Components (pass appropriate format to each)
-        # =========================================================================
-        
-        # Upload Manager: Needs full config (with source info)
+
         self.upload_manager = UploadManager(
             bucket=self.config.get('s3.bucket'),
             region=self.config.get('s3.region'),
             vehicle_id=self.config.get('vehicle_id'),
             profile_name=self.config.get('s3.profile'),
-            log_directories=log_dir_configs  # Pass full config
+            log_directories=log_dir_configs
         )
-        
-        # Disk Manager: Only needs paths (doesn't care about sources)
+
         self.disk_manager = DiskManager(
-            log_directories=monitor_paths,  # Just paths
+            log_directories=monitor_paths,
             reserved_gb=self.config.get('disk.reserved_gb'),
             warning_threshold=self.config.get('disk.warning_threshold', 0.90),
             critical_threshold=self.config.get('disk.critical_threshold', 0.95)
         )
-        
-        # Setup deletion callback to clean registry
+
         def on_file_deleted(filepath):
-            """Remove deleted file from registry"""
             try:
                 file_path = Path(filepath)
                 if self.file_monitor._is_file_processed(file_path):
@@ -154,72 +114,56 @@ class TVMUploadSystem:
                 logger.warning(f"Failed to remove from registry: {e}")
         
         self.disk_manager._on_file_deleted_callback = on_file_deleted
-        
-        # File Monitor: Only needs paths (doesn't care about sources)
+
         self.file_monitor = FileMonitor(
-            directories=monitor_paths,  # Just paths
+            directories=monitor_paths,
             callback=self._on_file_ready,
             stability_seconds=self.config.get('upload.file_stable_seconds', 60),
             config=self.config.config
         )
-        
-        # CloudWatch Manager
+
         self.cloudwatch = CloudWatchManager(
             region=self.config.get('s3.region'),
             vehicle_id=self.config.get('vehicle_id'),
             enabled=self.config.get('monitoring.cloudwatch_enabled', True)
         )
-        
-        # Queue Manager
+
         self.queue_manager = QueueManager(
             queue_file=self.config.get('upload.queue_file', '/var/lib/tvm-upload/queue.json')
         )
-        
-        # =========================================================================
-        # STEP 4: Load Additional Settings
-        # =========================================================================
+
         self.batch_upload_enabled = self.config.get('upload.batch_upload.enabled', True)
         self.upload_on_start = self.config.get('upload.upload_on_start', True)
-        
-        # =========================================================================
-        # STEP 5: Initialize Runtime State
-        # =========================================================================
         self._running = False
         self._upload_queue = []
         self._upload_lock = threading.Lock()
         self._schedule_thread = None
-        
-        # Statistics
+
         self.stats = {
             'files_detected': 0,
             'files_uploaded': 0,
             'files_failed': 0,
             'bytes_uploaded': 0
         }
-        
-        # Log deletion policy configuration
+
         self._log_deletion_config()
-        
         logger.info("Initialization complete")
-    
+
     def _log_deletion_config(self):
-        """Log the current deletion policy configuration (NEW v2.0)."""
+        """Log deletion policy configuration."""
         logger.info("\n" + "="*60)
         logger.info("DELETION POLICY CONFIGURATION")
         logger.info("="*60)
-        
-        # Q1: Startup scan
+
         scan_config = self.config.get('upload.scan_existing_files', {})
         if scan_config.get('enabled', True):
             max_age = scan_config.get('max_age_days', 3)
             logger.info(f"Startup scan: ENABLED (upload files from last {max_age} days)")
         else:
             logger.info("Startup scan: DISABLED (only new files)")
-        
-        # Q2: After upload deletion (FIXED)
+
         after_upload_config = self.config.get('deletion.after_upload', {})
-        
-        if after_upload_config.get('enabled', True):  #NEW: Check enabled
+        if after_upload_config.get('enabled', True):
             keep_days = after_upload_config.get('keep_days', 14)
             if keep_days == 0:
                 logger.info("After upload: DELETE IMMEDIATELY")
@@ -227,8 +171,7 @@ class TVMUploadSystem:
                 logger.info(f"After upload: KEEP for {keep_days} days")
         else:
             logger.info("After upload: DELETION DISABLED (keep files indefinitely)")
-        
-        # Q3: Age-based cleanup
+
         age_config = self.config.get('deletion.age_based', {})
         if age_config.get('enabled', True):
             max_age = age_config.get('max_age_days', 7)
@@ -236,65 +179,47 @@ class TVMUploadSystem:
             logger.info(f"Age-based cleanup: ENABLED (delete >{max_age} days, daily at {schedule})")
         else:
             logger.info("Age-based cleanup: DISABLED")
-        
-        # Q5: Emergency cleanup
+
         emergency_enabled = self.config.get('deletion.emergency.enabled', False)
         if emergency_enabled:
             logger.info("Emergency cleanup: ENABLED (triggers at 90% disk full)")
         else:
             logger.info("Emergency cleanup: DISABLED")
-        
-        # Q4: S3 retention
+
         s3_retention = self.config.get('s3_lifecycle.retention_days', 14)
         logger.info(f"S3 retention: {s3_retention} days (AWS lifecycle policy)")
-        
         logger.info("="*60 + "\n")
     
     def start(self):
-        """
-        Start the system.
-        
-        Starts file monitoring and scheduling thread.
-        Checks disk space before starting and runs cleanup if needed.
-        Optionally uploads queued files immediately on start (v2.1).
-        
-        Note:
-            Safe to call multiple times - will not start if already running
-        """
+        """Start the system (file monitoring, scheduling, optional upload on start)."""
         if self._running:
             logger.warning("Already running")
             return
-        
+
         logger.info("Starting TVM Upload System...")
-        
-        # Check disk space before starting
+
         if not self.disk_manager.check_disk_space():
             logger.warning("Low disk space detected")
-            
-            # Run emergency cleanup if enabled
+
             emergency_enabled = self.config.get('deletion.emergency.enabled', False)
             if emergency_enabled:
                 logger.info("Running emergency cleanup before starting...")
                 self.disk_manager.cleanup_old_files()
             else:
                 logger.warning("Emergency cleanup disabled - disk may be full!")
-        
-        # Start file monitoring (includes startup scan)
+
         self.file_monitor.start()
-        
-        # ===== UPDATED: Upload on start with registry marking =====
+
         if self.upload_on_start and self.queue_manager.get_queue_size() > 0:
             queue_size = self.queue_manager.get_queue_size()
             logger.info(
                 f"upload_on_start enabled - uploading {queue_size} queued files immediately"
             )
-            
-            # Upload and mark registry
+
             upload_results = self._process_upload_queue()
-            
             successful_count = sum(1 for s in upload_results.values() if s)
             failed_count = len(upload_results) - successful_count
-            
+
             if successful_count > 0:
                 logger.info(
                     f"Scheduled upload complete: {successful_count} files uploaded, "
@@ -304,80 +229,42 @@ class TVMUploadSystem:
                 logger.warning(f"Scheduled upload: all {failed_count} files failed")
             else:
                 logger.info("Scheduled upload: queue was empty")
-        
+
         elif not self.upload_on_start and self.queue_manager.get_queue_size() > 0:
             logger.info(
                 f"upload_on_start disabled - {self.queue_manager.get_queue_size()} files "
                 f"queued for next scheduled upload"
             )
-        # ===== END UPDATED =====
-        
-        # Start scheduling thread
+
         self._running = True
         self._schedule_thread = threading.Thread(target=self._schedule_loop, daemon=True)
         self._schedule_thread.start()
-        
+
         logger.info("System started successfully")
         logger.info(f"Upload schedule: {self.config.get('upload.schedule')}")
         logger.info(f"Monitoring directories: {len(self.config.get('log_directories'))}")
     
     def stop(self):
-        """
-        Stop the system gracefully.
-        
-        Stops file monitoring and scheduling.
-        Uploads any remaining queued files before shutdown.
-        Prints final statistics.
-        
-        Note:
-            Waits up to 5 seconds for schedule thread to terminate
-        """
+        """Stop the system gracefully (uploads remaining queue before shutdown)."""
         if not self._running:
             return
-        
+
         logger.info("Shutting down...")
-        
         self._running = False
-        
-        # Stop monitoring
         self.file_monitor.stop()
-        
-        # Wait for schedule thread
+
         if self._schedule_thread:
             self._schedule_thread.join(timeout=5)
-        
-        # Upload any remaining queued files
+
         if self.queue_manager.get_queue_size() > 0:
             logger.info(f"Uploading {self.queue_manager.get_queue_size()} queued files before shutdown...")
             self._process_upload_queue()
-        
-        # Print statistics
+
         self._print_statistics()
-        
         logger.info("Shutdown complete")
     
     def _on_file_ready(self, filepath: str) -> bool:
-        """
-        Callback when file monitor detects a stable file.
-        
-        Adds file to upload queue. Files are uploaded either:
-        1. Immediately if within operational hours (optional)
-        2. At scheduled interval (always)
-        
-        Args:
-            filepath: Path to stable file
-            
-        Returns:
-            bool: True if file was successfully uploaded, False if queued or failed
-            
-        Note:
-            Return value is used by file_monitor to decide whether to mark
-            file as processed in registry (only mark if upload succeeded).
-            
-            For batch uploads, registry marking happens in _process_upload_queue()
-            for all files in the batch, and this function returns the status for
-            the specific file that triggered the batch.
-        """
+        """Callback when file monitor detects a stable file (queues or uploads immediately)."""
         self.stats['files_detected'] += 1
         
         logger.info(f"File ready: {Path(filepath).name}")
@@ -394,10 +281,11 @@ class TVMUploadSystem:
                 logger.info("Within operational hours, uploading")
                 
                 if self.batch_upload_enabled:
-                    # Upload entire queue (maximizes WiFi opportunities)
+                    # Batch mode: When ONE file becomes ready, upload ALL queued files
+                    # Rationale: Maximizes WiFi usage since connection is already established
+                    # Trade-off: Slightly delays single file, but uploads pending files from hours/days ago
                     logger.info("Batch upload enabled - uploading entire queue")
                     
-                    # ===== IMPROVED: Use explicit result from _process_upload_queue =====
                     # Instead of inferring success from queue state, use actual upload results
                     upload_results = self._process_upload_queue()
                     
@@ -408,7 +296,10 @@ class TVMUploadSystem:
                             logger.debug(f" Batch upload succeeded for trigger file: {Path(filepath).name}")
                         else:
                             logger.debug(f" Batch upload failed for trigger file: {Path(filepath).name}")
-                        # Return FALSE regardless - registry already marked in _process_upload_queue()
+                        # CRITICAL: Return False even though upload succeeded
+                        # In batch mode, _process_upload_queue() already marked ALL files in the registry
+                        # (including this trigger file). If we return True here, file_monitor would mark
+                        # it AGAIN, causing duplicate registry entry. False tells file_monitor: "already done"
                         return False
                     else:
                         # File not in results (shouldn't happen, but handle gracefully)
@@ -417,7 +308,6 @@ class TVMUploadSystem:
                             f"(possibly removed from queue before upload)"
                         )
                         return False
-                    # ===== END IMPROVED =====
                 else:
                     # Upload only this single file
                     logger.info("Batch upload disabled - uploading only this file")
@@ -797,11 +687,9 @@ class TVMUploadSystem:
         
         try:
             for idx, filepath in enumerate(batch, start=1):
-                # ===== IMPROVED: Get explicit success/failure from _upload_file =====
                 # _upload_file now returns True/False instead of inferring from queue
                 success = self._upload_file(filepath)
                 upload_results[filepath] = success
-                # ===== END IMPROVED =====
                 
                 # Collect successful uploads for registry marking
                 if success:
@@ -942,7 +830,6 @@ class TVMUploadSystem:
         
         file_size = file_path.stat().st_size
         
-        # ===== Handle permanent errors (v2.1) =====
         from upload_manager import PermanentUploadError
         
         try:

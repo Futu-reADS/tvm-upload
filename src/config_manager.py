@@ -54,81 +54,38 @@ class ConfigManager:
     def __init__(self, config_path: str):
         """
         Initialize config manager and load configuration.
-        
+
         Args:
             config_path: Path to YAML config file
-            
+
         Raises:
             FileNotFoundError: If config file doesn't exist
             yaml.YAMLError: If YAML syntax is invalid
             ConfigValidationError: If validation fails
-        
-        Note:
-            Automatically sets up SIGHUP handler for hot-reload
         """
         self.config_path = Path(config_path)
         self.config = {}
-        
-        # Set up signal handler for hot reload
         signal.signal(signal.SIGHUP, self._handle_reload_signal)
-        
-        # Load initial config
         self.load_config()
     
     def load_config(self) -> Dict[str, Any]:
-        """
-        Load configuration from YAML file.
-        
-        Reads the YAML file, parses it, and validates the configuration
-        schema and values.
-        
-        Returns:
-            dict: Loaded and validated configuration
-            
-        Raises:
-            FileNotFoundError: If config file doesn't exist
-            yaml.YAMLError: If YAML is invalid
-            ConfigValidationError: If validation fails
-        """
+        """Load and validate configuration from YAML file."""
         if not self.config_path.exists():
             raise FileNotFoundError(f"Config file not found: {self.config_path}")
-        
-        # Read YAML file
+
         with open(self.config_path, 'r') as f:
             self.config = yaml.safe_load(f)
-        
-        # Validate configuration
+
         self.validate_config(self.config)
-        
         logger.info(f"Loaded config from {self.config_path}")
         return self.config
     
     def reload_config(self) -> Dict[str, Any]:
         """
-        Reload configuration from disk.
-        
-        Called automatically when SIGHUP signal is received.
-        If reload fails, keeps the existing configuration.
-        
-        **IMPORTANT**: Configuration changes require service restart to take effect.
-        Hot-reload only updates the internal config dict but does NOT update:
-        - Schedule intervals (cached in _schedule_loop)
-        - File monitor settings (cached in FileMonitor)
-        - Disk thresholds (cached in DiskManager)
-        - S3 credentials (cached in UploadManager)
-        
-        To apply config changes:
-        1. Edit config file
-        2. Restart service: sudo systemctl restart tvm-upload
-        
-        SIGHUP is primarily for validation testing, not hot-reload.
-        
-        Returns:
-            dict: Reloaded configuration (or existing if reload failed)
-            
-        Note:
-            Safe to call - never leaves system without valid config.
-            Logs warning that restart is required for changes to take effect.
+        Reload configuration from disk (SIGHUP handler).
+
+        NOTE: Config changes require service restart - SIGHUP only validates.
+        Hot-reload does NOT update cached values in components.
         """
         logger.info("Reloading configuration...")
         logger.warning(
@@ -177,19 +134,7 @@ class ConfigManager:
         
 
     def _validate_log_directories(self, log_dirs):
-        """
-        Validate log directories configuration.
-        
-        Supports two formats:
-        1. Legacy (string list): ["/path/to/log", ...]
-        2. New (dict list): [{path: "/path", source: "ros"}, ...]
-        
-        Args:
-            log_dirs: Log directories configuration
-            
-        Raises:
-            ConfigValidationError: If configuration is invalid
-        """
+        """Validate log directories (supports legacy string list or new dict format)."""
         if not isinstance(log_dirs, list):
             raise ConfigValidationError("log_directories must be a list")
         
@@ -198,15 +143,13 @@ class ConfigManager:
         
         seen_sources = set()
         seen_paths = set()
-        
+
         for idx, item in enumerate(log_dirs):
-            # Support legacy string format
             if isinstance(item, str):
                 logger.warning(
                     f"log_directories[{idx}]: Using legacy string format. "
                     f"Consider migrating to new format with explicit 'source' field."
                 )
-                # Legacy format is valid (backward compatibility)
                 path = item
                 if path in seen_paths:
                     raise ConfigValidationError(
@@ -214,52 +157,46 @@ class ConfigManager:
                     )
                 seen_paths.add(path)
                 continue
-            
-            # New dict format validation
+
             if not isinstance(item, dict):
                 raise ConfigValidationError(
                     f"log_directories[{idx}]: Must be string or dict, got {type(item)}"
                 )
-            
-            # Validate 'path' field (required)
+
             if 'path' not in item:
                 raise ConfigValidationError(
                     f"log_directories[{idx}]: Missing required field 'path'"
                 )
-            
+
             path = item['path']
             if not isinstance(path, str) or not path:
                 raise ConfigValidationError(
                     f"log_directories[{idx}].path: Must be non-empty string"
                 )
-            
-            # Check for duplicate paths
+
             if path in seen_paths:
                 raise ConfigValidationError(
                     f"log_directories[{idx}]: Duplicate path '{path}'"
                 )
             seen_paths.add(path)
-            
-            # Validate 'source' field (required in new format)
+
             if 'source' not in item:
                 raise ConfigValidationError(
                     f"log_directories[{idx}]: Missing required field 'source'"
                 )
-            
+
             source = item['source']
             if not isinstance(source, str) or not source:
                 raise ConfigValidationError(
                     f"log_directories[{idx}].source: Must be non-empty string"
                 )
-            
-            # Validate source naming (alphanumeric + underscore only)
+
             if not re.match(r'^[a-zA-Z0-9_]+$', source):
                 raise ConfigValidationError(
                     f"log_directories[{idx}].source: Must contain only letters, "
                     f"numbers, and underscores. Got: '{source}'"
                 )
-            
-            # Check for duplicate source names
+
             if source in seen_sources:
                 raise ConfigValidationError(
                     f"log_directories[{idx}]: Duplicate source name '{source}'"
@@ -271,59 +208,29 @@ class ConfigManager:
             logger.info(f"Sources: {', '.join(sorted(seen_sources))}")
     
     def validate_config(self, config: Dict[str, Any]) -> bool:
-        """
-        Validate configuration schema and values.
-        
-        Checks for:
-        - Required top-level keys (vehicle_id, log_directories, s3, upload, disk)
-        - Correct data types for all fields
-        - Valid value ranges (e.g., thresholds between 0 and 1)
-        - Valid time format for schedule (HH:MM)
-        - Deletion policy configuration (v2.0)
-        
-        Args:
-            config: Configuration dictionary to validate
-            
-        Returns:
-            bool: True if validation passes
-            
-        Raises:
-            ConfigValidationError: If any validation check fails
-        """
-        # Required top-level keys
+        """Validate configuration schema and values."""
         required_keys = ['vehicle_id', 'log_directories', 's3', 'upload', 'disk']
         for key in required_keys:
             if key not in config:
                 raise ConfigValidationError(f"Missing required key: {key}")
-        
-        # Validate vehicle_id
+
         if not isinstance(config['vehicle_id'], str) or not config['vehicle_id']:
             raise ConfigValidationError("vehicle_id must be a non-empty string")
-        
-        # Validate log_directories (NEW: Use dedicated validation method)
+
         self._validate_log_directories(config['log_directories'])
-        
-        # Validate S3 config
         self._validate_s3_config(config['s3'])
-        
-        # Validate upload config
         self._validate_upload_config(config['upload'])
-        
-        # Validate disk config
         self._validate_disk_config(config['disk'])
-        
-        # Validate deletion config (NEW in v2.0)
+
         if 'deletion' in config:
             self._validate_deletion_config(config['deletion'])
-        
-        # Validate S3 lifecycle config (NEW in v2.0)
+
         if 's3_lifecycle' in config:
             self._validate_s3_lifecycle_config(config['s3_lifecycle'])
-        
-        # Validate monitoring config (NEW in v2.0)
+
         if 'monitoring' in config:
             self._validate_monitoring_config(config['monitoring'])
-        
+
         logger.info("Configuration validated successfully")
         return True
     
@@ -340,25 +247,18 @@ class ConfigManager:
     
     def _validate_upload_config(self, upload_config: Dict[str, Any]) -> None:
         """Validate upload configuration section."""
-        
-        # ==========================================
-        # Validate schedule (UPDATED for new format)
-        # ==========================================
         if 'schedule' not in upload_config:
             raise ConfigValidationError("Missing upload.schedule")
-        
+
         schedule = upload_config['schedule']
-        
-        # Support backward compatibility (string format: "15:00")
+
         if isinstance(schedule, str):
             if not self._is_valid_time_format(schedule):
                 raise ConfigValidationError(
                     f"upload.schedule must be in HH:MM format, got: {schedule}"
                 )
-        
-        # New object format
+
         elif isinstance(schedule, dict):
-            # Validate mode
             if 'mode' not in schedule:
                 raise ConfigValidationError("Missing upload.schedule.mode")
             
@@ -368,8 +268,7 @@ class ConfigManager:
                 raise ConfigValidationError(
                     f"upload.schedule.mode must be one of {valid_modes}, got: {mode}"
                 )
-            
-            # Validate daily_time (for daily mode)
+
             if mode == 'daily':
                 if 'daily_time' not in schedule:
                     raise ConfigValidationError(
@@ -380,8 +279,7 @@ class ConfigManager:
                     raise ConfigValidationError(
                         f"upload.schedule.daily_time must be HH:MM format, got: {schedule['daily_time']}"
                     )
-            
-            # Validate interval settings (for interval mode)
+
             if mode == 'interval':
                 interval_hours = schedule.get('interval_hours', 0)
                 interval_minutes = schedule.get('interval_minutes', 0)
@@ -400,13 +298,12 @@ class ConfigManager:
                     raise ConfigValidationError(
                         "upload.schedule intervals must be >= 0"
                     )
-                
+
                 if interval_hours == 0 and interval_minutes == 0:
                     raise ConfigValidationError(
                         "upload.schedule: at least one interval must be > 0"
                     )
-                
-                # Check reasonable limits
+
                 total_minutes = interval_hours * 60 + interval_minutes
                 if total_minutes < 5:
                     raise ConfigValidationError(
@@ -417,25 +314,19 @@ class ConfigManager:
                     raise ConfigValidationError(
                         "upload.schedule: maximum interval is 24 hours"
                     )
-        
+
         else:
             raise ConfigValidationError(
                 "upload.schedule must be string (HH:MM) or object with 'mode'"
             )
-        
-        # ==========================================
-        # Validate file_stable_seconds (optional)
-        # ==========================================
+
         if 'file_stable_seconds' in upload_config:
             stable_secs = upload_config['file_stable_seconds']
             if not isinstance(stable_secs, (int, float)) or stable_secs < 0:
                 raise ConfigValidationError(
                     "upload.file_stable_seconds must be a non-negative number"
                 )
-        
-        # ==========================================
-        # Validate operational_hours (optional)
-        # ==========================================
+
         if 'operational_hours' in upload_config:
             op_hours = upload_config['operational_hours']
             if 'enabled' in op_hours and not isinstance(op_hours['enabled'], bool):
@@ -458,10 +349,7 @@ class ConfigManager:
                     raise ConfigValidationError(
                         f"upload.operational_hours.end must be HH:MM format"
                     )
-        
-        # ==========================================
-        # Validate scan_existing_files (v2.0)
-        # ==========================================
+
         if 'scan_existing_files' in upload_config:
             scan_config = upload_config['scan_existing_files']
             
@@ -476,10 +364,7 @@ class ConfigManager:
                     raise ConfigValidationError(
                         "upload.scan_existing_files.max_age_days must be >= 0"
                     )
-        
-        # ==========================================
-        # Validate processed_files_registry (NEW v2.1)
-        # ==========================================
+
         if 'processed_files_registry' in upload_config:
             registry = upload_config['processed_files_registry']
             
@@ -495,10 +380,7 @@ class ConfigManager:
                     raise ConfigValidationError(
                         "upload.processed_files_registry.retention_days must be > 0"
                     )
-        
-        # ==========================================
-        # Validate batch_upload (NEW v2.1)
-        # ==========================================
+
         if 'batch_upload' in upload_config:
             batch = upload_config['batch_upload']
             
@@ -512,9 +394,7 @@ class ConfigManager:
                     "upload.batch_upload.include_run_directory must be boolean"
                 )
         
-        # ==========================================
         # Validate directory_configs (NEW v2.1)
-        # ==========================================
         if 'directory_configs' in upload_config:
             dir_configs = upload_config['directory_configs']
             

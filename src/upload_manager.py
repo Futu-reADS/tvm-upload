@@ -135,7 +135,6 @@ class UploadManager:
                 else:
                     logger.error(f"Unknown log directory format: {item}")
         
-        # ===== IMPROVEMENT: Fail fast if no valid directories =====
         if not self.log_directory_configs:
             error_msg = (
                 "No valid log directories configured. "
@@ -145,7 +144,6 @@ class UploadManager:
             )
             logger.error(error_msg)
             raise ValueError(error_msg)  # Fail fast!
-        # ===== END IMPROVEMENT =====
 
         self._validate_directory_paths()
         
@@ -211,7 +209,6 @@ class UploadManager:
         """
         file_path = Path(local_path)
         
-        # ===== PRE-FLIGHT CHECKS (Permanent Errors) =====
         
         # Check 1: File exists
         if not file_path.exists():
@@ -249,7 +246,6 @@ class UploadManager:
             logger.info(f"File already in S3, skipping: {file_path.name}")
             return True
         
-        # ===== UPLOAD WITH RETRY (Temporary Errors) =====
         
         for attempt in range(1, self.max_retries + 1):
             try:
@@ -269,7 +265,6 @@ class UploadManager:
                 error_code = e.response.get('Error', {}).get('Code', '')
                 error_message = e.response.get('Error', {}).get('Message', str(e))
                 
-                # ===== CLASSIFY AWS ERRORS =====
                 
                 # Permanent Errors (Credentials/Permissions)
                 if error_code in ['InvalidAccessKeyId', 'SignatureDoesNotMatch']:
@@ -281,7 +276,6 @@ class UploadManager:
                     raise PermanentUploadError(f"Bucket does not exist: {self.bucket}")
                 
                 elif error_code == 'AccessDenied':
-                    # ===== NEW: Distinguish bucket policy from IAM errors =====
                     # Parse error message to detect bucket policy denials
                     policy_keywords = [
                         'bucket policy',
@@ -315,7 +309,6 @@ class UploadManager:
                         raise PermanentUploadError(
                             f"IAM permissions denied for bucket {self.bucket}: {error_message}"
                         )
-                    # ===== END NEW =====
                 
                 elif error_code == 'EntityTooLarge':
                     logger.error(f"PERMANENT ERROR: File too large for S3")
