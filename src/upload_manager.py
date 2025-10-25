@@ -396,8 +396,8 @@ class UploadManager:
         - Uses explicit 'source' from config
         
         Date Logic:
-        - Normal files: Use file creation time (st_ctime)
-        - Syslog files: Use file modification time (st_mtime)
+        - All files: Use file modification time (st_mtime)
+        - This ensures files are grouped by when they were actually written
         
         Folder Structure:
         - Preserves full folder structure relative to monitored directory
@@ -418,48 +418,39 @@ class UploadManager:
             Result: vehicle-001/2025-10-20/ros/run-123/launch.log
             
             Config: [{path: "/var/log", source: "syslog"}]
-            File: /var/log/syslog (modified 3 days ago)
-            Result: vehicle-001/2025-10-18/syslog/syslog (uses mtime for date)
+            File: /var/log/syslog (modified Oct 18)
+            Result: vehicle-001/2025-10-18/syslog/syslog
         """
         file_str = str(file_path.resolve())
         
-        # Get file timestamps
+        # Get file modification time
         try:
             stat = file_path.stat()
-            ctime = stat.st_ctime  # Creation/change time
-            mtime = stat.st_mtime  # Modification time
+            mtime = stat.st_mtime  # Modification time - when file content was last written
         except (OSError, FileNotFoundError):
             # Fallback to current date if file stat fails
             logger.warning(f"Cannot stat file {file_path}, using current date")
             date_str = datetime.now().strftime("%Y-%m-%d")
             source = 'other'
             relative_path = file_path.name
-            
+
             s3_key = f"{self.vehicle_id}/{date_str}/{source}/{relative_path}"
             logger.debug(f"Built S3 key (stat failed): {file_path.name} → {s3_key}")
             return s3_key
-        
+
         # Match file against configured directories
         source = None
         relative_path = None
-        use_mtime = False  # Flag to control which timestamp to use
-        
+
         for dir_config in self.log_directory_configs:
             log_dir = dir_config['path']
             log_dir_resolved = str(Path(log_dir).resolve())
-            
+
             # Check if file is under this directory
             if file_str.startswith(log_dir_resolved):
                 # Use explicit source from config
                 source = dir_config['source']
-                
-                # Special case: Syslog uses modification time for date grouping
-                # This ensures syslog files are grouped by the date they were written,
-                # not by file metadata change time (which may differ from content date)
-                if source == 'syslog':
-                    use_mtime = True
-                    logger.debug(f"Syslog file detected, using mtime for date: {file_path.name}")
-                
+
                 # Get relative path from monitored directory
                 # Preserves full folder structure
                 try:
@@ -467,13 +458,13 @@ class UploadManager:
                 except ValueError:
                     # Shouldn't happen, but fallback to filename
                     relative_path = file_path.name
-                
+
                 logger.debug(
                     f"Matched directory: {log_dir} → source='{source}', "
                     f"relative='{relative_path}'"
                 )
                 break
-        
+
         # Fallback if no match found
         if source is None:
             source = 'other'
@@ -481,19 +472,10 @@ class UploadManager:
             logger.warning(
                 f"File not under any configured log_directory: {file_path}"
             )
-        
-        # Determine date to use for S3 path
-        if use_mtime:
-            # Syslog: Use modification time
-            # Example: /var/log/syslog modified Oct 20 → 2025-10-20/syslog/
-            timestamp = mtime
-            logger.debug(f"Using mtime for date: {file_path.name}")
-        else:
-            # All others: Use creation time (st_ctime)
-            # On Linux, this is the earlier of creation or last metadata change
-            timestamp = ctime
-            logger.debug(f"Using ctime for date: {file_path.name}")
-        
+
+        # Use modification time for date grouping (all files)
+        # This ensures files are organized by when they were actually written
+        timestamp = mtime
         date_str = datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d")
         
         # Build final S3 key

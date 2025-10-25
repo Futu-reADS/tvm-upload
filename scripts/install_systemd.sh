@@ -9,7 +9,7 @@ set -e
 RED='\033[0;31m'
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
-BLUE='\033[0;34m'
+MAGENTA='\033[0;35m'
 NC='\033[0m' # No Color
 
 echo ""
@@ -52,21 +52,21 @@ if [ ! -f "config/config.yaml.example" ]; then
 fi
 
 echo ""
-echo -e "${BLUE}[1/7] Creating directories...${NC}"
+echo -e "${MAGENTA}[1/7] Creating directories...${NC}"
 mkdir -p /etc/tvm-upload
 mkdir -p /var/lib/tvm-upload
 mkdir -p /opt/tvm-upload
 echo -e "${GREEN}✓ Directories created${NC}"
 
 echo ""
-echo -e "${BLUE}[2/7] Creating log directories...${NC}"
+echo -e "${MAGENTA}[2/7] Creating log directories...${NC}"
 mkdir -p /home/$INSTALL_USER/.parcel/log/terminal
 mkdir -p /home/$INSTALL_USER/.ros/log
 mkdir -p /home/$INSTALL_USER/ros2_ws/log
 echo -e "${GREEN}✓ Log directories created${NC}"
 
 echo ""
-echo -e "${BLUE}[3/7] Updating configuration file...${NC}"
+echo -e "${MAGENTA}[3/7] Updating configuration file...${NC}"
 
 # Check if service is running
 SERVICE_WAS_RUNNING=0
@@ -93,7 +93,7 @@ chmod 644 /etc/tvm-upload/config.yaml
 echo -e "${GREEN}✓ Config file updated from repository (USER → $INSTALL_USER)${NC}"
 
 echo ""
-echo -e "${BLUE}[4/7] Updating systemd service file...${NC}"
+echo -e "${MAGENTA}[4/7] Updating systemd service file...${NC}"
 
 # Backup existing service file if it exists
 if [ -f /etc/systemd/system/tvm-upload.service ]; then
@@ -112,7 +112,7 @@ chmod 644 /etc/systemd/system/tvm-upload.service
 echo -e "${GREEN}✓ Service file updated (INSTALL_USER → $INSTALL_USER)${NC}"
 
 echo ""
-echo -e "${BLUE}[5/7] Setting permissions...${NC}"
+echo -e "${MAGENTA}[5/7] Setting permissions...${NC}"
 chown -R $INSTALL_USER:$INSTALL_USER /var/lib/tvm-upload
 chown -R $INSTALL_USER:$INSTALL_USER /home/$INSTALL_USER/.parcel
 chown -R $INSTALL_USER:$INSTALL_USER /home/$INSTALL_USER/.ros
@@ -122,12 +122,12 @@ chmod 644 /etc/tvm-upload/config.yaml
 echo -e "${GREEN}✓ Permissions set${NC}"
 
 echo ""
-echo -e "${BLUE}[6/7] Reloading systemd...${NC}"
+echo -e "${MAGENTA}[6/7] Reloading systemd...${NC}"
 systemctl daemon-reload
 echo -e "${GREEN}✓ Systemd reloaded${NC}"
 
 echo ""
-echo -e "${BLUE}[7/7] Post-installation steps...${NC}"
+echo -e "${MAGENTA}[7/7] Post-installation steps...${NC}"
 
 # Enable service if not already enabled
 if ! systemctl is-enabled --quiet tvm-upload; then
@@ -164,33 +164,33 @@ if [ $SERVICE_WAS_RUNNING -eq 0 ]; then
     echo -e "${YELLOW}Service Management:${NC}"
     echo ""
     echo "Start service:"
-    echo -e "  ${BLUE}sudo systemctl start tvm-upload${NC}"
+    echo -e "  ${MAGENTA}sudo systemctl start tvm-upload${NC}"
     echo ""
     echo "Check status:"
-    echo -e "  ${BLUE}sudo systemctl status tvm-upload${NC}"
+    echo -e "  ${MAGENTA}sudo systemctl status tvm-upload${NC}"
     echo ""
     echo "View logs:"
-    echo -e "  ${BLUE}sudo journalctl -u tvm-upload -f${NC}"
+    echo -e "  ${MAGENTA}sudo journalctl -u tvm-upload -f${NC}"
     echo ""
 else
     echo -e "${GREEN}Service is running!${NC}"
     echo ""
     echo "Check status:"
-    echo -e "  ${BLUE}sudo systemctl status tvm-upload${NC}"
+    echo -e "  ${MAGENTA}sudo systemctl status tvm-upload${NC}"
     echo ""
     echo "View logs:"
-    echo -e "  ${BLUE}sudo journalctl -u tvm-upload -f${NC}"
+    echo -e "  ${MAGENTA}sudo journalctl -u tvm-upload -f${NC}"
     echo ""
 fi
 
 echo "Stop service:"
-echo -e "  ${BLUE}sudo systemctl stop tvm-upload${NC}"
+echo -e "  ${MAGENTA}sudo systemctl stop tvm-upload${NC}"
 echo ""
 echo "Restart service:"
-echo -e "  ${BLUE}sudo systemctl restart tvm-upload${NC}"
+echo -e "  ${MAGENTA}sudo systemctl restart tvm-upload${NC}"
 echo ""
 echo "Disable service (prevent auto-start):"
-echo -e "  ${BLUE}sudo systemctl disable tvm-upload${NC}"
+echo -e "  ${MAGENTA}sudo systemctl disable tvm-upload${NC}"
 echo ""
 echo "==========================================="
 echo ""

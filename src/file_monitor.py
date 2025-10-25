@@ -72,7 +72,7 @@ class FileMonitor:
         Note:
             Directories will be created if they don't exist
         """
-        # Parse directory configurations (path + pattern)
+        # Parse directory configurations (path + pattern + recursive)
         self.directory_configs = []
         log_directories = config.get('log_directories', []) if config else []
 
@@ -84,10 +84,11 @@ class FileMonitor:
                     dir_config = log_dir
                     break
 
-            # Store directory with pattern (if specified)
+            # Store directory with pattern and recursive setting (default: True)
             self.directory_configs.append({
                 'path': Path(dir_path),
-                'pattern': dir_config.get('pattern') if dir_config else None
+                'pattern': dir_config.get('pattern') if dir_config else None,
+                'recursive': dir_config.get('recursive', True) if dir_config else True
             })
 
         self.directories = [Path(d) for d in directories]  # Keep for backward compatibility
@@ -209,11 +210,22 @@ class FileMonitor:
             skipped_tracked = 0
             skipped_old = 0
 
-            for directory in self.directories:
+            for dir_config in self.directory_configs:
+                directory = dir_config['path']
+                recursive = dir_config['recursive']
+
                 if not directory.exists():
                     continue
 
-                for file_path in directory.iterdir():
+                # Scan files based on recursive setting
+                if recursive:
+                    logger.debug(f"Scanning {directory} recursively...")
+                    file_paths = directory.rglob('*')  # Recursive glob
+                else:
+                    logger.debug(f"Scanning {directory} (top-level only)...")
+                    file_paths = directory.iterdir()  # Non-recursive
+
+                for file_path in file_paths:
                     if not file_path.is_file() or file_path.name.startswith('.'):
                         continue
 
@@ -236,7 +248,7 @@ class FileMonitor:
                         if max_age_days == 0 or mtime > cutoff_time:
                             self._on_file_event(str(file_path))
                             existing_count += 1
-                            logger.debug(f"Found existing file: {file_path.name}")
+                            logger.debug(f"Found existing file: {file_path}")
                         else:
                             age_days = (time.time() - mtime) / 86400
                             logger.debug(
@@ -257,8 +269,11 @@ class FileMonitor:
         else:
             logger.info("Startup scan disabled - will only upload new files created after startup")
 
-        for directory in self.directories:
-            self.observer.schedule(self.handler, str(directory), recursive=False)
+        for dir_config in self.directory_configs:
+            directory = dir_config['path']
+            recursive = dir_config['recursive']
+            self.observer.schedule(self.handler, str(directory), recursive=recursive)
+            logger.info(f"Watching {directory} (recursive={recursive})")
 
         self.observer.start()
         self._running = True

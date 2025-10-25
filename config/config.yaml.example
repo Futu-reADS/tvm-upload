@@ -30,6 +30,7 @@ vehicle_id: "vehicle-CN-001"
 #   - path: Local filesystem path to monitor
 #   - source: Source name for S3 organization
 #   - pattern: (Optional) Glob pattern to filter files
+#   - recursive: (Optional) Monitor subdirectories (default: true)
 #
 # Pattern matching:
 #   - If pattern is specified, ONLY files matching the pattern are uploaded
@@ -40,6 +41,11 @@ vehicle_id: "vehicle-CN-001"
 #       pattern: "*.log"         → Matches: error.log, debug.log
 #       pattern: "test_*.mcap"   → Matches: test_2024.mcap, test_run1.mcap
 #
+# Recursive monitoring:
+#   - recursive: true  → Monitors subdirectories (default behavior)
+#   - recursive: false → Only monitors top-level directory, ignores subdirectories
+#   - Example use case: /var/log has many system subdirectories that should be ignored
+#
 # Files are automatically organized in S3 by source type.
 # NOTE: The install script automatically replaces 'USER' with your actual username.
 # If manually configuring, update all /home/USER paths to your actual home directory.
@@ -47,19 +53,23 @@ vehicle_id: "vehicle-CN-001"
 log_directories:
   - path: /home/USER/.parcel/log/terminal
     source: terminal
-    # No pattern specified → Uploads ALL files from this directory
+    recursive: true  # Include subdirectories
+    # No pattern specified → Uploads ALL files from this directory and subdirectories
 
   - path: /home/USER/.ros/log
     source: ros
-    # No pattern specified → Uploads ALL files from this directory
+    recursive: true  # Include subdirectories (important for ROS folder structure!)
+    # No pattern specified → Uploads ALL files from this directory and subdirectories
 
   - path: /var/log
     source: syslog
     pattern: "syslog*"  # Only upload files matching "syslog*" (syslog, syslog.1, etc.)
+    recursive: false     # Do NOT monitor subdirectories (system logs have many folders)
 
   - path: /home/USER/ros2_ws/log
     source: ros2
-    # No pattern specified → Uploads ALL files from this directory
+    recursive: true  # Include subdirectories
+    # No pattern specified → Uploads ALL files from this directory and subdirectories
 
 # ============================================
 # AWS S3 CONFIGURATION (China Region)
@@ -549,8 +559,8 @@ s3_lifecycle:
 #   3. Registry file corrupted? Delete and restart service
 #
 # Wrong S3 folder?
-#   1. Files use modification time, not upload time
+#   1. All files use modification time (mtime), not upload time
 #   2. Check file mtime: stat <filename>
-#   3. For syslog: Uses upload date (not file date)
+#   3. Files modified yesterday will be in yesterday's folder, even if uploaded today
 #
 # ============================================
