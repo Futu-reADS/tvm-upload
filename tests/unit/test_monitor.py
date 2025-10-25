@@ -60,12 +60,17 @@ def callback_tracker():
 
 
 @pytest.fixture
-def monitor_config(temp_dir):
-    """Create monitor config with temporary registry file for testing"""
+def monitor_config(tmp_path):
+    """Create monitor config with temporary registry file for testing
+
+    Uses a separate tmp_path to avoid registry file being detected as a log file.
+    """
+    import tempfile
+    registry_dir = tempfile.mkdtemp()
     return {
         'upload': {
             'processed_files_registry': {
-                'registry_file': str(temp_dir / 'test_registry.json'),
+                'registry_file': str(Path(registry_dir) / 'test_registry.json'),
                 'retention_days': 30
             }
         }
@@ -88,7 +93,7 @@ def test_monitor_start_stop(temp_dir, monitor_config):
     def dummy_callback(filepath):
         pass
     
-    monitor = FileMonitor([str(temp_dir)], dummy_callback)
+    monitor = FileMonitor([str(temp_dir)], dummy_callback, config=monitor_config)
     
     monitor.start()
     assert monitor._running is True
@@ -99,7 +104,7 @@ def test_monitor_start_stop(temp_dir, monitor_config):
 
 def test_file_stability_detection(temp_dir, callback_tracker, monitor_config):
     """Test that stable files are detected"""
-    monitor = FileMonitor([str(temp_dir)], callback_tracker.callback, stability_seconds=2)
+    monitor = FileMonitor([str(temp_dir)], callback_tracker.callback, stability_seconds=2, config=monitor_config)
     monitor.start()
     
     # Create a file
@@ -122,7 +127,7 @@ def test_file_stability_detection(temp_dir, callback_tracker, monitor_config):
 
 def test_file_still_being_written(temp_dir, callback_tracker, monitor_config):
     """Test that files still being written are not marked stable"""
-    monitor = FileMonitor([str(temp_dir)], callback_tracker.callback, stability_seconds=3)
+    monitor = FileMonitor([str(temp_dir)], callback_tracker.callback, stability_seconds=3, config=monitor_config)
     monitor.start()
     
     # Create file and keep modifying it
@@ -150,7 +155,7 @@ def test_file_still_being_written(temp_dir, callback_tracker, monitor_config):
 
 def test_multiple_files(temp_dir, callback_tracker, monitor_config):
     """Test monitoring multiple files"""
-    monitor = FileMonitor([str(temp_dir)], callback_tracker.callback, stability_seconds=2)
+    monitor = FileMonitor([str(temp_dir)], callback_tracker.callback, stability_seconds=2, config=monitor_config)
     monitor.start()
     
     # Create multiple files
@@ -174,7 +179,7 @@ def test_multiple_files(temp_dir, callback_tracker, monitor_config):
 
 def test_hidden_files_ignored(temp_dir, callback_tracker, monitor_config):
     """Test that hidden files are ignored"""
-    monitor = FileMonitor([str(temp_dir)], callback_tracker.callback, stability_seconds=2)
+    monitor = FileMonitor([str(temp_dir)], callback_tracker.callback, stability_seconds=2, config=monitor_config)
     monitor.start()
     
     # Create hidden file
@@ -199,7 +204,7 @@ def test_hidden_files_ignored(temp_dir, callback_tracker, monitor_config):
     assert ".hidden" not in str(callback_tracker.called_files)
 
 
-def test_nonexistent_directory():
+def test_nonexistent_directory(monitor_config):
     """Test that monitor creates missing directories"""
     nonexistent = Path("/tmp/tvm-test-nonexistent-dir")
     
@@ -211,7 +216,7 @@ def test_nonexistent_directory():
     def dummy_callback(filepath):
         pass
     
-    monitor = FileMonitor([str(nonexistent)], dummy_callback)
+    monitor = FileMonitor([str(nonexistent)], dummy_callback, config=monitor_config)
     monitor.start()
     
     # Directory should have been created
@@ -226,7 +231,7 @@ def test_nonexistent_directory():
 
 def test_get_tracked_files(temp_dir, callback_tracker, monitor_config):
     """Test getting list of tracked files"""
-    monitor = FileMonitor([str(temp_dir)], callback_tracker.callback, stability_seconds=5)
+    monitor = FileMonitor([str(temp_dir)], callback_tracker.callback, stability_seconds=5, config=monitor_config)
     monitor.start()
     
     # Create file
@@ -263,6 +268,10 @@ def test_startup_scan_enabled(temp_dir, callback_tracker, monitor_config):
             'scan_existing_files': {
                 'enabled': True,
                 'max_age_days': 30  # Accept all files
+            },
+            'processed_files_registry': {
+                'registry_file': '/tmp/test_registry_' + str(id(temp_dir)) + '.json',
+                'retention_days': 30
             }
         }
     }
@@ -310,6 +319,10 @@ def test_startup_scan_max_age_days(temp_dir, callback_tracker, monitor_config):
             'scan_existing_files': {
                 'enabled': True,
                 'max_age_days': 3  # Only last 3 days
+            },
+            'processed_files_registry': {
+                'registry_file': '/tmp/test_registry_' + str(id(temp_dir)) + '.json',
+                'retention_days': 30
             }
         }
     }
@@ -348,6 +361,10 @@ def test_startup_scan_disabled(temp_dir, callback_tracker, monitor_config):
         'upload': {
             'scan_existing_files': {
                 'enabled': False
+            },
+            'processed_files_registry': {
+                'registry_file': '/tmp/test_registry_' + str(id(temp_dir)) + '.json',
+                'retention_days': 30
             }
         }
     }
@@ -747,7 +764,7 @@ def test_external_marking(temp_dir, monitor_config):
         assert len(files) == 1, "File should be in registry"
 
 
-def test_startup_scan_skips_processed_files(temp_dir, callback_tracker):
+def test_startup_scan_skips_processed_files(temp_dir, callback_tracker, monitor_config):
     """Test startup scan skips files already in registry"""
     # Create separate directories for logs and registry
     log_dir = temp_dir / "logs"
@@ -820,7 +837,7 @@ def test_startup_scan_skips_processed_files(temp_dir, callback_tracker):
 # COMPREHENSIVE TESTS FOR RECURSIVE MONITORING
 # ============================================
 
-def test_recursive_monitoring_enabled(temp_dir, callback_tracker):
+def test_recursive_monitoring_enabled(temp_dir, callback_tracker, monitor_config):
     """Test recursive monitoring detects files in subdirectories"""
     # Create subdirectory structure
     subdir1 = temp_dir / "subdir1"
@@ -972,7 +989,7 @@ def test_recursive_default_is_true(temp_dir, callback_tracker, monitor_config):
     assert "sub.log" in callback_tracker.called_files[0]
 
 
-def test_mixed_recursive_configurations(temp_dir, callback_tracker):
+def test_mixed_recursive_configurations(temp_dir, callback_tracker, monitor_config):
     """Test multiple directories with different recursive settings"""
     # Create two separate directories
     dir1 = temp_dir / "dir1"
@@ -1101,7 +1118,7 @@ def test_pattern_matching_simple(temp_dir, callback_tracker, monitor_config):
     assert ".tmp" not in str(callback_tracker.called_files)
 
 
-def test_pattern_matching_prefix(temp_dir, callback_tracker):
+def test_pattern_matching_prefix(temp_dir, callback_tracker, monitor_config):
     """Test pattern matching with prefix (e.g., syslog*)"""
     config = {
         'log_directories': [{
@@ -1203,7 +1220,7 @@ def test_pattern_matching_no_pattern_uploads_all(temp_dir, callback_tracker, mon
     assert result, f"Should detect all 3 files, got {len(callback_tracker.called_files)}"
 
 
-def test_pattern_matching_with_recursive(temp_dir, callback_tracker):
+def test_pattern_matching_with_recursive(temp_dir, callback_tracker, monitor_config):
     """Test pattern matching works in recursive subdirectories"""
     # Create subdirectory structure
     subdir = temp_dir / "subdir"
@@ -1264,7 +1281,7 @@ def test_pattern_matching_with_recursive(temp_dir, callback_tracker):
     assert ".txt" not in files_str
 
 
-def test_pattern_matching_multiple_directories(temp_dir, callback_tracker):
+def test_pattern_matching_multiple_directories(temp_dir, callback_tracker, monitor_config):
     """Test different patterns for different directories"""
     dir1 = temp_dir / "logs"
     dir1.mkdir()
@@ -1439,7 +1456,7 @@ def test_deeply_nested_directories(temp_dir, callback_tracker, monitor_config):
     assert "deep.log" in callback_tracker.called_files[0]
 
 
-def test_symlinks_in_recursive_structure(temp_dir, callback_tracker):
+def test_symlinks_in_recursive_structure(temp_dir, callback_tracker, monitor_config):
     """Test that symlinks don't cause infinite loops in recursive monitoring"""
     import os
 
