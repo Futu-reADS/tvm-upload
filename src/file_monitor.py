@@ -80,9 +80,18 @@ class FileMonitor:
             # Find matching config for this directory
             dir_config = None
             for log_dir in log_directories:
-                if log_dir.get('path') == dir_path:
-                    dir_config = log_dir
-                    break
+                # Handle both legacy string format and new dict format
+                if isinstance(log_dir, dict):
+                    # New format: {"path": "/path", "source": "app", "pattern": "*.log"}
+                    if log_dir.get('path') == dir_path:
+                        dir_config = log_dir
+                        break
+                elif isinstance(log_dir, str):
+                    # Legacy format: "/path"
+                    if log_dir == dir_path:
+                        # Convert to dict format for consistency
+                        dir_config = {'path': log_dir}
+                        break
 
             # Store directory with pattern and recursive setting (default: True)
             self.directory_configs.append({

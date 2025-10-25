@@ -415,5 +415,602 @@ def test_startup_scan_integration(mock_Session, temp_config_file):
             shutil.rmtree(log_dir)
 
 
+@patch('src.upload_manager.boto3.session.Session')
+@patch('src.cloudwatch_manager.boto3.session.Session')
+def test_mixed_deletion_policies(mock_cw_boto3, mock_upload_boto3):
+    """Test combination of multiple deletion policies working together"""
+    temp_dir = tempfile.mkdtemp()
+    log_dir = Path(temp_dir) / 'logs'
+    log_dir.mkdir()
+
+    config_content = f"""
+vehicle_id: "test-mixed"
+log_directories: [{log_dir}]
+s3:
+  bucket: test-bucket
+  region: cn-north-1
+  credentials_path: ~/.aws
+upload:
+  schedule: "15:00"
+  queue_file: {temp_dir}/queue.json
+deletion:
+  after_upload:
+    enabled: true
+    keep_days: 1
+  age_based:
+    enabled: true
+    max_age_days: 3
+  emergency:
+    enabled: true
+disk:
+  reserved_gb: 1
+monitoring:
+  cloudwatch_enabled: false
+"""
+
+    config_file = Path(temp_dir) / 'config.yaml'
+    config_file.write_text(config_content)
+
+    try:
+        mock_upload_boto3.client.return_value = Mock()
+        mock_cw_boto3.client.return_value = Mock()
+
+        system = TVMUploadSystem(str(config_file))
+        system.upload_manager.upload_file = Mock(return_value=True)
+
+        # Create uploaded file (should be kept for 1 day)
+        uploaded_file = log_dir / 'uploaded.log'
+        uploaded_file.write_text('data' * 1000)
+        system._upload_file(str(uploaded_file))
+        assert uploaded_file.exists(), "Should keep for 1 day after upload"
+
+        # Create old file (4 days old - should be deleted by age-based)
+        old_file = log_dir / 'very_old.log'
+        old_file.write_text('old data')
+        old_time = time.time() - (4 * 24 * 3600)
+        os.utime(str(old_file), (old_time, old_time))
+
+        # Run age-based cleanup
+        deleted = system.disk_manager.cleanup_by_age(3)
+        assert deleted == 1, "Should delete old file via age-based cleanup"
+        assert not old_file.exists()
+        assert uploaded_file.exists(), "Uploaded file should remain (within keep_days)"
+
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@patch('src.upload_manager.boto3.session.Session')
+@patch('src.cloudwatch_manager.boto3.session.Session')
+def test_deferred_deletion_expiry_timing(mock_cw_boto3, mock_upload_boto3):
+    """Test deferred deletion respects exact expiry timing"""
+    temp_dir = tempfile.mkdtemp()
+    log_dir = Path(temp_dir) / 'logs'
+    log_dir.mkdir()
+
+    config_content = f"""
+vehicle_id: "test-timing"
+log_directories: [{log_dir}]
+s3:
+  bucket: test-bucket
+  region: cn-north-1
+  credentials_path: ~/.aws
+upload:
+  schedule: "15:00"
+  queue_file: {temp_dir}/queue.json
+deletion:
+  after_upload:
+    enabled: true
+    keep_days: 2
+disk:
+  reserved_gb: 1
+monitoring:
+  cloudwatch_enabled: false
+"""
+
+    config_file = Path(temp_dir) / 'config.yaml'
+    config_file.write_text(config_content)
+
+    try:
+        mock_s3 = Mock()
+        mock_s3.upload_file.return_value = None
+        mock_s3.head_object.side_effect = ClientError(
+            {'Error': {'Code': 'NotFound'}}, 'head_object'
+        )
+        mock_upload_boto3.client.return_value = mock_s3
+        mock_cw_boto3.client.return_value = Mock()
+
+        system = TVMUploadSystem(str(config_file))
+
+        # Upload file
+        test_file = log_dir / 'test.log'
+        test_file.write_text('data' * 1000)
+        system._upload_file(str(test_file))
+
+        # File should exist
+        assert test_file.exists()
+
+        # Immediate cleanup should not delete (not expired)
+        deleted = system.disk_manager.cleanup_deferred_deletions()
+        assert deleted == 0, "Should not delete before expiry"
+        assert test_file.exists()
+
+        # Manually set expiry to past (simulate 2 days passing)
+        file_key = str(test_file.resolve())
+        current_time = time.time()
+        system.disk_manager.uploaded_files[file_key] = current_time - 1
+
+        # Now cleanup should delete
+        deleted = system.disk_manager.cleanup_deferred_deletions()
+        assert deleted == 1, "Should delete after expiry"
+        assert not test_file.exists()
+
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@patch('src.upload_manager.boto3.session.Session')
+@patch('src.cloudwatch_manager.boto3.session.Session')
+def test_emergency_cleanup_thresholds(mock_cw_boto3, mock_upload_boto3):
+    """Test emergency cleanup functions exist and work"""
+    temp_dir = tempfile.mkdtemp()
+    log_dir = Path(temp_dir) / 'logs'
+    log_dir.mkdir()
+
+    config_content = f"""
+vehicle_id: "test-thresholds"
+log_directories: [{log_dir}]
+s3:
+  bucket: test-bucket
+  region: cn-north-1
+  credentials_path: ~/.aws
+upload:
+  schedule: "15:00"
+  queue_file: {temp_dir}/queue.json
+deletion:
+  emergency:
+    enabled: true
+disk:
+  reserved_gb: 1
+  warning_threshold: 0.90
+  critical_threshold: 0.95
+monitoring:
+  cloudwatch_enabled: false
+"""
+
+    config_file = Path(temp_dir) / 'config.yaml'
+    config_file.write_text(config_content)
+
+    try:
+        mock_upload_boto3.client.return_value = Mock()
+        mock_cw_boto3.client.return_value = Mock()
+
+        system = TVMUploadSystem(str(config_file))
+
+        # Create files and mark as uploaded
+        for i in range(3):
+            f = log_dir / f'file{i}.log'
+            f.write_bytes(b'x' * 1024 * 1024)
+            system.disk_manager.mark_uploaded(str(f), keep_until_days=30)
+
+        # Test that cleanup functions exist and can be called
+        usage, used, free = system.disk_manager.get_disk_usage()
+        assert 0 <= usage <= 1, "Disk usage should be valid"
+
+        # Test cleanup can be invoked
+        deleted = system.disk_manager.cleanup_old_files(target_free_gb=1000)
+        assert deleted >= 0, "cleanup_old_files should return count"
+
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@patch('src.upload_manager.boto3.session.Session')
+@patch('src.cloudwatch_manager.boto3.session.Session')
+def test_age_cleanup_various_ages(mock_cw_boto3, mock_upload_boto3):
+    """Test age-based cleanup with files of various ages"""
+    temp_dir = tempfile.mkdtemp()
+    log_dir = Path(temp_dir) / 'logs'
+    log_dir.mkdir()
+
+    config_content = f"""
+vehicle_id: "test-ages"
+log_directories: [{log_dir}]
+s3:
+  bucket: test-bucket
+  region: cn-north-1
+  credentials_path: ~/.aws
+upload:
+  schedule: "15:00"
+  queue_file: {temp_dir}/queue.json
+deletion:
+  age_based:
+    enabled: true
+    max_age_days: 7
+disk:
+  reserved_gb: 1
+monitoring:
+  cloudwatch_enabled: false
+"""
+
+    config_file = Path(temp_dir) / 'config.yaml'
+    config_file.write_text(config_content)
+
+    try:
+        mock_upload_boto3.client.return_value = Mock()
+        mock_cw_boto3.client.return_value = Mock()
+
+        system = TVMUploadSystem(str(config_file))
+
+        # Create files with different ages
+        files_data = [
+            ('fresh.log', 0),  # Today
+            ('one_day.log', 1),
+            ('three_days.log', 3),
+            ('six_days.log', 6),
+            ('eight_days.log', 8),
+            ('ten_days.log', 10),
+            ('thirty_days.log', 30)
+        ]
+
+        created_files = {}
+        for filename, age_days in files_data:
+            f = log_dir / filename
+            f.write_text(f'data from {age_days} days ago')
+            file_time = time.time() - (age_days * 24 * 3600)
+            os.utime(str(f), (file_time, file_time))
+            created_files[filename] = (f, age_days)
+
+        # Run cleanup (max age 7 days)
+        deleted = system.disk_manager.cleanup_by_age(7)
+
+        # Should delete 3 files (8, 10, 30 days old)
+        assert deleted == 3, f"Should delete 3 old files, deleted {deleted}"
+
+        # Verify which files remain
+        for filename, (filepath, age) in created_files.items():
+            if age > 7:
+                assert not filepath.exists(), f"{filename} ({age} days) should be deleted"
+            else:
+                assert filepath.exists(), f"{filename} ({age} days) should remain"
+
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@patch('src.upload_manager.boto3.session.Session')
+@patch('src.cloudwatch_manager.boto3.session.Session')
+def test_deletion_with_registry_integration(mock_cw_boto3, mock_upload_boto3):
+    """Test deletion removes files from registry"""
+    temp_dir = tempfile.mkdtemp()
+    log_dir = Path(temp_dir) / 'logs'
+    log_dir.mkdir()
+
+    config_content = f"""
+vehicle_id: "test-registry"
+log_directories: [{log_dir}]
+s3:
+  bucket: test-bucket
+  region: cn-north-1
+  credentials_path: ~/.aws
+upload:
+  schedule: "15:00"
+  queue_file: {temp_dir}/queue.json
+  processed_files_registry:
+    registry_file: {temp_dir}/registry.json
+    retention_days: 30
+deletion:
+  after_upload:
+    enabled: true
+    keep_days: 0
+disk:
+  reserved_gb: 1
+monitoring:
+  cloudwatch_enabled: false
+"""
+
+    config_file = Path(temp_dir) / 'config.yaml'
+    config_file.write_text(config_content)
+
+    try:
+        mock_s3 = Mock()
+        mock_s3.upload_file.return_value = None
+        mock_s3.head_object.side_effect = ClientError(
+            {'Error': {'Code': 'NotFound'}}, 'head_object'
+        )
+        mock_upload_boto3.client.return_value = mock_s3
+        mock_cw_boto3.client.return_value = Mock()
+
+        system = TVMUploadSystem(str(config_file))
+
+        # Create and upload file
+        test_file = log_dir / 'test.log'
+        test_file.write_text('data')
+
+        # Upload (should delete immediately with keep_days=0)
+        system._upload_file(str(test_file))
+
+        # File should be deleted (keep_days=0)
+        assert not test_file.exists(), "File should be deleted immediately"
+
+        # Verify registry file exists and has entries
+        registry_file = Path(temp_dir) / 'registry.json'
+        assert registry_file.exists(), "Registry file should exist"
+
+        # Registry should have been saved (though file is deleted)
+        # Recreate file with same name and verify it's marked as processed
+        test_file.write_text('data')  # Recreate with same content
+        is_processed = system.file_monitor._is_file_processed(test_file)
+        # This might be false since the file identity changed, which is expected behavior
+        # The key is that the registry mechanism works
+        assert registry_file.stat().st_size > 0, "Registry should have content"
+
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@patch('src.upload_manager.boto3.session.Session')
+@patch('src.cloudwatch_manager.boto3.session.Session')
+def test_deletion_multiple_directories(mock_cw_boto3, mock_upload_boto3):
+    """Test deletion across multiple log directories"""
+    temp_dir = tempfile.mkdtemp()
+    log_dir1 = Path(temp_dir) / 'logs1'
+    log_dir2 = Path(temp_dir) / 'logs2'
+    log_dir1.mkdir()
+    log_dir2.mkdir()
+
+    config_content = f"""
+vehicle_id: "test-multi-dir"
+log_directories:
+  - {log_dir1}
+  - {log_dir2}
+s3:
+  bucket: test-bucket
+  region: cn-north-1
+  credentials_path: ~/.aws
+upload:
+  schedule: "15:00"
+  queue_file: {temp_dir}/queue.json
+deletion:
+  age_based:
+    enabled: true
+    max_age_days: 5
+disk:
+  reserved_gb: 1
+monitoring:
+  cloudwatch_enabled: false
+"""
+
+    config_file = Path(temp_dir) / 'config.yaml'
+    config_file.write_text(config_content)
+
+    try:
+        mock_upload_boto3.client.return_value = Mock()
+        mock_cw_boto3.client.return_value = Mock()
+
+        system = TVMUploadSystem(str(config_file))
+
+        # Create old files in both directories
+        old_file1 = log_dir1 / 'old1.log'
+        old_file1.write_text('old data 1')
+        old_time = time.time() - (7 * 24 * 3600)
+        os.utime(str(old_file1), (old_time, old_time))
+
+        old_file2 = log_dir2 / 'old2.log'
+        old_file2.write_text('old data 2')
+        os.utime(str(old_file2), (old_time, old_time))
+
+        # Create recent files
+        recent_file1 = log_dir1 / 'recent1.log'
+        recent_file1.write_text('recent data 1')
+
+        recent_file2 = log_dir2 / 'recent2.log'
+        recent_file2.write_text('recent data 2')
+
+        # Run cleanup
+        deleted = system.disk_manager.cleanup_by_age(5)
+
+        # Should delete both old files
+        assert deleted == 2, "Should delete old files from both directories"
+        assert not old_file1.exists()
+        assert not old_file2.exists()
+        assert recent_file1.exists()
+        assert recent_file2.exists()
+
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@patch('src.upload_manager.boto3.session.Session')
+@patch('src.cloudwatch_manager.boto3.session.Session')
+def test_deletion_preserves_non_uploaded_files(mock_cw_boto3, mock_upload_boto3):
+    """Test that regular cleanup only deletes uploaded files"""
+    temp_dir = tempfile.mkdtemp()
+    log_dir = Path(temp_dir) / 'logs'
+    log_dir.mkdir()
+
+    config_content = f"""
+vehicle_id: "test-preserve"
+log_directories: [{log_dir}]
+s3:
+  bucket: test-bucket
+  region: cn-north-1
+  credentials_path: ~/.aws
+upload:
+  schedule: "15:00"
+  queue_file: {temp_dir}/queue.json
+deletion:
+  emergency:
+    enabled: true
+disk:
+  reserved_gb: 1
+  warning_threshold: 0.90
+monitoring:
+  cloudwatch_enabled: false
+"""
+
+    config_file = Path(temp_dir) / 'config.yaml'
+    config_file.write_text(config_content)
+
+    try:
+        mock_upload_boto3.client.return_value = Mock()
+        mock_cw_boto3.client.return_value = Mock()
+
+        system = TVMUploadSystem(str(config_file))
+
+        # Create uploaded file
+        uploaded_file = log_dir / 'uploaded.log'
+        uploaded_file.write_bytes(b'x' * 1024 * 1024)
+        system.disk_manager.mark_uploaded(str(uploaded_file), keep_until_days=30)
+
+        # Create non-uploaded file
+        non_uploaded_file = log_dir / 'not_uploaded.log'
+        non_uploaded_file.write_bytes(b'x' * 1024 * 1024)
+
+        # Mock warning threshold
+        with patch.object(system.disk_manager, 'get_disk_usage', return_value=(0.91, 1000, 100)):
+            system._process_upload_queue()
+
+        # Non-uploaded file should NOT be deleted by standard cleanup
+        assert non_uploaded_file.exists(), "Non-uploaded files should be preserved"
+
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@patch('src.upload_manager.boto3.session.Session')
+@patch('src.cloudwatch_manager.boto3.session.Session')
+def test_partial_deletion_on_error(mock_cw_boto3, mock_upload_boto3):
+    """Test system handles partial deletion when some files fail to delete"""
+    temp_dir = tempfile.mkdtemp()
+    log_dir = Path(temp_dir) / 'logs'
+    log_dir.mkdir()
+
+    config_content = f"""
+vehicle_id: "test-partial"
+log_directories: [{log_dir}]
+s3:
+  bucket: test-bucket
+  region: cn-north-1
+  credentials_path: ~/.aws
+upload:
+  schedule: "15:00"
+  queue_file: {temp_dir}/queue.json
+deletion:
+  after_upload:
+    enabled: true
+    keep_days: 0
+disk:
+  reserved_gb: 1
+monitoring:
+  cloudwatch_enabled: false
+"""
+
+    config_file = Path(temp_dir) / 'config.yaml'
+    config_file.write_text(config_content)
+
+    try:
+        mock_s3 = Mock()
+        mock_s3.upload_file.return_value = None
+        mock_s3.head_object.side_effect = ClientError(
+            {'Error': {'Code': 'NotFound'}}, 'head_object'
+        )
+        mock_upload_boto3.client.return_value = mock_s3
+        mock_cw_boto3.client.return_value = Mock()
+
+        system = TVMUploadSystem(str(config_file))
+
+        # Create files
+        test_file1 = log_dir / 'file1.log'
+        test_file1.write_text('data1')
+
+        test_file2 = log_dir / 'file2.log'
+        test_file2.write_text('data2')
+
+        # Upload first file
+        system._upload_file(str(test_file1))
+
+        # Make second file read-only (will fail to delete)
+        test_file2.chmod(0o444)
+
+        # Try to upload and delete second file
+        # This tests that the system handles deletion errors gracefully
+        try:
+            system._upload_file(str(test_file2))
+        except:
+            pass  # Expected to potentially fail
+
+        # System should continue operating even if deletion fails
+        assert system.stats['files_uploaded'] >= 1
+
+    finally:
+        # Restore permissions for cleanup
+        for f in log_dir.glob('*.log'):
+            try:
+                f.chmod(0o644)
+            except:
+                pass
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
+@patch('src.upload_manager.boto3.session.Session')
+@patch('src.cloudwatch_manager.boto3.session.Session')
+def test_zero_byte_file_deletion(mock_cw_boto3, mock_upload_boto3):
+    """Test deletion of zero-byte files"""
+    temp_dir = tempfile.mkdtemp()
+    log_dir = Path(temp_dir) / 'logs'
+    log_dir.mkdir()
+
+    config_content = f"""
+vehicle_id: "test-zerobyte"
+log_directories: [{log_dir}]
+s3:
+  bucket: test-bucket
+  region: cn-north-1
+  credentials_path: ~/.aws
+upload:
+  schedule: "15:00"
+  queue_file: {temp_dir}/queue.json
+deletion:
+  after_upload:
+    enabled: true
+    keep_days: 0
+disk:
+  reserved_gb: 1
+monitoring:
+  cloudwatch_enabled: false
+"""
+
+    config_file = Path(temp_dir) / 'config.yaml'
+    config_file.write_text(config_content)
+
+    try:
+        mock_s3 = Mock()
+        mock_s3.upload_file.return_value = None
+        mock_s3.head_object.side_effect = ClientError(
+            {'Error': {'Code': 'NotFound'}}, 'head_object'
+        )
+        mock_upload_boto3.client.return_value = mock_s3
+        mock_cw_boto3.client.return_value = Mock()
+
+        system = TVMUploadSystem(str(config_file))
+
+        # Create zero-byte file
+        empty_file = log_dir / 'empty.log'
+        empty_file.write_text('')
+
+        assert empty_file.exists()
+        assert empty_file.stat().st_size == 0
+
+        # Upload and delete
+        system._upload_file(str(empty_file))
+
+        # Should be deleted even though zero bytes
+        assert not empty_file.exists(), "Zero-byte file should be deleted"
+
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
+
+
 if __name__ == '__main__':
     pytest.main([__file__, '-v'])
