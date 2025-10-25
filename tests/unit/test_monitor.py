@@ -405,12 +405,12 @@ def test_startup_scan_no_config(temp_dir, callback_tracker, monitor_config):
     test_file = temp_dir / "test.log"
     test_file.write_text("test data")
     
-    # No config provided - should use defaults (enabled=True, max_age_days=3)
+    # Use monitor_config for registry path only - startup scan will use defaults (enabled=True, max_age_days=3)
     monitor = FileMonitor(
         [str(temp_dir)],
         callback_tracker.callback,
-        stability_seconds=2
-        # NO config parameter
+        stability_seconds=2,
+        config=monitor_config  # Only for registry path, startup scan uses defaults
     )
     monitor.start()
     
@@ -852,6 +852,10 @@ def test_recursive_monitoring_enabled(temp_dir, callback_tracker, monitor_config
             'recursive': True
         }],
         'upload': {
+            'processed_files_registry': {
+                'registry_file': '/tmp/test_registry_' + str(id(temp_dir)) + '.json',
+                'retention_days': 30
+            },
             'scan_existing_files': {
                 'enabled': True,
                 'max_age_days': 30
@@ -908,6 +912,10 @@ def test_recursive_monitoring_disabled(temp_dir, callback_tracker, monitor_confi
             'recursive': False
         }],
         'upload': {
+            'processed_files_registry': {
+                'registry_file': '/tmp/test_registry_' + str(id(temp_dir)) + '.json',
+                'retention_days': 30
+            },
             'scan_existing_files': {
                 'enabled': True,
                 'max_age_days': 30
@@ -958,6 +966,10 @@ def test_recursive_default_is_true(temp_dir, callback_tracker, monitor_config):
             # No recursive specified - should default to True
         }],
         'upload': {
+            'processed_files_registry': {
+                'registry_file': '/tmp/test_registry_' + str(id(temp_dir)) + '.json',
+                'retention_days': 30
+            },
             'scan_existing_files': {
                 'enabled': True,
                 'max_age_days': 30
@@ -1016,6 +1028,10 @@ def test_mixed_recursive_configurations(temp_dir, callback_tracker, monitor_conf
             }
         ],
         'upload': {
+            'processed_files_registry': {
+                'registry_file': '/tmp/test_registry_' + str(id(temp_dir)) + '.json',
+                'retention_days': 30
+            },
             'scan_existing_files': {
                 'enabled': True,
                 'max_age_days': 30
@@ -1076,6 +1092,10 @@ def test_pattern_matching_simple(temp_dir, callback_tracker, monitor_config):
             'pattern': '*.log'
         }],
         'upload': {
+            'processed_files_registry': {
+                'registry_file': '/tmp/test_registry_' + str(id(temp_dir)) + '.json',
+                'retention_days': 30
+            },
             'scan_existing_files': {
                 'enabled': True,
                 'max_age_days': 30
@@ -1127,6 +1147,10 @@ def test_pattern_matching_prefix(temp_dir, callback_tracker, monitor_config):
             'pattern': 'syslog*'
         }],
         'upload': {
+            'processed_files_registry': {
+                'registry_file': '/tmp/test_registry_' + str(id(temp_dir)) + '.json',
+                'retention_days': 30
+            },
             'scan_existing_files': {
                 'enabled': True,
                 'max_age_days': 30
@@ -1183,6 +1207,10 @@ def test_pattern_matching_no_pattern_uploads_all(temp_dir, callback_tracker, mon
             # No pattern specified
         }],
         'upload': {
+            'processed_files_registry': {
+                'registry_file': '/tmp/test_registry_' + str(id(temp_dir)) + '.json',
+                'retention_days': 30
+            },
             'scan_existing_files': {
                 'enabled': True,
                 'max_age_days': 30
@@ -1234,6 +1262,10 @@ def test_pattern_matching_with_recursive(temp_dir, callback_tracker, monitor_con
             'recursive': True
         }],
         'upload': {
+            'processed_files_registry': {
+                'registry_file': '/tmp/test_registry_' + str(id(temp_dir)) + '.json',
+                'retention_days': 30
+            },
             'scan_existing_files': {
                 'enabled': True,
                 'max_age_days': 30
@@ -1303,6 +1335,10 @@ def test_pattern_matching_multiple_directories(temp_dir, callback_tracker, monit
             }
         ],
         'upload': {
+            'processed_files_registry': {
+                'registry_file': '/tmp/test_registry_' + str(id(temp_dir)) + '.json',
+                'retention_days': 30
+            },
             'scan_existing_files': {
                 'enabled': True,
                 'max_age_days': 30
@@ -1360,6 +1396,10 @@ def test_pattern_wildcard_complex(temp_dir, callback_tracker, monitor_config):
             'pattern': 'test_*.mcap'
         }],
         'upload': {
+            'processed_files_registry': {
+                'registry_file': '/tmp/test_registry_' + str(id(temp_dir)) + '.json',
+                'retention_days': 30
+            },
             'scan_existing_files': {
                 'enabled': True,
                 'max_age_days': 30
@@ -1425,6 +1465,10 @@ def test_deeply_nested_directories(temp_dir, callback_tracker, monitor_config):
             'recursive': True
         }],
         'upload': {
+            'processed_files_registry': {
+                'registry_file': '/tmp/test_registry_' + str(id(temp_dir)) + '.json',
+                'retention_days': 30
+            },
             'scan_existing_files': {
                 'enabled': True,
                 'max_age_days': 30
@@ -1478,6 +1522,10 @@ def test_symlinks_in_recursive_structure(temp_dir, callback_tracker, monitor_con
             'recursive': True
         }],
         'upload': {
+            'processed_files_registry': {
+                'registry_file': '/tmp/test_registry_' + str(id(temp_dir)) + '.json',
+                'retention_days': 30
+            },
             'scan_existing_files': {
                 'enabled': True,
                 'max_age_days': 30
@@ -1518,6 +1566,10 @@ def test_file_created_in_new_subdirectory_while_running(temp_dir, callback_track
             'recursive': True
         }],
         'upload': {
+            'processed_files_registry': {
+                'registry_file': '/tmp/test_registry_' + str(id(temp_dir)) + '.json',
+                'retention_days': 30
+            },
             'scan_existing_files': {
                 'enabled': False  # Disable startup scan
             }
@@ -1562,6 +1614,10 @@ def test_empty_directory_no_errors(temp_dir, callback_tracker, monitor_config):
             'recursive': True
         }],
         'upload': {
+            'processed_files_registry': {
+                'registry_file': '/tmp/test_registry_' + str(id(temp_dir)) + '.json',
+                'retention_days': 30
+            },
             'scan_existing_files': {
                 'enabled': True,
                 'max_age_days': 30
@@ -1596,6 +1652,10 @@ def test_pattern_with_question_mark_wildcard(temp_dir, callback_tracker, monitor
             'pattern': 'log?.txt'
         }],
         'upload': {
+            'processed_files_registry': {
+                'registry_file': '/tmp/test_registry_' + str(id(temp_dir)) + '.json',
+                'retention_days': 30
+            },
             'scan_existing_files': {
                 'enabled': True,
                 'max_age_days': 30
