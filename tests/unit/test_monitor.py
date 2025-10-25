@@ -795,5 +795,810 @@ def test_startup_scan_skips_processed_files(temp_dir, callback_tracker):
     # Should NOT have uploaded (already in registry)
     assert len(callback_tracker.called_files) == 0, \
         f"Processed files should be skipped during startup scan. Got {callback_tracker.called_files}"
-    
+
     monitor.stop()
+
+
+# ============================================
+# COMPREHENSIVE TESTS FOR RECURSIVE MONITORING
+# ============================================
+
+def test_recursive_monitoring_enabled(temp_dir, callback_tracker):
+    """Test recursive monitoring detects files in subdirectories"""
+    # Create subdirectory structure
+    subdir1 = temp_dir / "subdir1"
+    subdir1.mkdir()
+    subdir2 = subdir1 / "subdir2"
+    subdir2.mkdir()
+
+    config = {
+        'log_directories': [{
+            'path': str(temp_dir),
+            'source': 'test',
+            'recursive': True
+        }],
+        'upload': {
+            'scan_existing_files': {
+                'enabled': True,
+                'max_age_days': 30
+            }
+        }
+    }
+
+    # Create files at different depths
+    file_root = temp_dir / "root.log"
+    file_root.write_text("root level")
+
+    file_sub1 = subdir1 / "sub1.log"
+    file_sub1.write_text("subdir1 level")
+
+    file_sub2 = subdir2 / "sub2.log"
+    file_sub2.write_text("subdir2 level")
+
+    monitor = FileMonitor(
+        [str(temp_dir)],
+        callback_tracker.callback,
+        stability_seconds=2,
+        config=config
+    )
+    monitor.start()
+
+    # Should detect all 3 files
+    result = wait_until(
+        lambda: len(callback_tracker.called_files) >= 3,
+        timeout=6,
+        description="all 3 files in recursive structure"
+    )
+
+    monitor.stop()
+
+    assert result, f"Should detect 3 files, got {len(callback_tracker.called_files)}"
+
+    # Verify all files were detected
+    files_str = str(callback_tracker.called_files)
+    assert "root.log" in files_str
+    assert "sub1.log" in files_str
+    assert "sub2.log" in files_str
+
+
+def test_recursive_monitoring_disabled(temp_dir, callback_tracker):
+    """Test non-recursive monitoring ignores subdirectories"""
+    # Create subdirectory
+    subdir = temp_dir / "subdir"
+    subdir.mkdir()
+
+    config = {
+        'log_directories': [{
+            'path': str(temp_dir),
+            'source': 'test',
+            'recursive': False
+        }],
+        'upload': {
+            'scan_existing_files': {
+                'enabled': True,
+                'max_age_days': 30
+            }
+        }
+    }
+
+    # Create files in root and subdirectory
+    file_root = temp_dir / "root.log"
+    file_root.write_text("root level")
+
+    file_sub = subdir / "sub.log"
+    file_sub.write_text("subdirectory level")
+
+    monitor = FileMonitor(
+        [str(temp_dir)],
+        callback_tracker.callback,
+        stability_seconds=2,
+        config=config
+    )
+    monitor.start()
+
+    # Should detect only root file
+    result = wait_until(
+        lambda: len(callback_tracker.called_files) >= 1,
+        timeout=5,
+        description="root level file only"
+    )
+
+    monitor.stop()
+
+    assert result, "Should detect root file"
+    assert len(callback_tracker.called_files) == 1, \
+        f"Should detect only 1 file (root), got {len(callback_tracker.called_files)}"
+    assert "root.log" in callback_tracker.called_files[0]
+    assert "sub.log" not in str(callback_tracker.called_files)
+
+
+def test_recursive_default_is_true(temp_dir, callback_tracker):
+    """Test recursive defaults to True when not specified"""
+    subdir = temp_dir / "subdir"
+    subdir.mkdir()
+
+    config = {
+        'log_directories': [{
+            'path': str(temp_dir),
+            'source': 'test'
+            # No recursive specified - should default to True
+        }],
+        'upload': {
+            'scan_existing_files': {
+                'enabled': True,
+                'max_age_days': 30
+            }
+        }
+    }
+
+    file_sub = subdir / "sub.log"
+    file_sub.write_text("subdirectory file")
+
+    monitor = FileMonitor(
+        [str(temp_dir)],
+        callback_tracker.callback,
+        stability_seconds=2,
+        config=config
+    )
+    monitor.start()
+
+    # Should detect subdirectory file (recursive=True by default)
+    result = wait_until(
+        lambda: len(callback_tracker.called_files) >= 1,
+        timeout=5,
+        description="subdirectory file with default recursive"
+    )
+
+    monitor.stop()
+
+    assert result, "Should detect subdirectory file (recursive defaults to True)"
+    assert "sub.log" in callback_tracker.called_files[0]
+
+
+def test_mixed_recursive_configurations(temp_dir, callback_tracker):
+    """Test multiple directories with different recursive settings"""
+    # Create two separate directories
+    dir1 = temp_dir / "dir1"
+    dir1.mkdir()
+    dir1_sub = dir1 / "subdir"
+    dir1_sub.mkdir()
+
+    dir2 = temp_dir / "dir2"
+    dir2.mkdir()
+    dir2_sub = dir2 / "subdir"
+    dir2_sub.mkdir()
+
+    config = {
+        'log_directories': [
+            {
+                'path': str(dir1),
+                'source': 'source1',
+                'recursive': True  # Recursive enabled
+            },
+            {
+                'path': str(dir2),
+                'source': 'source2',
+                'recursive': False  # Recursive disabled
+            }
+        ],
+        'upload': {
+            'scan_existing_files': {
+                'enabled': True,
+                'max_age_days': 30
+            }
+        }
+    }
+
+    # Create files in both directories and subdirectories
+    file_dir1_root = dir1 / "root1.log"
+    file_dir1_root.write_text("dir1 root")
+
+    file_dir1_sub = dir1_sub / "sub1.log"
+    file_dir1_sub.write_text("dir1 subdirectory")
+
+    file_dir2_root = dir2 / "root2.log"
+    file_dir2_root.write_text("dir2 root")
+
+    file_dir2_sub = dir2_sub / "sub2.log"
+    file_dir2_sub.write_text("dir2 subdirectory")
+
+    monitor = FileMonitor(
+        [str(dir1), str(dir2)],
+        callback_tracker.callback,
+        stability_seconds=2,
+        config=config
+    )
+    monitor.start()
+
+    # Should detect 3 files: dir1/root, dir1/sub, dir2/root
+    # Should NOT detect: dir2/sub (recursive=False)
+    result = wait_until(
+        lambda: len(callback_tracker.called_files) >= 3,
+        timeout=6,
+        description="3 files from mixed recursive configs"
+    )
+
+    monitor.stop()
+
+    assert result, f"Should detect 3 files, got {len(callback_tracker.called_files)}"
+
+    files_str = str(callback_tracker.called_files)
+    assert "root1.log" in files_str
+    assert "sub1.log" in files_str  # Should be detected (dir1 is recursive)
+    assert "root2.log" in files_str
+    assert "sub2.log" not in files_str  # Should NOT be detected (dir2 is non-recursive)
+
+
+# ============================================
+# COMPREHENSIVE TESTS FOR PATTERN MATCHING
+# ============================================
+
+def test_pattern_matching_simple(temp_dir, callback_tracker):
+    """Test simple pattern matching filters files correctly"""
+    config = {
+        'log_directories': [{
+            'path': str(temp_dir),
+            'source': 'test',
+            'pattern': '*.log'
+        }],
+        'upload': {
+            'scan_existing_files': {
+                'enabled': True,
+                'max_age_days': 30
+            }
+        }
+    }
+
+    # Create files with different extensions
+    log_file = temp_dir / "test.log"
+    log_file.write_text("log file")
+
+    txt_file = temp_dir / "test.txt"
+    txt_file.write_text("text file")
+
+    tmp_file = temp_dir / "test.tmp"
+    tmp_file.write_text("temp file")
+
+    monitor = FileMonitor(
+        [str(temp_dir)],
+        callback_tracker.callback,
+        stability_seconds=2,
+        config=config
+    )
+    monitor.start()
+
+    # Should detect only .log file
+    result = wait_until(
+        lambda: len(callback_tracker.called_files) >= 1,
+        timeout=5,
+        description=".log file with pattern matching"
+    )
+
+    monitor.stop()
+
+    assert result, "Should detect .log file"
+    assert len(callback_tracker.called_files) == 1, \
+        f"Should detect only 1 file (.log), got {len(callback_tracker.called_files)}"
+    assert "test.log" in callback_tracker.called_files[0]
+    assert ".txt" not in str(callback_tracker.called_files)
+    assert ".tmp" not in str(callback_tracker.called_files)
+
+
+def test_pattern_matching_prefix(temp_dir, callback_tracker):
+    """Test pattern matching with prefix (e.g., syslog*)"""
+    config = {
+        'log_directories': [{
+            'path': str(temp_dir),
+            'source': 'syslog',
+            'pattern': 'syslog*'
+        }],
+        'upload': {
+            'scan_existing_files': {
+                'enabled': True,
+                'max_age_days': 30
+            }
+        }
+    }
+
+    # Create syslog files
+    syslog = temp_dir / "syslog"
+    syslog.write_text("current syslog")
+
+    syslog1 = temp_dir / "syslog.1"
+    syslog1.write_text("rotated syslog 1")
+
+    syslog2_gz = temp_dir / "syslog.2.gz"
+    syslog2_gz.write_text("rotated syslog 2")
+
+    # Create non-matching file
+    other = temp_dir / "messages"
+    other.write_text("other log")
+
+    monitor = FileMonitor(
+        [str(temp_dir)],
+        callback_tracker.callback,
+        stability_seconds=2,
+        config=config
+    )
+    monitor.start()
+
+    # Should detect 3 syslog* files
+    result = wait_until(
+        lambda: len(callback_tracker.called_files) >= 3,
+        timeout=5,
+        description="all syslog* files"
+    )
+
+    monitor.stop()
+
+    assert result, f"Should detect 3 syslog files, got {len(callback_tracker.called_files)}"
+
+    files_str = str(callback_tracker.called_files)
+    assert "syslog" in files_str or "/syslog" in files_str
+    assert "syslog.1" in files_str
+    assert "syslog.2.gz" in files_str
+    assert "messages" not in files_str
+
+
+def test_pattern_matching_no_pattern_uploads_all(temp_dir, callback_tracker):
+    """Test when no pattern is specified, all files are uploaded"""
+    config = {
+        'log_directories': [{
+            'path': str(temp_dir),
+            'source': 'test'
+            # No pattern specified
+        }],
+        'upload': {
+            'scan_existing_files': {
+                'enabled': True,
+                'max_age_days': 30
+            }
+        }
+    }
+
+    # Create various files
+    log_file = temp_dir / "test.log"
+    log_file.write_text("log")
+
+    txt_file = temp_dir / "test.txt"
+    txt_file.write_text("txt")
+
+    mcap_file = temp_dir / "data.mcap"
+    mcap_file.write_text("mcap")
+
+    monitor = FileMonitor(
+        [str(temp_dir)],
+        callback_tracker.callback,
+        stability_seconds=2,
+        config=config
+    )
+    monitor.start()
+
+    # Should detect all files
+    result = wait_until(
+        lambda: len(callback_tracker.called_files) >= 3,
+        timeout=5,
+        description="all files when no pattern specified"
+    )
+
+    monitor.stop()
+
+    assert result, f"Should detect all 3 files, got {len(callback_tracker.called_files)}"
+
+
+def test_pattern_matching_with_recursive(temp_dir, callback_tracker):
+    """Test pattern matching works in recursive subdirectories"""
+    # Create subdirectory structure
+    subdir = temp_dir / "subdir"
+    subdir.mkdir()
+
+    config = {
+        'log_directories': [{
+            'path': str(temp_dir),
+            'source': 'test',
+            'pattern': '*.log',
+            'recursive': True
+        }],
+        'upload': {
+            'scan_existing_files': {
+                'enabled': True,
+                'max_age_days': 30
+            }
+        }
+    }
+
+    # Create .log files at different levels
+    root_log = temp_dir / "root.log"
+    root_log.write_text("root log")
+
+    root_txt = temp_dir / "root.txt"
+    root_txt.write_text("root txt")
+
+    sub_log = subdir / "sub.log"
+    sub_log.write_text("sub log")
+
+    sub_txt = subdir / "sub.txt"
+    sub_txt.write_text("sub txt")
+
+    monitor = FileMonitor(
+        [str(temp_dir)],
+        callback_tracker.callback,
+        stability_seconds=2,
+        config=config
+    )
+    monitor.start()
+
+    # Should detect 2 .log files (root and subdirectory)
+    result = wait_until(
+        lambda: len(callback_tracker.called_files) >= 2,
+        timeout=5,
+        description="2 .log files in recursive structure"
+    )
+
+    monitor.stop()
+
+    assert result, f"Should detect 2 .log files, got {len(callback_tracker.called_files)}"
+    assert len(callback_tracker.called_files) == 2, \
+        f"Should detect exactly 2 files, got {len(callback_tracker.called_files)}"
+
+    files_str = str(callback_tracker.called_files)
+    assert "root.log" in files_str
+    assert "sub.log" in files_str
+    assert ".txt" not in files_str
+
+
+def test_pattern_matching_multiple_directories(temp_dir, callback_tracker):
+    """Test different patterns for different directories"""
+    dir1 = temp_dir / "logs"
+    dir1.mkdir()
+
+    dir2 = temp_dir / "syslog"
+    dir2.mkdir()
+
+    config = {
+        'log_directories': [
+            {
+                'path': str(dir1),
+                'source': 'logs',
+                'pattern': '*.log'
+            },
+            {
+                'path': str(dir2),
+                'source': 'syslog',
+                'pattern': 'syslog*'
+            }
+        ],
+        'upload': {
+            'scan_existing_files': {
+                'enabled': True,
+                'max_age_days': 30
+            }
+        }
+    }
+
+    # Create files matching patterns
+    dir1_log = dir1 / "app.log"
+    dir1_log.write_text("app log")
+
+    dir1_txt = dir1 / "app.txt"
+    dir1_txt.write_text("app txt - should not match")
+
+    dir2_syslog = dir2 / "syslog"
+    dir2_syslog.write_text("syslog")
+
+    dir2_messages = dir2 / "messages"
+    dir2_messages.write_text("messages - should not match")
+
+    monitor = FileMonitor(
+        [str(dir1), str(dir2)],
+        callback_tracker.callback,
+        stability_seconds=2,
+        config=config
+    )
+    monitor.start()
+
+    # Should detect 2 files: app.log, syslog
+    result = wait_until(
+        lambda: len(callback_tracker.called_files) >= 2,
+        timeout=5,
+        description="2 files matching different patterns"
+    )
+
+    monitor.stop()
+
+    assert result, f"Should detect 2 files, got {len(callback_tracker.called_files)}"
+    assert len(callback_tracker.called_files) == 2, \
+        f"Should detect exactly 2 files, got {len(callback_tracker.called_files)}"
+
+    files_str = str(callback_tracker.called_files)
+    assert "app.log" in files_str
+    assert "syslog" in files_str or "/syslog" in files_str
+    assert "app.txt" not in files_str
+    assert "messages" not in files_str
+
+
+def test_pattern_wildcard_complex(temp_dir, callback_tracker):
+    """Test complex wildcard patterns"""
+    config = {
+        'log_directories': [{
+            'path': str(temp_dir),
+            'source': 'test',
+            'pattern': 'test_*.mcap'
+        }],
+        'upload': {
+            'scan_existing_files': {
+                'enabled': True,
+                'max_age_days': 30
+            }
+        }
+    }
+
+    # Create files
+    match1 = temp_dir / "test_2024.mcap"
+    match1.write_text("match")
+
+    match2 = temp_dir / "test_run1.mcap"
+    match2.write_text("match")
+
+    no_match1 = temp_dir / "data.mcap"
+    no_match1.write_text("no match")
+
+    no_match2 = temp_dir / "test.log"
+    no_match2.write_text("no match")
+
+    monitor = FileMonitor(
+        [str(temp_dir)],
+        callback_tracker.callback,
+        stability_seconds=2,
+        config=config
+    )
+    monitor.start()
+
+    # Should detect 2 files matching test_*.mcap
+    result = wait_until(
+        lambda: len(callback_tracker.called_files) >= 2,
+        timeout=5,
+        description="files matching test_*.mcap"
+    )
+
+    monitor.stop()
+
+    assert result, f"Should detect 2 files, got {len(callback_tracker.called_files)}"
+    assert len(callback_tracker.called_files) == 2
+
+    files_str = str(callback_tracker.called_files)
+    assert "test_2024.mcap" in files_str
+    assert "test_run1.mcap" in files_str
+    assert "data.mcap" not in files_str
+
+
+# ============================================
+# EDGE CASE TESTS
+# ============================================
+
+def test_deeply_nested_directories(temp_dir, callback_tracker):
+    """Test monitoring deeply nested directory structures"""
+    # Create 5 levels deep
+    current = temp_dir
+    for i in range(5):
+        current = current / f"level{i}"
+        current.mkdir()
+
+    config = {
+        'log_directories': [{
+            'path': str(temp_dir),
+            'source': 'test',
+            'recursive': True
+        }],
+        'upload': {
+            'scan_existing_files': {
+                'enabled': True,
+                'max_age_days': 30
+            }
+        }
+    }
+
+    # Create file at deepest level
+    deep_file = current / "deep.log"
+    deep_file.write_text("deep file")
+
+    monitor = FileMonitor(
+        [str(temp_dir)],
+        callback_tracker.callback,
+        stability_seconds=2,
+        config=config
+    )
+    monitor.start()
+
+    result = wait_until(
+        lambda: len(callback_tracker.called_files) >= 1,
+        timeout=5,
+        description="deeply nested file"
+    )
+
+    monitor.stop()
+
+    assert result, "Should detect file in deeply nested directory"
+    assert "deep.log" in callback_tracker.called_files[0]
+
+
+def test_symlinks_in_recursive_structure(temp_dir, callback_tracker):
+    """Test that symlinks don't cause infinite loops in recursive monitoring"""
+    import os
+
+    # Create subdirectory
+    subdir = temp_dir / "subdir"
+    subdir.mkdir()
+
+    # Create symlink pointing back to parent (potential infinite loop)
+    symlink = subdir / "link_to_parent"
+    try:
+        os.symlink(str(temp_dir), str(symlink))
+    except OSError:
+        pytest.skip("Cannot create symlinks on this system")
+
+    config = {
+        'log_directories': [{
+            'path': str(temp_dir),
+            'source': 'test',
+            'recursive': True
+        }],
+        'upload': {
+            'scan_existing_files': {
+                'enabled': True,
+                'max_age_days': 30
+            }
+        }
+    }
+
+    # Create a regular file
+    test_file = temp_dir / "test.log"
+    test_file.write_text("test")
+
+    # Should not crash or hang due to symlink loop
+    monitor = FileMonitor(
+        [str(temp_dir)],
+        callback_tracker.callback,
+        stability_seconds=2,
+        config=config
+    )
+    monitor.start()
+
+    result = wait_until(
+        lambda: len(callback_tracker.called_files) >= 1,
+        timeout=5,
+        description="file detection without hanging on symlinks"
+    )
+
+    monitor.stop()
+
+    assert result, "Should detect file without hanging on symlinks"
+
+
+def test_file_created_in_new_subdirectory_while_running(temp_dir, callback_tracker):
+    """Test that files in new subdirectories created after start are detected"""
+    config = {
+        'log_directories': [{
+            'path': str(temp_dir),
+            'source': 'test',
+            'recursive': True
+        }],
+        'upload': {
+            'scan_existing_files': {
+                'enabled': False  # Disable startup scan
+            }
+        }
+    }
+
+    monitor = FileMonitor(
+        [str(temp_dir)],
+        callback_tracker.callback,
+        stability_seconds=2,
+        config=config
+    )
+    monitor.start()
+
+    # Create subdirectory after monitor starts
+    time.sleep(0.5)
+    new_subdir = temp_dir / "new_subdir"
+    new_subdir.mkdir()
+
+    # Create file in new subdirectory
+    new_file = new_subdir / "new.log"
+    new_file.write_text("new file in new subdir")
+
+    result = wait_until(
+        lambda: len(callback_tracker.called_files) >= 1,
+        timeout=5,
+        description="file in newly created subdirectory"
+    )
+
+    monitor.stop()
+
+    assert result, "Should detect file in subdirectory created after monitor start"
+    assert "new.log" in callback_tracker.called_files[0]
+
+
+def test_empty_directory_no_errors(temp_dir, callback_tracker):
+    """Test monitoring empty directory doesn't cause errors"""
+    config = {
+        'log_directories': [{
+            'path': str(temp_dir),
+            'source': 'test',
+            'recursive': True
+        }],
+        'upload': {
+            'scan_existing_files': {
+                'enabled': True,
+                'max_age_days': 30
+            }
+        }
+    }
+
+    # Start monitor on empty directory
+    monitor = FileMonitor(
+        [str(temp_dir)],
+        callback_tracker.callback,
+        stability_seconds=2,
+        config=config
+    )
+    monitor.start()
+
+    # Wait a bit
+    time.sleep(2)
+
+    # No files should be detected
+    assert len(callback_tracker.called_files) == 0
+
+    monitor.stop()
+
+
+def test_pattern_with_question_mark_wildcard(temp_dir, callback_tracker):
+    """Test pattern with ? wildcard (single character)"""
+    config = {
+        'log_directories': [{
+            'path': str(temp_dir),
+            'source': 'test',
+            'pattern': 'log?.txt'
+        }],
+        'upload': {
+            'scan_existing_files': {
+                'enabled': True,
+                'max_age_days': 30
+            }
+        }
+    }
+
+    # Create files
+    match1 = temp_dir / "log1.txt"
+    match1.write_text("match")
+
+    match2 = temp_dir / "logA.txt"
+    match2.write_text("match")
+
+    no_match = temp_dir / "log10.txt"  # Two characters after "log"
+    no_match.write_text("no match")
+
+    monitor = FileMonitor(
+        [str(temp_dir)],
+        callback_tracker.callback,
+        stability_seconds=2,
+        config=config
+    )
+    monitor.start()
+
+    result = wait_until(
+        lambda: len(callback_tracker.called_files) >= 2,
+        timeout=5,
+        description="files matching log?.txt"
+    )
+
+    monitor.stop()
+
+    assert result, f"Should detect 2 files, got {len(callback_tracker.called_files)}"
+    assert len(callback_tracker.called_files) == 2
+
+    files_str = str(callback_tracker.called_files)
+    assert "log1.txt" in files_str
+    assert "logA.txt" in files_str
+    assert "log10.txt" not in files_str

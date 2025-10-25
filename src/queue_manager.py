@@ -118,17 +118,27 @@ class QueueManager:
     def add_file(self, filepath: str):
         """
         Add file to upload queue.
-        
+
         Args:
             filepath: Path to file to upload
         """
+        # Validate filepath is not empty
+        if not filepath or not filepath.strip():
+            logger.warning("Cannot add empty filepath to queue")
+            return
+
         file_path = Path(filepath)
-        
+
         # Check if already in queue
         if any(entry['filepath'] == filepath for entry in self.queue):
             logger.debug(f"File already in queue: {file_path.name}")
             return
-        
+
+        # Validate it's a file, not a directory
+        if file_path.exists() and file_path.is_dir():
+            logger.warning(f"Cannot add directory to queue: {filepath}")
+            return
+
         # Get file size
         try:
             size = file_path.stat().st_size

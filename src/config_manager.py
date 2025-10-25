@@ -76,6 +76,9 @@ class ConfigManager:
         with open(self.config_path, 'r') as f:
             self.config = yaml.safe_load(f)
 
+        if self.config is None:
+            raise ConfigValidationError("Config file is empty or contains only whitespace")
+
         self.validate_config(self.config)
         logger.info(f"Loaded config from {self.config_path}")
         return self.config

@@ -8,6 +8,7 @@ multipart upload support for large files, and upload verification.
 """
 
 import boto3
+from boto3.s3.transfer import TransferConfig
 import time
 import logging
 from pathlib import Path
@@ -546,7 +547,7 @@ class UploadManager:
             file_path,
             self.bucket,
             s3_key,
-            Config=boto3.s3.transfer.TransferConfig(
+            Config=TransferConfig(
                 multipart_threshold=MULTIPART_THRESHOLD,
                 multipart_chunksize=MULTIPART_CHUNK_SIZE
             )
