@@ -533,6 +533,10 @@ upload:
         interval_minutes: 30
     file_stable_seconds: 60
     queue_file: /tmp/test-interval-queue.json
+    processed_files_registry:
+        registry_file: /tmp/test_registry_main.json
+        retention_days: 30
+
 disk:
     reserved_gb: 1
 monitoring:

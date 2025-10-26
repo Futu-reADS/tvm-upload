@@ -39,9 +39,19 @@ class TestFileMonitorIntegration:
             uploaded_files.append(filepath)
             disk_manager.mark_uploaded(filepath)
 
+        config = {
+            'upload': {
+                'processed_files_registry': {
+                    'registry_file': '/tmp/test_registry.json',
+                    'retention_days': 1
+                }
+            }
+        }
+
         file_monitor = FileMonitor(
             [temp_dir],
             mock_upload_callback,
+            config=config,
             stability_seconds=2
         )
 
@@ -119,9 +129,19 @@ class TestFileMonitorIntegration:
         def mock_callback(filepath):
             uploaded_files.append(filepath)
 
+        config = {
+            'upload': {
+                'processed_files_registry': {
+                    'registry_file': '/tmp/test_registry.json',
+                    'retention_days': 1
+                }
+            }
+        }
+
         file_monitor = FileMonitor(
             [temp_dir],
             mock_callback,
+            config=config,
             stability_seconds=1
         )
 
@@ -477,9 +497,19 @@ class TestFileMonitorIntegration:
             def mock_callback(filepath):
                 uploaded_files.append(filepath)
 
+            config = {
+                'upload': {
+                    'processed_files_registry': {
+                        'registry_file': '/tmp/test_registry.json',
+                        'retention_days': 1
+                    }
+                }
+            }
+
             file_monitor = FileMonitor(
                 [temp_dir1, temp_dir2],
                 mock_callback,
+                config=config,
                 stability_seconds=1
             )
 
@@ -510,7 +540,16 @@ class TestFileMonitorIntegration:
                 raise Exception("Simulated upload error")
             # Second call succeeds
 
-        file_monitor = FileMonitor([temp_dir], failing_callback, stability_seconds=1)
+        config = {
+            'upload': {
+                'processed_files_registry': {
+                    'registry_file': '/tmp/test_registry.json',
+                    'retention_days': 1
+                }
+            }
+        }
+
+        file_monitor = FileMonitor([temp_dir], failing_callback, config=config, stability_seconds=1)
 
         try:
             file_monitor.start()

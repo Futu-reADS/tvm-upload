@@ -47,6 +47,9 @@ upload:
     start: "09:00"
     end: "16:00"
   queue_file: /tmp/tvm-test-queue.json
+  processed_files_registry:
+    registry_file: /tmp/tvm-test-registry-conftest.json
+    retention_days: 30
 
 disk:
   reserved_gb: 1
