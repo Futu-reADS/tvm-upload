@@ -226,6 +226,9 @@ monitoring:
         schedule: "15:00"
         file_stable_seconds: 60
         queue_file: /tmp/test-queue-op-hours.json
+        processed_files_registry:
+            registry_file: /tmp/test_registry_op_hours.json
+            retention_days: 30
         operational_hours:
             enabled: true
             start: "09:00"
@@ -294,6 +297,9 @@ monitoring:
         schedule: "15:00"
         file_stable_seconds: 60
         queue_file: /tmp/test-queue-no-op.json
+        processed_files_registry:
+            registry_file: /tmp/test_registry_no_op.json
+            retention_days: 30
         operational_hours:
             enabled: false  # ← Explicitly disabled
     disk:
@@ -658,6 +664,9 @@ s3:
 upload:
     schedule: "15:00"
     queue_file: {queue_file}
+    processed_files_registry:
+        registry_file: /tmp/test_registry_persist.json
+        retention_days: 30
 disk:
     reserved_gb: 1
 monitoring:
@@ -711,6 +720,9 @@ upload:
     schedule: "15:00"
     queue_file: /tmp/test-no-start-upload-queue.json
     upload_on_start: false
+    processed_files_registry:
+        registry_file: /tmp/test_registry_upload_on_start.json
+        retention_days: 30
 disk:
     reserved_gb: 1
 monitoring:
@@ -828,6 +840,9 @@ s3:
 upload:
     schedule: "15:00"
     queue_file: /tmp/test-op-edge-queue.json
+    processed_files_registry:
+        registry_file: /tmp/test_registry_op_edge.json
+        retention_days: 30
     operational_hours:
         enabled: true
         start: "09:00"
