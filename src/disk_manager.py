@@ -210,7 +210,7 @@ class DiskManager:
         return deleted_count
     
     def cleanup_by_age(self, max_age_days: int) -> int:
-        """Delete ALL files older than max_age_days (regardless of upload status)."""
+        """Delete ALL files older  than max_age_days (regardless of upload status)."""
         if max_age_days <= 0:
             logger.debug("Age-based cleanup disabled (max_age_days = 0)")
             return 0
