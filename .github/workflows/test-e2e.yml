@@ -24,6 +24,7 @@ jobs:
     # ✅ SIMPLIFIED: No need to check for secrets with OIDC
     if: |
       github.ref_name == 'main' || 
+      github.ref_name == 'e2e_test_update' || 
       github.event_name == 'workflow_dispatch' || 
       github.event_name == 'schedule'
 
