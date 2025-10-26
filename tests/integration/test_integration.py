@@ -159,7 +159,16 @@ class TestFileMonitorIntegration:
         def mock_callback(filepath):
             uploaded_files.append(filepath)
 
-        file_monitor = FileMonitor([temp_dir], mock_callback, stability_seconds=1)
+        config = {
+            'upload': {
+                'processed_files_registry': {
+                    'registry_file': '/tmp/test_registry.json',
+                    'retention_days': 1
+                }
+            }
+        }
+
+        file_monitor = FileMonitor([temp_dir], mock_callback, config=config, stability_seconds=1)
 
         try:
             file_monitor.start()
@@ -194,7 +203,16 @@ class TestFileMonitorIntegration:
         def mock_callback(filepath):
             uploaded_files.append(filepath)
 
-        file_monitor = FileMonitor([temp_dir], mock_callback, stability_seconds=1)
+        config = {
+            'upload': {
+                'processed_files_registry': {
+                    'registry_file': '/tmp/test_registry.json',
+                    'retention_days': 1
+                }
+            }
+        }
+
+        file_monitor = FileMonitor([temp_dir], mock_callback, config=config, stability_seconds=1)
 
         try:
             file_monitor.start()
@@ -263,7 +281,16 @@ class TestFileMonitorIntegration:
             uploaded_files.append(filepath)
             upload_timestamps.append(time.time())
 
-        file_monitor = FileMonitor([temp_dir], mock_callback, stability_seconds=2)
+        config = {
+            'upload': {
+                'processed_files_registry': {
+                    'registry_file': '/tmp/test_registry.json',
+                    'retention_days': 1
+                }
+            }
+        }
+
+        file_monitor = FileMonitor([temp_dir], mock_callback, config=config, stability_seconds=2)
 
         try:
             file_monitor.start()
@@ -297,7 +324,16 @@ class TestFileMonitorIntegration:
             uploaded_files.append(filepath)
             disk_manager.mark_uploaded(filepath, keep_until_days=0)
 
-        file_monitor = FileMonitor([temp_dir], mock_callback, stability_seconds=1)
+        config = {
+            'upload': {
+                'processed_files_registry': {
+                    'registry_file': '/tmp/test_registry.json',
+                    'retention_days': 1
+                }
+            }
+        }
+
+        file_monitor = FileMonitor([temp_dir], mock_callback, config=config, stability_seconds=1)
 
         try:
             file_monitor.start()

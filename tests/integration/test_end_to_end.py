@@ -36,6 +36,9 @@ upload:
   schedule: "15:00"
   file_stable_seconds: 2
   queue_file: {temp_dir}/queue.json
+  processed_files_registry:
+    registry_file: {temp_dir}/registry.json
+    retention_days: 30
   operational_hours:
     enabled: false
 
@@ -205,6 +208,9 @@ upload:
   schedule: "15:00"
   file_stable_seconds: 2
   queue_file: {temp_dir}/queue.json
+  processed_files_registry:
+    registry_file: {temp_dir}/registry.json
+    retention_days: 30
 deletion:
   after_upload:
     enabled: true
@@ -275,6 +281,9 @@ upload:
   schedule: "15:00"
   file_stable_seconds: 2
   queue_file: {temp_dir}/queue.json
+  processed_files_registry:
+    registry_file: {temp_dir}/registry.json
+    retention_days: 30
 deletion:
   after_upload:
     enabled: true
@@ -546,6 +555,9 @@ s3:
 upload:
   schedule: "15:00"
   queue_file: {temp_dir}/queue.json
+  processed_files_registry:
+    registry_file: {temp_dir}/registry.json
+    retention_days: 30
   batch_upload:
     enabled: true
 disk:
@@ -618,6 +630,9 @@ s3:
 upload:
   schedule: "15:00"
   queue_file: {temp_dir}/queue.json
+  processed_files_registry:
+    registry_file: {temp_dir}/registry.json
+    retention_days: 30
 disk:
   reserved_gb: 1
 monitoring:

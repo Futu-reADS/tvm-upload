@@ -39,7 +39,10 @@ upload:
   schedule: "15:00"
   file_stable_seconds: 2
   queue_file: {temp_dir}/queue.json
-  
+  processed_files_registry:
+    registry_file: {temp_dir}/registry.json
+    retention_days: 30
+
   scan_existing_files:
     enabled: true
     max_age_days: 3
@@ -126,6 +129,9 @@ s3:
 upload:
   schedule: "15:00"
   queue_file: {temp_dir}/queue.json
+  processed_files_registry:
+    registry_file: {temp_dir}/registry.json
+    retention_days: 30
 deletion:
   after_upload:
     enabled: true
@@ -180,6 +186,9 @@ s3:
 upload:
   schedule: "15:00"
   queue_file: {temp_dir}/queue.json
+  processed_files_registry:
+    registry_file: {temp_dir}/registry.json
+    retention_days: 30
 deletion:
   after_upload:
     enabled: false
@@ -292,6 +301,9 @@ s3:
 upload:
   schedule: "15:00"
   queue_file: {temp_dir}/queue.json
+  processed_files_registry:
+    registry_file: {temp_dir}/registry.json
+    retention_days: 30
 deletion:
   emergency:
     enabled: false
@@ -433,6 +445,9 @@ s3:
 upload:
   schedule: "15:00"
   queue_file: {temp_dir}/queue.json
+  processed_files_registry:
+    registry_file: {temp_dir}/registry.json
+    retention_days: 30
 deletion:
   after_upload:
     enabled: true
@@ -498,6 +513,9 @@ s3:
 upload:
   schedule: "15:00"
   queue_file: {temp_dir}/queue.json
+  processed_files_registry:
+    registry_file: {temp_dir}/registry.json
+    retention_days: 30
 deletion:
   after_upload:
     enabled: true
@@ -567,6 +585,9 @@ s3:
 upload:
   schedule: "15:00"
   queue_file: {temp_dir}/queue.json
+  processed_files_registry:
+    registry_file: {temp_dir}/registry.json
+    retention_days: 30
 deletion:
   emergency:
     enabled: true
@@ -623,6 +644,9 @@ s3:
 upload:
   schedule: "15:00"
   queue_file: {temp_dir}/queue.json
+  processed_files_registry:
+    registry_file: {temp_dir}/registry.json
+    retention_days: 30
 deletion:
   age_based:
     enabled: true
@@ -771,6 +795,9 @@ s3:
 upload:
   schedule: "15:00"
   queue_file: {temp_dir}/queue.json
+  processed_files_registry:
+    registry_file: {temp_dir}/registry.json
+    retention_days: 30
 deletion:
   age_based:
     enabled: true
@@ -839,6 +866,9 @@ s3:
 upload:
   schedule: "15:00"
   queue_file: {temp_dir}/queue.json
+  processed_files_registry:
+    registry_file: {temp_dir}/registry.json
+    retention_days: 30
 deletion:
   emergency:
     enabled: true
@@ -896,6 +926,9 @@ s3:
 upload:
   schedule: "15:00"
   queue_file: {temp_dir}/queue.json
+  processed_files_registry:
+    registry_file: {temp_dir}/registry.json
+    retention_days: 30
 deletion:
   after_upload:
     enabled: true
@@ -971,6 +1004,9 @@ s3:
 upload:
   schedule: "15:00"
   queue_file: {temp_dir}/queue.json
+  processed_files_registry:
+    registry_file: {temp_dir}/registry.json
+    retention_days: 30
 deletion:
   after_upload:
     enabled: true
