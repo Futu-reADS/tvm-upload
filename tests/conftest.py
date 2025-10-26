@@ -6,7 +6,14 @@ These are shared across unit, integration, and e2e tests
 
 import pytest
 import tempfile
+import sys
 from pathlib import Path
+
+# Add project root to Python path so 'src' module can be imported
+# This allows tests to run without installing the package
+project_root = Path(__file__).parent.parent
+if str(project_root) not in sys.path:
+    sys.path.insert(0, str(project_root))
 
 
 @pytest.fixture

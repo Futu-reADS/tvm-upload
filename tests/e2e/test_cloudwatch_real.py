@@ -9,7 +9,6 @@ import time
 from datetime import datetime, timedelta
 from unittest.mock import patch, Mock
 from botocore.exceptions import ClientError
-from src.cloudwatch_manager import CloudWatchManager
 
 
 # =============================================================================
@@ -20,6 +19,8 @@ from src.cloudwatch_manager import CloudWatchManager
 @pytest.mark.real_aws
 def test_publish_metrics_to_real_cloudwatch(real_cloudwatch_client, aws_config):
     """Test publishing metrics to real CloudWatch with verification"""
+    from src.cloudwatch_manager import CloudWatchManager
+
     cw = CloudWatchManager(
         region=aws_config['region'],
         vehicle_id='e2e-test-vehicle',
@@ -90,6 +91,8 @@ def test_publish_all_metric_types(real_cloudwatch_client, aws_config):
     - FailureCount (Count)
     - DiskUsagePercent (Gauge)
     """
+    from src.cloudwatch_manager import CloudWatchManager
+
     cw = CloudWatchManager(
         region=aws_config['region'],
         vehicle_id='e2e-test-vehicle',
@@ -129,6 +132,7 @@ def test_publish_all_metric_types(real_cloudwatch_client, aws_config):
 @pytest.mark.real_aws
 def test_publish_metrics_with_no_data(real_cloudwatch_client, aws_config):
     """Test that publishing with no recorded metrics doesn't cause errors"""
+    from src.cloudwatch_manager import CloudWatchManager
     cw = CloudWatchManager(
         region=aws_config['region'],
         vehicle_id='e2e-test-vehicle',
@@ -155,6 +159,7 @@ def test_publish_metrics_with_no_data(real_cloudwatch_client, aws_config):
 @pytest.mark.real_aws
 def test_publish_deletion_metrics(real_cloudwatch_client, aws_config):
     """Test publishing deletion policy metrics (v2.0)"""
+    from src.cloudwatch_manager import CloudWatchManager
     cw = CloudWatchManager(
         region=aws_config['region'],
         vehicle_id='e2e-test-vehicle',
@@ -181,6 +186,7 @@ def test_publish_deletion_metrics(real_cloudwatch_client, aws_config):
 @pytest.mark.real_aws
 def test_publish_queue_metrics(real_cloudwatch_client, aws_config):
     """Test publishing queue size metrics (v2.0)"""
+    from src.cloudwatch_manager import CloudWatchManager
     cw = CloudWatchManager(
         region=aws_config['region'],
         vehicle_id='e2e-test-vehicle',
@@ -203,6 +209,7 @@ def test_publish_queue_metrics(real_cloudwatch_client, aws_config):
 @pytest.mark.real_aws
 def test_publish_zero_bytes_uploaded(real_cloudwatch_client, aws_config):
     """Test publishing metrics when zero bytes were uploaded"""
+    from src.cloudwatch_manager import CloudWatchManager
     cw = CloudWatchManager(
         region=aws_config['region'],
         vehicle_id='e2e-test-vehicle-zero',
@@ -233,6 +240,8 @@ def test_publish_zero_bytes_uploaded(real_cloudwatch_client, aws_config):
 @pytest.mark.real_aws
 def test_cloudwatch_alarm_creation(real_cloudwatch_client, aws_config):
     """Test creating CloudWatch alarm with verification"""
+    from src.cloudwatch_manager import CloudWatchManager
+
     alarm_name = f"TVM-LowUpload-e2e-test-vehicle"
 
     cw = CloudWatchManager(
@@ -284,21 +293,25 @@ def test_cloudwatch_alarm_creation(real_cloudwatch_client, aws_config):
 @pytest.mark.real_aws
 def test_alarm_with_different_thresholds(real_cloudwatch_client, aws_config):
     """Test creating alarms with various threshold values"""
-    vehicle_id = 'e2e-test-threshold'
+    from src.cloudwatch_manager import CloudWatchManager
+
     thresholds = [10, 50, 200, 500]  # MB
     alarm_names = []
 
-    cw = CloudWatchManager(
-        region=aws_config['region'],
-        vehicle_id=vehicle_id,
-        enabled=True
-    )
-    cw.cw_client = real_cloudwatch_client
-
     try:
         for threshold in thresholds:
-            alarm_name = f"TVM-LowUpload-{vehicle_id}-{threshold}MB"
+            # Use unique vehicle_id for each threshold so alarms don't overwrite
+            vehicle_id = f'e2e-test-threshold-{threshold}'
+            alarm_name = f"TVM-LowUpload-{vehicle_id}"
             alarm_names.append(alarm_name)
+
+            # Create CloudWatch manager for this vehicle
+            cw = CloudWatchManager(
+                region=aws_config['region'],
+                vehicle_id=vehicle_id,
+                enabled=True
+            )
+            cw.cw_client = real_cloudwatch_client
 
             # Create alarm with specific threshold
             cw.create_low_upload_alarm(threshold_mb=threshold)
@@ -308,11 +321,11 @@ def test_alarm_with_different_thresholds(real_cloudwatch_client, aws_config):
                 AlarmNames=[alarm_name]
             )
 
-            assert len(response['MetricAlarms']) == 1
+            assert len(response['MetricAlarms']) == 1, f"Alarm {alarm_name} should exist"
             alarm = response['MetricAlarms'][0]
-            assert alarm['Threshold'] == threshold * 1024 * 1024
+            assert alarm['Threshold'] == threshold * 1024 * 1024, f"Threshold mismatch for {alarm_name}"
 
-            print(f"✓ Alarm created with {threshold}MB threshold")
+            print(f"✓ Alarm created with {threshold}MB threshold (vehicle: {vehicle_id})")
 
         print(f"✓ All {len(thresholds)} threshold variations verified")
 
@@ -332,6 +345,8 @@ def test_alarm_with_different_thresholds(real_cloudwatch_client, aws_config):
 @pytest.mark.real_aws
 def test_alarm_state_verification(real_cloudwatch_client, aws_config):
     """Test alarm state after creation (should be INSUFFICIENT_DATA initially)"""
+    from src.cloudwatch_manager import CloudWatchManager
+
     alarm_name = f"TVM-LowUpload-e2e-test-state"
 
     cw = CloudWatchManager(
@@ -374,6 +389,8 @@ def test_alarm_state_verification(real_cloudwatch_client, aws_config):
 @pytest.mark.real_aws
 def test_alarm_update_scenario(real_cloudwatch_client, aws_config):
     """Test updating an existing alarm with new threshold"""
+    from src.cloudwatch_manager import CloudWatchManager
+
     alarm_name = f"TVM-LowUpload-e2e-test-update"
 
     cw = CloudWatchManager(
@@ -423,6 +440,7 @@ def test_alarm_update_scenario(real_cloudwatch_client, aws_config):
 @pytest.mark.real_aws
 def test_publish_metrics_with_api_error_simulation(real_cloudwatch_client, aws_config):
     """Test CloudWatch manager handles API errors gracefully"""
+    from src.cloudwatch_manager import CloudWatchManager
     cw = CloudWatchManager(
         region=aws_config['region'],
         vehicle_id='e2e-test-error',
@@ -457,6 +475,7 @@ def test_publish_metrics_with_api_error_simulation(real_cloudwatch_client, aws_c
 @pytest.mark.real_aws
 def test_metrics_accumulate_after_publish_error(real_cloudwatch_client, aws_config):
     """Test that metrics continue accumulating if publish fails"""
+    from src.cloudwatch_manager import CloudWatchManager
     cw = CloudWatchManager(
         region=aws_config['region'],
         vehicle_id='e2e-test-accumulate',
@@ -489,6 +508,7 @@ def test_metrics_accumulate_after_publish_error(real_cloudwatch_client, aws_conf
 @pytest.mark.real_aws
 def test_alarm_creation_with_invalid_parameters(real_cloudwatch_client, aws_config):
     """Test alarm creation handles invalid parameters"""
+    from src.cloudwatch_manager import CloudWatchManager
     cw = CloudWatchManager(
         region=aws_config['region'],
         vehicle_id='e2e-test-invalid',
@@ -515,6 +535,8 @@ def test_alarm_creation_with_invalid_parameters(real_cloudwatch_client, aws_conf
 @pytest.mark.real_aws
 def test_multi_vehicle_metrics_isolation(real_cloudwatch_client, aws_config):
     """Test that metrics from different vehicles are properly isolated"""
+    from src.cloudwatch_manager import CloudWatchManager
+
     vehicles = ['e2e-vehicle-1', 'e2e-vehicle-2', 'e2e-vehicle-3']
 
     for vehicle_id in vehicles:
@@ -542,6 +564,7 @@ def test_multi_vehicle_metrics_isolation(real_cloudwatch_client, aws_config):
 @pytest.mark.real_aws
 def test_namespace_verification(real_cloudwatch_client, aws_config):
     """Test that metrics are published to correct namespace"""
+    from src.cloudwatch_manager import CloudWatchManager
     cw = CloudWatchManager(
         region=aws_config['region'],
         vehicle_id='e2e-test-namespace',
@@ -588,6 +611,7 @@ def test_namespace_verification(real_cloudwatch_client, aws_config):
 @pytest.mark.real_aws
 def test_cloudwatch_disabled_mode(aws_config):
     """Test that CloudWatch manager works correctly when disabled"""
+    from src.cloudwatch_manager import CloudWatchManager
     cw = CloudWatchManager(
         region=aws_config['region'],
         vehicle_id='e2e-test-disabled',
@@ -626,6 +650,7 @@ def test_cloudwatch_disabled_mode(aws_config):
 @pytest.mark.real_aws
 def test_extreme_disk_usage_values(real_cloudwatch_client, aws_config):
     """Test publishing metrics with extreme disk usage percentages"""
+    from src.cloudwatch_manager import CloudWatchManager
     cw = CloudWatchManager(
         region=aws_config['region'],
         vehicle_id='e2e-test-extreme',
@@ -651,6 +676,7 @@ def test_extreme_disk_usage_values(real_cloudwatch_client, aws_config):
 @pytest.mark.real_aws
 def test_very_large_upload_metrics(real_cloudwatch_client, aws_config):
     """Test publishing metrics for very large uploads"""
+    from src.cloudwatch_manager import CloudWatchManager
     cw = CloudWatchManager(
         region=aws_config['region'],
         vehicle_id='e2e-test-large',
@@ -680,6 +706,7 @@ def test_very_large_upload_metrics(real_cloudwatch_client, aws_config):
 @pytest.mark.real_aws
 def test_many_small_uploads(real_cloudwatch_client, aws_config):
     """Test publishing metrics for many small file uploads"""
+    from src.cloudwatch_manager import CloudWatchManager
     cw = CloudWatchManager(
         region=aws_config['region'],
         vehicle_id='e2e-test-many',
@@ -709,6 +736,7 @@ def test_many_small_uploads(real_cloudwatch_client, aws_config):
 @pytest.mark.real_aws
 def test_mixed_success_and_failure_ratios(real_cloudwatch_client, aws_config):
     """Test various ratios of successful and failed uploads"""
+    from src.cloudwatch_manager import CloudWatchManager
     cw = CloudWatchManager(
         region=aws_config['region'],
         vehicle_id='e2e-test-ratio',
@@ -751,6 +779,7 @@ def test_high_frequency_metric_publishing(real_cloudwatch_client, aws_config):
     Simulates real-world scenario where metrics are published
     every hour throughout the day
     """
+    from src.cloudwatch_manager import CloudWatchManager
     cw = CloudWatchManager(
         region=aws_config['region'],
         vehicle_id='e2e-test-vehicle-hf',
@@ -789,6 +818,7 @@ def test_high_frequency_metric_publishing(real_cloudwatch_client, aws_config):
 @pytest.mark.slow
 def test_rapid_successive_publishes(real_cloudwatch_client, aws_config):
     """Test publishing metrics in rapid succession without delays"""
+    from src.cloudwatch_manager import CloudWatchManager
     cw = CloudWatchManager(
         region=aws_config['region'],
         vehicle_id='e2e-test-rapid',
@@ -820,6 +850,7 @@ def test_rapid_successive_publishes(real_cloudwatch_client, aws_config):
 @pytest.mark.slow
 def test_sustained_metric_accumulation(real_cloudwatch_client, aws_config):
     """Test accumulating metrics over time before publishing"""
+    from src.cloudwatch_manager import CloudWatchManager
     cw = CloudWatchManager(
         region=aws_config['region'],
         vehicle_id='e2e-test-sustained',
@@ -857,6 +888,8 @@ def test_sustained_metric_accumulation(real_cloudwatch_client, aws_config):
 @pytest.mark.real_aws
 def test_complete_monitoring_cycle(real_cloudwatch_client, aws_config):
     """Test complete monitoring cycle: create alarm, publish metrics, verify"""
+    from src.cloudwatch_manager import CloudWatchManager
+
     vehicle_id = 'e2e-test-complete'
     alarm_name = f"TVM-LowUpload-{vehicle_id}"
 
@@ -905,6 +938,8 @@ def test_complete_monitoring_cycle(real_cloudwatch_client, aws_config):
 @pytest.mark.real_aws
 def test_metric_dimensions_verification(real_cloudwatch_client, aws_config):
     """Test that metrics include correct dimensions (VehicleId)"""
+    from src.cloudwatch_manager import CloudWatchManager
+
     vehicle_id = 'e2e-test-dimensions'
 
     cw = CloudWatchManager(
