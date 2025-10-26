@@ -3,7 +3,7 @@ name: E2E Tests (Real AWS - OIDC)
 
 on:
   push:
-    branches: [main]
+    branches: [main,e2e_test_update]
   workflow_dispatch:
   schedule:
     - cron: '0 2 * * *'  # 02:00 UTC (11:00 JST)
