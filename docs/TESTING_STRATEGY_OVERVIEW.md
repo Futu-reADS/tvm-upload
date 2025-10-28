@@ -112,7 +112,7 @@ We have implemented a **comprehensive 3-tier testing strategy** with **180+ auto
                       ↓
 ┌─────────────────────────────────────────────────────┐
 │  2. Run Quick Check (pre-commit)                    │
-│     - ./scripts/quick_check.sh                      │
+│     - ./scripts/testing/quick_check.sh                      │
 │     - Linting + type checking + unit tests          │
 │     - Expected time: < 30 seconds                   │
 └─────────────────────────────────────────────────────┘
@@ -444,10 +444,10 @@ Alarm operations:     ~20 PutMetricAlarm/Delete       ≈ $0.01
        pytest tests/unit/ tests/integration/ -v
 
    test-all:
-       ./scripts/run_tests.sh all
+       ./scripts/testing/run_tests.sh all
 
    test-coverage:
-       ./scripts/test_coverage.sh
+       ./scripts/testing/test_coverage.sh
    ```
 
 3. **Document Test Fixtures**

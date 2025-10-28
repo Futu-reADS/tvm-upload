@@ -222,7 +222,7 @@ if [ "${CLOUDWATCH_OK:-true}" = "true" ]; then
     echo "  sed -i 's/cloudwatch_enabled: false/cloudwatch_enabled: true/' config/config.yaml"
     echo ""
     echo "To run tests:"
-    echo "  ./scripts/run_manual_tests.sh"
+    echo "  ./scripts/testing/run_manual_tests.sh"
     exit 0
 else
     echo "⚠ PARTIAL SUCCESS - S3 works, CloudWatch needs attention"
@@ -239,6 +239,6 @@ else
     echo "Tests 4-5 (CloudWatch) will be skipped."
     echo ""
     echo "To run limited tests:"
-    echo "  ./scripts/run_manual_tests.sh config/config.yaml \"1 2 3 6 7 8 9 10 11 12\""
+    echo "  ./scripts/testing/run_manual_tests.sh config/config.yaml \"1 2 3 6 7 8 9 10 11 12\""
     exit 0
 fi

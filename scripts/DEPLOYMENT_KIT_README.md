@@ -10,10 +10,10 @@ Professional vehicle deployment toolkit with automated installation, validation,
 
 | Script | Purpose | Duration | Usage |
 |--------|---------|----------|-------|
-| **verify_deployment.sh** | Pre-deployment validation | 30 sec | `./scripts/verify_deployment.sh` |
-| **install.sh** | Master installer | 2-3 min | `sudo ./scripts/install.sh` |
-| **health_check.sh** | Post-deployment verification | 10 sec | `sudo ./scripts/health_check.sh` |
-| **uninstall.sh** | Clean removal | 30 sec | `sudo ./scripts/uninstall.sh` |
+| **verify_deployment.sh** | Pre-deployment validation | 30 sec | `./scripts/deployment/verify_deployment.sh` |
+| **install.sh** | Master installer | 2-3 min | `sudo ./scripts/deployment/install.sh` |
+| **health_check.sh** | Post-deployment verification | 10 sec | `sudo ./scripts/deployment/health_check.sh` |
+| **uninstall.sh** | Clean removal | 30 sec | `sudo ./scripts/deployment/uninstall.sh` |
 
 ### Documentation
 
@@ -42,13 +42,13 @@ cp config/config.yaml.example config/config.yaml
 nano config/config.yaml  # Set vehicle_id
 
 # 4. Validate
-./scripts/verify_deployment.sh
+./scripts/deployment/verify_deployment.sh
 
 # 5. Install (ONE COMMAND!)
-sudo ./scripts/install.sh
+sudo ./scripts/deployment/install.sh
 
 # 6. Verify
-sudo ./scripts/health_check.sh
+sudo ./scripts/deployment/health_check.sh
 ```
 
 **Total time: ~5 minutes**
@@ -110,7 +110,7 @@ System Requirements
 [PASS] Environment ready for deployment ✓
 
 Ready to install:
-  sudo ./scripts/install.sh
+  sudo ./scripts/deployment/install.sh
 ```
 
 ---
@@ -191,7 +191,7 @@ Vehicle Information:
 
 Next Steps:
   1. Monitor logs:       journalctl -u tvm-upload -f
-  2. Check health:       sudo ./scripts/health_check.sh
+  2. Check health:       sudo ./scripts/deployment/health_check.sh
   3. View S3 uploads:    aws s3 ls s3://t01logs/vehicle-CN-001/
 ```
 
@@ -298,7 +298,7 @@ Health Check Summary
 WARNING: This will completely remove TVM Upload system
          All data (queue, registry, logs) will be deleted!
 
-To keep data, run: sudo ./scripts/uninstall.sh --keep-data
+To keep data, run: sudo ./scripts/deployment/uninstall.sh --keep-data
 
 Are you sure you want to continue? (yes/no): yes
 
@@ -380,17 +380,17 @@ CONFIG_DIR="/etc/tvm-upload"
 
 ```bash
 # Skip validation (not recommended)
-sudo ./scripts/install.sh --skip-validation
+sudo ./scripts/deployment/install.sh --skip-validation
 
 # Or run validation separately
-./scripts/verify_deployment.sh && sudo ./scripts/install.sh
+./scripts/deployment/verify_deployment.sh && sudo ./scripts/deployment/install.sh
 ```
 
 ### Custom Configuration
 
 ```bash
 # Use alternate config file
-./scripts/verify_deployment.sh /path/to/custom-config.yaml
+./scripts/deployment/verify_deployment.sh /path/to/custom-config.yaml
 ```
 
 ---
@@ -446,17 +446,17 @@ git pull origin main
 sudo cp /etc/tvm-upload/config.yaml /tmp/config.yaml.backup
 
 # 3. Uninstall old version
-sudo ./scripts/uninstall.sh --keep-data
+sudo ./scripts/deployment/uninstall.sh --keep-data
 
 # 4. Install new version
-sudo ./scripts/install.sh
+sudo ./scripts/deployment/install.sh
 
 # 5. Restore config if needed
 sudo cp /tmp/config.yaml.backup /etc/tvm-upload/config.yaml
 sudo systemctl restart tvm-upload
 
 # 6. Verify
-sudo ./scripts/health_check.sh
+sudo ./scripts/deployment/health_check.sh
 ```
 
 ---
@@ -464,9 +464,9 @@ sudo ./scripts/health_check.sh
 ## 📞 Support
 
 **Deployment Issues:**
-1. Check validation: `./scripts/verify_deployment.sh`
+1. Check validation: `./scripts/deployment/verify_deployment.sh`
 2. Review logs: `journalctl -u tvm-upload -n 100`
-3. Run health check: `sudo ./scripts/health_check.sh`
+3. Run health check: `sudo ./scripts/deployment/health_check.sh`
 
 **Documentation:**
 - Full Guide: `docs/DEPLOYMENT_GUIDE.md`

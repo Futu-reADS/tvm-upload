@@ -457,7 +457,7 @@ Defined in `pytest.ini`:
 
 ### Test Runner Script
 
-For convenience, use `scripts/run_tests.sh` - a professional test runner with automatic venv setup, coverage reporting, and colored output.
+For convenience, use `scripts/testing/run_tests.sh` - a professional test runner with automatic venv setup, coverage reporting, and colored output.
 
 **Basic Usage:**
 

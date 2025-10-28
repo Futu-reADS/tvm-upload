@@ -12,10 +12,11 @@ set -o pipefail  # Propagate exit codes through pipes
 
 # Get script directory
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+SCRIPTS_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
 # Load helper functions
-source "${SCRIPT_DIR}/lib/test_helpers.sh"
+source "${SCRIPTS_ROOT}/lib/test_helpers.sh"
 
 # Configuration
 CONFIG_FILE="${1:-config/config.yaml}"

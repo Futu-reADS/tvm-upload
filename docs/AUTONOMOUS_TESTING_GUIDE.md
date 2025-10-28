@@ -723,25 +723,25 @@ jobs:
 
 ## Test Execution Scripts
 
-### Script 1: `scripts/run_tests.sh`
+### Script 1: `scripts/testing/run_tests.sh`
 
 **Purpose:** Unified test runner for all test types
 
 **Usage:**
 ```bash
 # Run all tests
-./scripts/run_tests.sh all
+./scripts/testing/run_tests.sh all
 
 # Run specific test type
-./scripts/run_tests.sh unit
-./scripts/run_tests.sh integration
-./scripts/run_tests.sh e2e
+./scripts/testing/run_tests.sh unit
+./scripts/testing/run_tests.sh integration
+./scripts/testing/run_tests.sh e2e
 
 # With coverage
-./scripts/run_tests.sh unit --cov
+./scripts/testing/run_tests.sh unit --cov
 
 # Verbose output
-./scripts/run_tests.sh all -v
+./scripts/testing/run_tests.sh all -v
 ```
 
 **Implementation:**
@@ -770,9 +770,9 @@ case "$TEST_TYPE" in
 
   all)
     echo "Running all tests..."
-    ./scripts/run_tests.sh unit $EXTRA_ARGS
-    ./scripts/run_tests.sh integration $EXTRA_ARGS
-    ./scripts/run_tests.sh e2e $EXTRA_ARGS
+    ./scripts/testing/run_tests.sh unit $EXTRA_ARGS
+    ./scripts/testing/run_tests.sh integration $EXTRA_ARGS
+    ./scripts/testing/run_tests.sh e2e $EXTRA_ARGS
     ;;
 
   *)
@@ -790,7 +790,7 @@ esac
 
 **Usage:**
 ```bash
-./scripts/test_coverage.sh
+./scripts/testing/test_coverage.sh
 ```
 
 **Output:**
@@ -816,7 +816,7 @@ HTML report: htmlcov/index.html
 
 **Usage:**
 ```bash
-./scripts/quick_check.sh
+./scripts/testing/quick_check.sh
 ```
 
 **What it runs:**

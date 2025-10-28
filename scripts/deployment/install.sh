@@ -313,7 +313,7 @@ info "Creating convenience scripts..."
 
 cat > "$INSTALL_ROOT/health_check.sh" <<'EOF'
 #!/bin/bash
-sudo /opt/tvm-upload/scripts/health_check.sh
+sudo /opt/tvm-upload/scripts/deployment/health_check.sh
 EOF
 chmod +x "$INSTALL_ROOT/health_check.sh"
 

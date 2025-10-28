@@ -48,7 +48,7 @@ Welcome to the TVM Upload System documentation! This directory contains comprehe
 **1. Run tests before committing:**
 ```bash
 # Fast check (< 30 seconds)
-./scripts/quick_check.sh
+./scripts/testing/quick_check.sh
 
 # Full local tests (< 2 minutes)
 pytest tests/unit/ tests/integration/ -v
@@ -56,7 +56,7 @@ pytest tests/unit/ tests/integration/ -v
 
 **2. Check coverage:**
 ```bash
-./scripts/test_coverage.sh
+./scripts/testing/test_coverage.sh
 ```
 
 **3. Push code:**
@@ -236,18 +236,18 @@ We follow the **Test Pyramid** approach:
 
 ```bash
 # Run all tests
-./scripts/run_tests.sh all
+./scripts/testing/run_tests.sh all
 
 # Run specific type
-./scripts/run_tests.sh unit
-./scripts/run_tests.sh integration
-./scripts/run_tests.sh e2e
+./scripts/testing/run_tests.sh unit
+./scripts/testing/run_tests.sh integration
+./scripts/testing/run_tests.sh e2e
 
 # Coverage report
-./scripts/test_coverage.sh
+./scripts/testing/test_coverage.sh
 
 # Pre-commit check
-./scripts/quick_check.sh
+./scripts/testing/quick_check.sh
 ```
 
 ### Detailed Usage
