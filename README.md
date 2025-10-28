@@ -463,36 +463,36 @@ For convenience, use `scripts/run_tests.sh` - a professional test runner with au
 
 ```bash
 # Run all tests (unit + integration + e2e)
-./scripts/run_tests.sh
+./scripts/testing/run_tests.sh
 
 # Or specify a test mode
-./scripts/run_tests.sh unit          # Unit tests only (~5s)
-./scripts/run_tests.sh integration   # Integration tests only (~15s)
-./scripts/run_tests.sh e2e           # E2E tests only (~60s, requires AWS)
-./scripts/run_tests.sh fast          # Unit + integration (skip E2E)
+./scripts/testing/run_tests.sh unit          # Unit tests only (~5s)
+./scripts/testing/run_tests.sh integration   # Integration tests only (~15s)
+./scripts/testing/run_tests.sh e2e           # E2E tests only (~60s, requires AWS)
+./scripts/testing/run_tests.sh fast          # Unit + integration (skip E2E)
 ```
 
 **Options:**
 
 ```bash
 # Generate coverage report (HTML output in htmlcov/)
-./scripts/run_tests.sh all --coverage
+./scripts/testing/run_tests.sh all --coverage
 
 # Verbose output for debugging
-./scripts/run_tests.sh unit --verbose
+./scripts/testing/run_tests.sh unit --verbose
 
 # Combine options
-./scripts/run_tests.sh fast --coverage --verbose
+./scripts/testing/run_tests.sh fast --coverage --verbose
 ```
 
 **Environment Variables:**
 
 ```bash
 # Use different AWS profile for E2E tests
-AWS_PROFILE=prod ./scripts/run_tests.sh e2e
+AWS_PROFILE=prod ./scripts/testing/run_tests.sh e2e
 
 # Enable coverage via environment variable
-COVERAGE=true ./scripts/run_tests.sh all
+COVERAGE=true ./scripts/testing/run_tests.sh all
 ```
 
 **Test Modes:**
@@ -509,20 +509,20 @@ COVERAGE=true ./scripts/run_tests.sh all
 
 ```bash
 # Quick local testing (no AWS needed)
-./scripts/run_tests.sh fast
+./scripts/testing/run_tests.sh fast
 
 # Full test suite with coverage report
-./scripts/run_tests.sh all --coverage
+./scripts/testing/run_tests.sh all --coverage
 # Then open: htmlcov/index.html
 
 # E2E tests with production AWS profile
-AWS_PROFILE=prod ./scripts/run_tests.sh e2e
+AWS_PROFILE=prod ./scripts/testing/run_tests.sh e2e
 
 # Debug failing unit tests
-./scripts/run_tests.sh unit --verbose
+./scripts/testing/run_tests.sh unit --verbose
 
 # Help
-./scripts/run_tests.sh help
+./scripts/testing/run_tests.sh help
 ```
 
 **Features:**

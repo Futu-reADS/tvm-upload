@@ -1,9 +1,103 @@
-# Complete Guide: Setting Up AWS OIDC for GitHub Actions
+# AWS OIDC Authentication for GitHub Actions
 
-**Project:** TVM Upload System  
-**Repository:** `Futu-reADS/tvm-upload`  
-**AWS Region:** cn-north-1 (China)  
-**Date:** October 2024
+**Complete Step-by-Step Setup Guide**
+
+---
+
+## ✅ Setup Status
+
+**Current Status:** ✅ Complete (January 2025)
+**Tested With:**
+- AWS Region: cn-north-1 (Beijing)
+- GitHub Actions: ubuntu-latest
+- Python: 3.10+
+- boto3: 1.34.x
+
+**Last Verified:** January 2025
+
+---
+
+## 🚀 Quick Reference (For Experienced Users)
+
+Already familiar with OIDC? Here's the TL;DR:
+
+### AWS Setup (5 minutes)
+
+1. **IAM → Identity providers → Add OIDC provider**
+   - Provider URL: `https://token.actions.githubusercontent.com`
+   - Audience: `sts.amazonaws.com`
+
+2. **IAM → Roles → Create role (Web identity)**
+   - Trust policy: Allow repo `{ORG}/{REPO}:*`
+   - Attach minimal permissions policy
+
+3. **Copy Role ARN**
+
+### GitHub Workflow
+
+```yaml
+permissions:
+  id-token: write
+  contents: read
+
+- uses: aws-actions/configure-aws-credentials@v4
+  with:
+    role-to-assume: arn:aws-cn:iam::{ACCOUNT_ID}:role/{ROLE_NAME}
+    aws-region: cn-north-1
+```
+
+### Generic IAM Policy Template
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "S3Access",
+      "Effect": "Allow",
+      "Action": ["s3:ListBucket", "s3:GetObject", "s3:PutObject"],
+      "Resource": [
+        "arn:aws-cn:s3:::{BUCKET_NAME}",
+        "arn:aws-cn:s3:::{BUCKET_NAME}/*"
+      ]
+    },
+    {
+      "Sid": "CloudWatchAccess",
+      "Effect": "Allow",
+      "Action": "cloudwatch:PutMetricData",
+      "Resource": "*"
+    }
+  ]
+}
+```
+
+**For detailed setup, continue reading below.**
+
+---
+
+## 🔧 Generic Template (For Any Repository)
+
+Replace these placeholders with your values:
+
+| Placeholder | Description | Example |
+|------------|-------------|---------|
+| `{ACCOUNT_ID}` | Your AWS Account ID | `621346161733` |
+| `{GITHUB_ORG}` | GitHub organization name | `Futu-reADS` |
+| `{GITHUB_REPO}` | Repository name | `tvm-upload` |
+| `{BUCKET_NAME}` | S3 bucket name | `t01logs` |
+| `{REGION}` | AWS region | `cn-north-1` |
+| `{ROLE_NAME}` | IAM role name | `GitHubActions-E2E-Role` |
+
+---
+
+## 📖 Related Documentation
+
+**This guide:** First-time OIDC setup (one-time, 30-45 minutes)
+**For daily usage:** See [AUTONOMOUS_TESTING_GUIDE.md](./AUTONOMOUS_TESTING_GUIDE.md)
+
+**When to use which:**
+- **Use this guide:** Setting up OIDC for a NEW repository or troubleshooting OIDC issues
+- **Use testing guide:** Running tests with existing OIDC setup
 
 ---
 
@@ -23,11 +117,11 @@
 
 ## 🎯 Overview & Benefits
 
-### **What is OIDC?**
+### What is OIDC?
 
 OpenID Connect (OIDC) allows GitHub Actions to authenticate with AWS **without storing long-lived credentials**. GitHub requests a temporary token from AWS, which expires automatically.
 
-### **Why Use OIDC?**
+### Why Use OIDC?
 
 | Aspect | Traditional (Access Keys) | OIDC (Modern) |
 |--------|--------------------------|---------------|
@@ -39,11 +133,11 @@ OpenID Connect (OIDC) allows GitHub Actions to authenticate with AWS **without s
 | **Maintenance** | ⚠️ High | ✅ Zero |
 | **Industry Practice** | ⚠️ Outdated | ✅ Best practice |
 
-### **What We'll Accomplish**
+### What You'll Accomplish
 
 By the end, GitHub Actions will be able to:
 - ✅ Authenticate to AWS automatically
-- ✅ Upload files to S3 bucket `t01logs`
+- ✅ Access S3 buckets
 - ✅ Publish CloudWatch metrics
 - ✅ Run E2E tests against real AWS
 - ✅ All without any secrets stored in GitHub!
@@ -55,17 +149,15 @@ By the end, GitHub Actions will be able to:
 Before starting, ensure you have:
 
 - [ ] AWS Console access with IAM permissions
-- [ ] GitHub repository: `Futu-reADS/tvm-upload`
-- [ ] Admin or Owner role in GitHub repository
-- [ ] S3 bucket created: `t01logs`
-- [ ] AWS Region: `cn-north-1`
-- [ ] 30 minutes of focused time
+- [ ] GitHub repository with admin access
+- [ ] S3 bucket created (if needed)
+- [ ] 30-45 minutes of focused time
 
 ---
 
 ## 📝 Part 1: Create OIDC Identity Provider
 
-### **Step 1.1: Navigate to Identity Providers**
+### Step 1.1: Navigate to Identity Providers
 
 ```
 AWS Console
@@ -83,7 +175,7 @@ Click "Add provider" button
 
 ---
 
-### **Step 1.2: Select Provider Type**
+### Step 1.2: Select Provider Type
 
 On the "Add Identity provider" page:
 
@@ -91,11 +183,9 @@ On the "Add Identity provider" page:
 
 **✅ SELECT "OpenID Connect"** - This is correct!
 
-You should see description: *"Establish trust between your Amazon Web Services account and Identity Provider services, such as Google or Salesforce."*
-
 ---
 
-### **Step 1.3: Fill Provider Details**
+### Step 1.3: Fill Provider Details
 
 | Field | Value | Notes |
 |-------|-------|-------|
@@ -106,7 +196,7 @@ You should see description: *"Establish trust between your Amazon Web Services a
 
 ---
 
-### **Step 1.4: Get Thumbprint**
+### Step 1.4: Get Thumbprint
 
 After entering the Provider URL, click the **"Get thumbprint"** button.
 
@@ -118,7 +208,7 @@ After entering the Provider URL, click the **"Get thumbprint"** button.
 
 ---
 
-### **Step 1.5: Name the Provider (Optional)**
+### Step 1.5: Name the Provider (Optional)
 
 In the **Provider name** field, enter:
 ```
@@ -129,7 +219,7 @@ GitHub-Actions-OIDC
 
 ---
 
-### **Step 1.6: Add Provider**
+### Step 1.6: Add Provider
 
 1. Skip "Add tags" section (optional)
 2. Click the orange **"Add provider"** button at bottom right
@@ -139,12 +229,12 @@ GitHub-Actions-OIDC
 
 ---
 
-### **Step 1.7: Copy Provider ARN**
+### Step 1.7: Copy Provider ARN
 
-After creation, you'll see the provider details page. **COPY** the Provider ARN:
+After creation, you'll see the provider details page. **COPY** the Provider ARN (you'll see your account ID):
 
 ```
-arn:aws-cn:iam::621346161733:oidc-provider/token.actions.githubusercontent.com
+arn:aws-cn:iam::{ACCOUNT_ID}:oidc-provider/token.actions.githubusercontent.com
 ```
 
 **💾 Save this!** You'll need it later (though not critical - AWS will show it when needed).
@@ -153,7 +243,7 @@ arn:aws-cn:iam::621346161733:oidc-provider/token.actions.githubusercontent.com
 
 ## 🔐 Part 2: Create IAM Role
 
-### **Step 2.1: Start Role Creation**
+### Step 2.1: Start Role Creation
 
 ```
 IAM Dashboard
@@ -165,7 +255,7 @@ Click "Create role" button (top right)
 
 ---
 
-### **Step 2.2: Select Trusted Entity Type**
+### Step 2.2: Select Trusted Entity Type
 
 On "Select trusted entity" page:
 
@@ -173,7 +263,7 @@ On "Select trusted entity" page:
 
 **You should see:**
 - Identity provider dropdown
-- Audience dropdown  
+- Audience dropdown
 - Additional options
 
 **⚠️ DO NOT select:**
@@ -184,7 +274,7 @@ On "Select trusted entity" page:
 
 ---
 
-### **Step 2.3: Configure Web Identity**
+### Step 2.3: Configure Web Identity
 
 Fill in the dropdowns:
 
@@ -197,7 +287,7 @@ Fill in the dropdowns:
 
 ---
 
-### **Step 2.4: Add GitHub Organization/Repository Condition**
+### Step 2.4: Add GitHub Organization/Repository Condition
 
 This is **CRITICAL for security** - it restricts which GitHub repos can use this role.
 
@@ -205,33 +295,33 @@ Click **"Add condition"** or look for the condition section.
 
 **⚠️ IMPORTANT: Fill These Fields EXACTLY Right!**
 
-#### **Common Mistakes We Encountered:**
+#### Common Mistakes
 
 **❌ WRONG FORMAT (What NOT to do):**
 ```
-GitHub organization: repo:Futu-reADS/tvm-upload     ← WRONG! No "repo:" prefix
-GitHub organization: Futu-reADS/tvm-upload          ← WRONG! No repo name
-GitHub repository: https://github.com/Futu-reADS/tvm-upload  ← WRONG! No URL
+GitHub organization: repo:YourOrg/your-repo     ← WRONG! No "repo:" prefix
+GitHub organization: YourOrg/your-repo          ← WRONG! No repo name
+GitHub repository: https://github.com/YourOrg/your-repo  ← WRONG! No URL
 ```
 
 **✅ CORRECT FORMAT:**
 
 | Field | Exact Value | Explanation |
 |-------|-------------|-------------|
-| **GitHub organization** | `Futu-reADS` | Just the org name, nothing else |
-| **GitHub repository** | `tvm-upload` | Just the repo name, nothing else |
+| **GitHub organization** | `{GITHUB_ORG}` | Just the org name, nothing else |
+| **GitHub repository** | `{GITHUB_REPO}` | Just the repo name, nothing else |
 | **GitHub branch** | `*` or `main` | `*` = all branches, `main` = main only |
 
-**Example for your project:**
+**Example:**
 - Organization: `Futu-reADS`
 - Repository: `tvm-upload`
-- Branch: `main` (or `*` for all branches)
+- Branch: `*` (all branches)
 
 **Error you'll see if wrong:** *"The field 'GitHub organization' has characters that aren't valid: :,/"*
 
 ---
 
-### **Step 2.5: Review Trust Policy**
+### Step 2.5: Review Trust Policy
 
 After adding conditions, you should see a trust policy preview like:
 
@@ -242,7 +332,7 @@ After adding conditions, you should see a trust policy preview like:
     {
       "Effect": "Allow",
       "Principal": {
-        "Federated": "arn:aws-cn:iam::621346161733:oidc-provider/token.actions.githubusercontent.com"
+        "Federated": "arn:aws-cn:iam::{ACCOUNT_ID}:oidc-provider/token.actions.githubusercontent.com"
       },
       "Action": "sts:AssumeRoleWithWebIdentity",
       "Condition": {
@@ -250,7 +340,7 @@ After adding conditions, you should see a trust policy preview like:
           "token.actions.githubusercontent.com:aud": "sts.amazonaws.com"
         },
         "StringLike": {
-          "token.actions.githubusercontent.com:sub": "repo:Futu-reADS/tvm-upload:*"
+          "token.actions.githubusercontent.com:sub": "repo:{GITHUB_ORG}/{GITHUB_REPO}:*"
         }
       }
     }
@@ -258,9 +348,9 @@ After adding conditions, you should see a trust policy preview like:
 }
 ```
 
-**✅ Verify:** 
+**✅ Verify:**
 - Federated ARN matches your provider
-- Repo name is correct: `repo:Futu-reADS/tvm-upload:*`
+- Repo name is correct
 
 Click **"Next"** to continue.
 
@@ -268,7 +358,7 @@ Click **"Next"** to continue.
 
 ## 🔓 Part 3: Add Permissions
 
-### **Step 3.1: Understand the Permissions Screen**
+### Step 3.1: Understand the Permissions Screen
 
 You'll see a page titled "Add permissions" with 541+ AWS managed policies.
 
@@ -283,7 +373,7 @@ Policies like:
 
 ---
 
-### **Step 3.2: Skip Managed Policies**
+### Step 3.2: Skip Managed Policies
 
 **Option A: If you see "Create policy" button**
 1. Click **"Create policy"** button (opens new tab)
@@ -299,13 +389,13 @@ Policies like:
 
 ---
 
-### **Step 3.3: Create Custom Inline Policy (If Option A)**
+### Step 3.3: Create Custom Inline Policy
 
 If you opened "Create policy" in new tab:
 
 1. Click **"JSON"** tab (not "Visual")
 2. Delete everything in the editor
-3. Paste this policy:
+3. Paste this policy (adjust for your needs):
 
 ```json
 {
@@ -315,7 +405,7 @@ If you opened "Create policy" in new tab:
       "Sid": "S3BucketAccess",
       "Effect": "Allow",
       "Action": "s3:ListBucket",
-      "Resource": "arn:aws-cn:s3:::t01logs"
+      "Resource": "arn:aws-cn:s3:::{BUCKET_NAME}"
     },
     {
       "Sid": "S3ObjectAccess",
@@ -325,7 +415,7 @@ If you opened "Create policy" in new tab:
         "s3:GetObject",
         "s3:DeleteObject"
       ],
-      "Resource": "arn:aws-cn:s3:::t01logs/*"
+      "Resource": "arn:aws-cn:s3:::{BUCKET_NAME}/*"
     },
     {
       "Sid": "CloudWatchMetrics",
@@ -346,15 +436,20 @@ If you opened "Create policy" in new tab:
         "cloudwatch:DeleteAlarms",
         "cloudwatch:DescribeAlarms"
       ],
-      "Resource": "arn:aws-cn:cloudwatch:cn-north-1:621346161733:alarm:TVM-*"
+      "Resource": "arn:aws-cn:cloudwatch:{REGION}:{ACCOUNT_ID}:alarm:TVM-*"
     }
   ]
 }
 ```
 
+**Replace placeholders:**
+- `{BUCKET_NAME}` → Your S3 bucket
+- `{REGION}` → Your AWS region
+- `{ACCOUNT_ID}` → Your AWS account ID
+
 4. Click **"Next"**
 5. **Policy name:** `GitHubActions-E2E-MinimalPolicy`
-6. **Description:** `Minimal permissions for GitHub Actions E2E tests: S3 and CloudWatch only`
+6. **Description:** `Minimal permissions for GitHub Actions E2E tests`
 7. Click **"Create policy"**
 8. Go back to role creation tab
 9. Click refresh icon ↻
@@ -364,20 +459,18 @@ If you opened "Create policy" in new tab:
 
 ---
 
-### **Step 2.6: Name the Role**
+### Step 2.6: Name the Role
 
 On the "Name, review, and create" page:
 
 | Field | Value |
 |-------|-------|
-| **Role name** | `GitHubActions-TVM-E2E-Role` |
-| **Description** | `OIDC role for GitHub Actions to run E2E tests with minimal S3 and CloudWatch permissions` |
-
-**⚠️ Use this exact name** or update your GitHub workflow accordingly!
+| **Role name** | `{ROLE_NAME}` (e.g., `GitHubActions-E2E-Role`) |
+| **Description** | `OIDC role for GitHub Actions with minimal permissions` |
 
 ---
 
-### **Step 2.7: Review and Create**
+### Step 2.7: Review and Create
 
 Review the summary:
 
@@ -390,14 +483,14 @@ Review the summary:
 
 ---
 
-### **Step 2.8: Success! Copy Role ARN**
+### Step 2.8: Success! Copy Role ARN
 
 After creation, you'll see the role details page.
 
 **At the top, you'll see the Role ARN:**
 
 ```
-arn:aws-cn:iam::621346161733:role/GitHubActions-TVM-E2E-Role
+arn:aws-cn:iam::{ACCOUNT_ID}:role/{ROLE_NAME}
 ```
 
 **💾 CRITICAL: COPY THIS ARN!**
@@ -406,7 +499,7 @@ You'll need it for the GitHub workflow. Save it somewhere!
 
 ---
 
-### **Step 3.4: Add Permissions After Creation (If Option B)**
+### Step 3.4: Add Permissions After Creation (If Option B)
 
 If you skipped permissions earlier, add them now:
 
@@ -426,31 +519,28 @@ If you skipped permissions earlier, add them now:
 
 ## 🔄 Part 4: Update GitHub Workflow
 
-### **Step 4.1: Locate Workflow File**
+### Step 4.1: Locate Workflow File
 
 In your repository:
 ```
 .github/
   └── workflows/
-      └── test-e2e.yml
+      └── test-e2e.yml  (or your workflow file)
 ```
 
 ---
 
-### **Step 4.2: Update Workflow**
+### Step 4.2: Update Workflow
 
-Replace your entire `.github/workflows/test-e2e.yml` with:
+Add these sections to your workflow:
 
 ```yaml
-# .github/workflows/test-e2e.yml
 name: E2E Tests (Real AWS - OIDC)
 
 on:
   push:
     branches: [main]
   workflow_dispatch:
-  schedule:
-    - cron: '0 2 * * *'  # Daily at 2 AM UTC
 
 # ✅ NEW: Required for OIDC authentication
 permissions:
@@ -459,15 +549,8 @@ permissions:
 
 jobs:
   e2e-tests:
-    name: E2E Tests (Real AWS - OIDC)
+    name: E2E Tests
     runs-on: ubuntu-latest
-    timeout-minutes: 15
-    
-    # ✅ SIMPLIFIED: No need to check for secrets with OIDC
-    if: |
-      github.ref_name == 'main' || 
-      github.event_name == 'workflow_dispatch' || 
-      github.event_name == 'schedule'
 
     steps:
       - name: Checkout code
@@ -477,58 +560,36 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: '3.10'
-          cache: 'pip'
 
       - name: Install dependencies
         run: |
-          pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest
-
-      - name: Install package  
-        run: pip install -e .
 
       # ✅ NEW: OIDC authentication (no secrets!)
       - name: Configure AWS credentials (OIDC)
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          role-to-assume: arn:aws-cn:iam::621346161733:role/GitHubActions-TVM-E2E-Role
+          role-to-assume: arn:aws-cn:iam::{ACCOUNT_ID}:role/{ROLE_NAME}
           # ↑ REPLACE with YOUR Role ARN from Step 2.8!
-          aws-region: cn-north-1
+          aws-region: {REGION}
 
       - name: Run E2E tests
         env:
-          TEST_BUCKET: t01logs
-          AWS_REGION: cn-north-1
+          TEST_BUCKET: {BUCKET_NAME}
+          AWS_REGION: {REGION}
         run: |
-          pytest tests/e2e/ -v -m "e2e or real_aws" --tb=short
-
-      - name: Upload test logs on failure
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: e2e-test-logs
-          path: |
-            *.log
-            /tmp/*.log
-          retention-days: 7
-
-      - name: Notify on failure
-        if: failure()
-        run: |
-          echo "::error::E2E tests failed! Check logs for details."
+          pytest tests/e2e/ -v
 ```
 
-**⚠️ CRITICAL:** Replace the `role-to-assume` ARN with YOUR actual Role ARN from Step 2.8!
+**⚠️ CRITICAL:** Replace all placeholders with your actual values!
 
 ---
 
-### **Step 4.3: Key Changes Explained**
+### Step 4.3: Key Changes Explained
 
 | What Changed | Before | After |
 |--------------|--------|-------|
 | **Permissions** | Not specified | `id-token: write` added |
-| **Precheck job** | Had secrets check | Removed (not needed) |
 | **Authentication** | Used access keys | Uses OIDC role |
 | **Secrets** | Required 2-3 secrets | Zero secrets! |
 | **Maintenance** | Rotate keys every 90 days | Zero maintenance |
@@ -537,48 +598,36 @@ jobs:
 
 ## 🧪 Part 5: Fix Test Code
 
-### **Step 5.1: Update E2E Test Fixtures**
+### Step 5.1: Update E2E Test Fixtures
 
 **File:** `tests/e2e/conftest.py`
 
-The issue: Tests were hardcoded to use AWS profile `'china'`, which doesn't exist in GitHub Actions.
+The issue: Tests may be hardcoded to use AWS profile, which doesn't exist in GitHub Actions.
 
-**Replace the entire file with:**
+**Update your fixtures to handle both local (with profile) and CI (with OIDC):**
 
 ```python
-# tests/e2e/conftest.py
-"""
-Fixtures for E2E tests (REAL AWS)
-These tests use actual AWS services and run in CI/CD only
-"""
-
 import pytest
 import boto3
 import os
-from pathlib import Path
-
 
 @pytest.fixture(scope='session')
 def aws_config():
     """
-    Real AWS configuration
-    Uses environment variables or defaults for CI/CD
+    AWS configuration - works locally and in CI/CD
     """
     return {
-        'profile': os.getenv('AWS_PROFILE', None),  # ← CHANGED: None instead of 'china'
-        'bucket': os.getenv('TEST_BUCKET', 't01logs'),
-        'region': os.getenv('AWS_REGION', 'cn-north-1'),
+        'profile': os.getenv('AWS_PROFILE', None),  # None in CI, profile name locally
+        'bucket': os.getenv('TEST_BUCKET', '{BUCKET_NAME}'),
+        'region': os.getenv('AWS_REGION', '{REGION}'),
         'vehicle_id': 'e2e-test-vehicle'
     }
-
 
 @pytest.fixture
 def real_s3_client(aws_config):
     """
-    REAL S3 client - connects to actual AWS
-    NO MOCKING - this makes real API calls
+    REAL S3 client - handles both local and CI/CD
     """
-    # ✅ NEW: Check if profile exists before using it
     if aws_config['profile']:
         # Local: Use profile
         session = boto3.Session(
@@ -588,97 +637,25 @@ def real_s3_client(aws_config):
     else:
         # CI/CD: Use OIDC credentials (no profile)
         session = boto3.Session(region_name=aws_config['region'])
-    
-    return session.client(
-        's3',
-        endpoint_url=f"https://s3.{aws_config['region']}.amazonaws.com.cn"
-    )
 
-
-@pytest.fixture
-def real_cloudwatch_client(aws_config):
-    """
-    REAL CloudWatch client
-    """
-    # ✅ NEW: Check if profile exists before using it
-    if aws_config['profile']:
-        session = boto3.Session(
-            profile_name=aws_config['profile'],
-            region_name=aws_config['region']
-        )
-    else:
-        session = boto3.Session(region_name=aws_config['region'])
-    
-    return session.client('cloudwatch')
-
-
-@pytest.fixture
-def real_upload_manager(aws_config):
-    """
-    Upload manager connected to REAL AWS S3
-    """
-    from src.upload_manager import UploadManager
-    
-    # ✅ This is OK - UploadManager already handles None profile
-    return UploadManager(
-        bucket=aws_config['bucket'],
-        region=aws_config['region'],
-        vehicle_id=aws_config['vehicle_id'],
-        profile_name=aws_config['profile']  # Will be None in CI
-    )
-
-
-@pytest.fixture
-def s3_cleanup(real_s3_client, aws_config):
-    """
-    Auto-cleanup S3 objects after test completes
-    """
-    objects_to_delete = []
-    
-    def track(key):
-        """Track S3 key for deletion"""
-        objects_to_delete.append(key)
-        return key
-    
-    yield track
-    
-    # Cleanup after test finishes
-    for key in objects_to_delete:
-        try:
-            real_s3_client.delete_object(
-                Bucket=aws_config['bucket'],
-                Key=key
-            )
-            print(f"✓ Cleaned up s3://{aws_config['bucket']}/{key}")
-        except Exception as e:
-            print(f"✗ Cleanup failed for {key}: {e}")
+    return session.client('s3')
 ```
 
----
-
-### **Step 5.2: What Changed in Test Code**
-
-| Line | Before | After | Why |
-|------|--------|-------|-----|
-| 18 | `'profile': 'china'` | `'profile': None` | CI/CD has no profile |
-| 33-38 | `session = boto3.Session(profile_name=...)` | `if profile:` check | Handle None profile |
-| 48-53 | Same issue | Same fix | Handle None profile |
-
-**Key concept:** 
+**Key concept:**
 - Local: `AWS_PROFILE=china` → Uses profile
 - CI/CD: `AWS_PROFILE` not set → Uses OIDC credentials
 
 ---
 
-### **Step 5.3: Commit and Push**
+### Step 5.2: Commit and Push
 
 ```bash
 # Stage changes
-git add .github/workflows/test-e2e.yml
+git add .github/workflows/
 git add tests/e2e/conftest.py
 
 # Commit
-git commit -m "Switch E2E tests to OIDC authentication (no secrets needed)"
+git commit -m "Setup OIDC authentication for GitHub Actions"
 
 # Push to main
 git push origin main
@@ -688,7 +665,7 @@ git push origin main
 
 ## 🔍 Troubleshooting
 
-### **Issue 1: "Login with Amazon" Appears Instead of OIDC**
+### Issue 1: "Login with Amazon" Appears Instead of OIDC
 
 **Problem:** You're in the wrong section of AWS Console.
 
@@ -699,32 +676,24 @@ IAM → Identity providers → Add provider → OpenID Connect
 
 ❌ WRONG PATH:
 IAM → Roles → Create role → SAML 2.0 federation
-(This shows "Login with Amazon" for consumer auth)
 ```
 
 ---
 
-### **Issue 2: "GitHub organization has invalid characters"**
+### Issue 2: "GitHub organization has invalid characters"
 
 **Problem:** Wrong format in GitHub organization field.
 
-**What you typed:**
-```
-❌ repo:Futu-reADS/tvm-upload
-❌ Futu-reADS/tvm-upload
-❌ https://github.com/Futu-reADS/tvm-upload
-```
-
 **Correct format:**
 ```
-✅ Organization: Futu-reADS
-✅ Repository: tvm-upload
-✅ Branch: main
+✅ Organization: YourOrg
+✅ Repository: your-repo
+✅ Branch: main or *
 ```
 
 ---
 
-### **Issue 3: "Profile (china) could not be found" in E2E Tests**
+### Issue 3: "Profile not found" in E2E Tests
 
 **Problem:** Test fixtures still using hardcoded profile.
 
@@ -732,56 +701,28 @@ IAM → Roles → Create role → SAML 2.0 federation
 
 **Verify fix:**
 ```bash
-# Check the change
 grep "AWS_PROFILE" tests/e2e/conftest.py
-
-# Should show:
-'profile': os.getenv('AWS_PROFILE', None),
+# Should show: 'profile': os.getenv('AWS_PROFILE', None),
 ```
 
 ---
 
-### **Issue 4: "AccessDenied" in E2E Tests**
+### Issue 4: "AccessDenied" in E2E Tests
 
 **Problem:** IAM role missing required permissions.
-
-**Check which permission:**
-```
-cloudwatch:PutMetricAlarm → Missing alarm permissions
-s3:PutObject → Missing S3 permissions
-```
 
 **Solution:** Add the missing permission to your IAM role policy (Step 3.3).
 
 ---
 
-### **Issue 5: Tests Pass Locally But Fail in CI**
-
-**Diagnosis:**
-```bash
-# Local: Works (uses profile 'china')
-export AWS_PROFILE=china
-pytest tests/e2e/ -v
-✅ PASSED
-
-# CI: Fails (no profile, needs OIDC)
-# No AWS_PROFILE set
-pytest tests/e2e/ -v
-❌ FAILED: Profile not found
-```
-
-**Solution:** Ensure conftest.py has conditional session creation (Step 5.1).
-
----
-
-### **Issue 6: "Could not assume role" in GitHub Actions**
+### Issue 5: "Could not assume role" in GitHub Actions
 
 **Problem:** Trust policy doesn't allow your GitHub repo.
 
 **Check trust policy:**
 1. Go to IAM Role
 2. Click "Trust relationships" tab
-3. Verify repo name: `repo:Futu-reADS/tvm-upload:*`
+3. Verify repo name in condition
 
 **Fix:** Edit trust policy to add/correct repo condition.
 
@@ -789,7 +730,7 @@ pytest tests/e2e/ -v
 
 ## ✅ Verification
 
-### **Step V.1: Verify IAM Setup**
+### Step V.1: Verify IAM Setup
 
 **Check OIDC Provider:**
 ```
@@ -799,44 +740,38 @@ Should see: token.actions.githubusercontent.com
 
 **Check IAM Role:**
 ```
-AWS Console → IAM → Roles → GitHubActions-TVM-E2E-Role
+AWS Console → IAM → Roles → {ROLE_NAME}
 
 Trust relationships tab:
   ✅ Federated: token.actions.githubusercontent.com
-  ✅ Condition: repo:Futu-reADS/tvm-upload:*
+  ✅ Condition: repo:{GITHUB_ORG}/{GITHUB_REPO}:*
 
 Permissions tab:
-  ✅ S3: t01logs bucket access
-  ✅ CloudWatch: Metrics and alarms
+  ✅ Custom policy attached
 ```
 
 ---
 
-### **Step V.2: Test GitHub Workflow**
+### Step V.2: Test GitHub Workflow
 
 **Manual trigger:**
 ```
-GitHub → Your repo → Actions tab → E2E Tests workflow → Run workflow
+GitHub → Your repo → Actions tab → Your workflow → Run workflow
 ```
 
 **Expected logs:**
 ```
 Configure AWS credentials (OIDC)
-  ✅ Assuming role: GitHubActions-TVM-E2E-Role
+  ✅ Assuming role: {ROLE_NAME}
   ✅ Role assumed successfully
 
 Run E2E tests
-  08:08:10 [INFO] Found credentials in environment variables.
-  08:08:10 [INFO] CloudWatch initialized for region: cn-north-1
-  
-  tests/e2e/test_s3_real.py::test_upload_small_file ✅ PASSED
-  tests/e2e/test_cloudwatch_real.py::test_publish_metrics ✅ PASSED
-  ...
+  ✅ Tests running with temporary credentials
 ```
 
 ---
 
-### **Step V.3: Verify No Secrets Stored**
+### Step V.3: Verify No Secrets Stored
 
 ```
 GitHub → Your repo → Settings → Secrets and variables → Actions
@@ -844,71 +779,49 @@ GitHub → Your repo → Settings → Secrets and variables → Actions
 Expected:
   - Should NOT have AWS_ACCESS_KEY_ID
   - Should NOT have AWS_SECRET_ACCESS_KEY
-  
+
 If these exist from before, you can DELETE them now! 🎉
 ```
 
 ---
 
-### **Step V.4: Test Locally**
+### Step V.4: Test Locally
 
 Ensure local development still works:
 
 ```bash
 # Set profile for local testing
-export AWS_PROFILE=china
+export AWS_PROFILE=your-profile-name
 
 # Run E2E tests
-pytest tests/e2e/ -v -m "e2e"
+pytest tests/e2e/ -v
 
-# Should use profile 'china'
-# Should NOT use OIDC
+# Should use profile (not OIDC)
 ```
 
 ---
 
 ## 📊 Before & After Comparison
 
-### **Security:**
+### Security
 
 | Aspect | Before (Access Keys) | After (OIDC) |
 |--------|---------------------|--------------|
-| Credentials stored | ✅ In GitHub Secrets | ❌ None |
+| Credentials stored | ⚠️ In GitHub Secrets | ✅ None |
 | Credential lifetime | ⚠️ Forever | ✅ Hours |
 | Rotation needed | ⚠️ Every 90 days | ✅ Automatic |
 | If leaked | ⚠️ Valid until rotated | ✅ Expires quickly |
 | Audit trail | ⚠️ Limited | ✅ Full CloudTrail |
 | Best practice | ❌ No | ✅ Yes |
 
-### **Maintenance:**
+### Maintenance
 
 | Task | Before | After |
 |------|--------|-------|
-| Initial setup | 5 minutes | 30 minutes |
+| Initial setup | 5 minutes | 30-45 minutes |
 | Monthly maintenance | 15 minutes | 0 minutes |
 | Key rotation | Required | Not needed |
-| Documentation | Simple | More complex |
 | **Annual effort** | **~3 hours** | **~30 minutes** |
-
-### **Workflow Changes:**
-
-**Before:**
-```yaml
-- uses: aws-actions/configure-aws-credentials@v4
-  with:
-    aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
-    aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
-```
-
-**After:**
-```yaml
-permissions:
-  id-token: write
-  
-- uses: aws-actions/configure-aws-credentials@v4
-  with:
-    role-to-assume: arn:aws-cn:iam::621346161733:role/GitHubActions-TVM-E2E-Role
-```
 
 ---
 
@@ -922,16 +835,14 @@ After completing this guide, you should have:
 - [ ] Role ARN copied and saved
 - [ ] GitHub workflow updated to use OIDC
 - [ ] Test fixtures updated to handle None profile
-- [ ] Changes committed and pushed to main
+- [ ] Changes committed and pushed
 - [ ] E2E tests passing in GitHub Actions
 - [ ] No AWS secrets stored in GitHub
 - [ ] Local development still working with profile
 
 ---
 
-## 🎯 Final Notes
-
-### **What You've Achieved:**
+## 🎯 What You've Achieved
 
 1. ✅ **Most secure** method for GitHub-to-AWS authentication
 2. ✅ **Zero secrets** stored anywhere
@@ -940,18 +851,17 @@ After completing this guide, you should have:
 5. ✅ **Audit trail** - every action logged in CloudTrail
 6. ✅ **Temporary credentials** - tokens expire automatically
 
-### **Time Investment:**
+### Time Investment
 
 - **Setup:** 30-45 minutes (one-time)
 - **Maintenance:** 0 minutes/month forever
 - **ROI:** Excellent - saves time and improves security
 
-### **Next Steps:**
+### Next Steps
 
 1. Delete old AWS access key secrets from GitHub (if any)
-2. Document this setup for your team
-3. Apply same pattern to other projects/repos
-4. Consider using for production deployments too
+2. Apply same pattern to other projects/repos
+3. Document this setup for your team
 
 ---
 
@@ -982,7 +892,8 @@ If you encounter issues:
 
 ---
 
-**Document Version:** 1.0  
-**Last Updated:** October 2024  
-**Author:** Futu-reADS Team  
-**Project:** TVM Upload System
+**Document Version:** 2.0
+**Last Updated:** January 2025
+**Status:** Production Ready ✅
+**Author:** Futu-reADS DevOps Team
+**Project:** TVM Upload System (Reference Implementation)

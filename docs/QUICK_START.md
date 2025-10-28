@@ -44,7 +44,7 @@ vehicle_id: "vehicle-CN-001"  # ← MUST BE UNIQUE!
 ### 4️⃣ Validate Environment
 
 ```bash
-./scripts/verify_deployment.sh
+./scripts/deployment/verify_deployment.sh
 ```
 
 ✅ Should show: **[PASS] Environment ready for deployment**
@@ -52,7 +52,7 @@ vehicle_id: "vehicle-CN-001"  # ← MUST BE UNIQUE!
 ### 5️⃣ Install
 
 ```bash
-sudo ./scripts/install.sh
+sudo ./scripts/deployment/install.sh
 ```
 
 ⏱️ Takes ~2-3 minutes
@@ -62,7 +62,7 @@ sudo ./scripts/install.sh
 ### 6️⃣ Verify
 
 ```bash
-sudo ./scripts/health_check.sh
+sudo ./scripts/deployment/health_check.sh
 ```
 
 ✅ Should show: **[PASS] System is healthy**
@@ -86,7 +86,7 @@ aws s3 ls s3://t01logs/vehicle-CN-001/ --recursive --profile china
 journalctl -u tvm-upload -f
 
 # Check health
-sudo ./scripts/health_check.sh
+sudo ./scripts/deployment/health_check.sh
 
 # Restart service
 sudo systemctl restart tvm-upload
@@ -112,8 +112,8 @@ grep -A 10 "operational_hours:" /etc/tvm-upload/config.yaml
 
 **Need to reinstall?**
 ```bash
-sudo ./scripts/uninstall.sh
-sudo ./scripts/install.sh
+sudo ./scripts/deployment/uninstall.sh
+sudo ./scripts/deployment/install.sh
 ```
 
 ---
@@ -122,7 +122,7 @@ sudo ./scripts/install.sh
 
 📖 **Full Guide:** `docs/DEPLOYMENT_GUIDE.md`
 🔧 **Configuration:** `config/config.yaml`
-🏥 **Health Check:** `sudo ./scripts/health_check.sh`
+🏥 **Health Check:** `sudo ./scripts/deployment/health_check.sh`
 
 ---
 

@@ -44,3 +44,19 @@ Thumbs.db
 # Temporary test files
 /tmp/tvm-*
 /tmp/test-*
+
+# Virtual environment alternatives
+env/
+ENV/
+
+# Build artifacts
+*.egg-info/
+
+# OS specific
+.DS_Store
+Thumbs.db
+
+# Backup files
+*.bak
+*.backup
+*.tar.gz

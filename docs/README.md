@@ -4,13 +4,26 @@ Welcome to the TVM Upload System documentation! This directory contains comprehe
 
 ## 📚 Documentation Index
 
+### Core Documentation
+
+| Document | Purpose | Target Audience | Time to Read |
+|----------|---------|----------------|--------------|
+| **[QUICK_START.md](./QUICK_START.md)** | 5-minute vehicle deployment guide | Deployment Technicians | 5 min |
+| **[DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)** | Complete deployment guide | Operators, DevOps | 30 min |
+
 ### Testing Documentation
 
 | Document | Purpose | Target Audience | Time to Read |
 |----------|---------|----------------|--------------|
-| **[TESTING_STRATEGY_OVERVIEW.md](./TESTING_STRATEGY_OVERVIEW.md)** | High-level testing strategy, my thoughts & recommendations | Tech Leads, Architects | 15 min |
+| **[TESTING_STRATEGY_OVERVIEW.md](./TESTING_STRATEGY_OVERVIEW.md)** | High-level testing strategy & philosophy | Tech Leads, Architects | 15 min |
 | **[MANUAL_TESTING_GUIDE.md](./MANUAL_TESTING_GUIDE.md)** | Step-by-step manual testing procedures | QA Engineers, Operators | 30 min |
 | **[AUTONOMOUS_TESTING_GUIDE.md](./AUTONOMOUS_TESTING_GUIDE.md)** | Automated testing architecture & execution | Developers, DevOps | 20 min |
+
+### CI/CD Documentation
+
+| Document | Purpose | Target Audience | Time to Read |
+|----------|---------|----------------|--------------|
+| **[GITHUB_ACTIONS_OIDC_SETUP.md](./GITHUB_ACTIONS_OIDC_SETUP.md)** | AWS OIDC setup for GitHub Actions | DevOps, Security Team | 45 min |
 
 ### Quick Navigation
 
@@ -18,13 +31,13 @@ Welcome to the TVM Upload System documentation! This directory contains comprehe
 
 | Task | Document | Section |
 |------|----------|---------|
-| Understand overall testing approach | [TESTING_STRATEGY_OVERVIEW.md](./TESTING_STRATEGY_OVERVIEW.md) | Full document |
-| Manually test the system before deployment | [MANUAL_TESTING_GUIDE.md](./MANUAL_TESTING_GUIDE.md) | Feature Testing Sequence |
-| Run automated tests locally | [AUTONOMOUS_TESTING_GUIDE.md](./AUTONOMOUS_TESTING_GUIDE.md) | Test Execution Scripts |
-| Set up CI/CD pipeline | [AUTONOMOUS_TESTING_GUIDE.md](./AUTONOMOUS_TESTING_GUIDE.md) | CI/CD Pipeline |
-| Check test coverage | [AUTONOMOUS_TESTING_GUIDE.md](./AUTONOMOUS_TESTING_GUIDE.md) | Coverage Analysis |
-| Troubleshoot test failures | [MANUAL_TESTING_GUIDE.md](./MANUAL_TESTING_GUIDE.md) | Troubleshooting |
-| Add new tests | [AUTONOMOUS_TESTING_GUIDE.md](./AUTONOMOUS_TESTING_GUIDE.md) | Test Pyramid Architecture |
+| Deploy to a vehicle quickly | [QUICK_START.md](./QUICK_START.md) | Full guide |
+| Set up OIDC for GitHub Actions | [GITHUB_ACTIONS_OIDC_SETUP.md](./GITHUB_ACTIONS_OIDC_SETUP.md) | Step-by-step |
+| Understand testing approach | [TESTING_STRATEGY_OVERVIEW.md](./TESTING_STRATEGY_OVERVIEW.md) | Full document |
+| Manually test the system | [MANUAL_TESTING_GUIDE.md](./MANUAL_TESTING_GUIDE.md) | Feature Tests |
+| Run automated tests locally | [AUTONOMOUS_TESTING_GUIDE.md](./AUTONOMOUS_TESTING_GUIDE.md) | Test Execution |
+| Deploy to production | [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) | Full guide |
+| Troubleshoot OIDC issues | [GITHUB_ACTIONS_OIDC_SETUP.md](./GITHUB_ACTIONS_OIDC_SETUP.md) | Troubleshooting |
 
 ---
 

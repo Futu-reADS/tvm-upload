@@ -194,7 +194,7 @@ Save and exit: `Ctrl+X`, `Y`, `Enter`
 **IMPORTANT:** Run this before installing!
 
 ```bash
-./scripts/verify_deployment.sh
+./scripts/deployment/verify_deployment.sh
 ```
 
 **Expected output:**
@@ -228,7 +228,7 @@ AWS Connectivity & Permissions
 [PASS] Environment ready for deployment ✓
 
 Ready to install:
-  sudo ./scripts/install.sh
+  sudo ./scripts/deployment/install.sh
 ```
 
 **If validation fails:**
@@ -242,7 +242,7 @@ Ready to install:
 **One-command installation:**
 
 ```bash
-sudo ./scripts/install.sh
+sudo ./scripts/deployment/install.sh
 ```
 
 This will:
@@ -306,7 +306,7 @@ Vehicle Information:
 
 Next Steps:
   1. Monitor logs:       journalctl -u tvm-upload -f
-  2. Check health:       sudo ./scripts/health_check.sh
+  2. Check health:       sudo ./scripts/deployment/health_check.sh
   3. View S3 uploads:    aws s3 ls s3://t01logs/vehicle-CN-001/
 
 Useful Commands:
@@ -329,7 +329,7 @@ Useful Commands:
 **Run health check:**
 
 ```bash
-sudo ./scripts/health_check.sh
+sudo ./scripts/deployment/health_check.sh
 ```
 
 **Expected output:**
@@ -437,7 +437,7 @@ sudo systemctl status tvm-upload
 | Restart service | `sudo systemctl restart tvm-upload` |
 | View status | `sudo systemctl status tvm-upload` |
 | View logs | `journalctl -u tvm-upload -f` |
-| Health check | `sudo ./scripts/health_check.sh` |
+| Health check | `sudo ./scripts/deployment/health_check.sh` |
 | Edit config | `sudo nano /etc/tvm-upload/config.yaml` |
 | Reload config | `sudo systemctl reload tvm-upload` |
 
@@ -478,11 +478,11 @@ journalctl -u tvm-upload -n 50
 **Solution:**
 ```bash
 # Re-run pre-deployment validation
-./scripts/verify_deployment.sh
+./scripts/deployment/verify_deployment.sh
 
 # Reinstall
-sudo ./scripts/uninstall.sh
-sudo ./scripts/install.sh
+sudo ./scripts/deployment/uninstall.sh
+sudo ./scripts/deployment/install.sh
 ```
 
 ---
@@ -616,7 +616,7 @@ sudo systemctl restart tvm-upload
 ### Keep Data (Preserve Queue and Registry)
 
 ```bash
-sudo ./scripts/uninstall.sh --keep-data
+sudo ./scripts/deployment/uninstall.sh --keep-data
 ```
 
 This removes:
@@ -632,7 +632,7 @@ But preserves:
 ### Complete Removal
 
 ```bash
-sudo ./scripts/uninstall.sh
+sudo ./scripts/deployment/uninstall.sh
 ```
 
 This removes **everything** including data.
@@ -693,7 +693,7 @@ Use this checklist when deploying to a vehicle:
 
 **Common Issues:**
 - Check logs: `journalctl -u tvm-upload -f`
-- Run health check: `sudo ./scripts/health_check.sh`
+- Run health check: `sudo ./scripts/deployment/health_check.sh`
 - Review configuration: `/etc/tvm-upload/config.yaml`
 
 **For Help:**
