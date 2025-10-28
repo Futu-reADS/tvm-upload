@@ -125,7 +125,8 @@ class TVMUploadSystem:
         self.cloudwatch = CloudWatchManager(
             region=self.config.get('s3.region'),
             vehicle_id=self.config.get('vehicle_id'),
-            enabled=self.config.get('monitoring.cloudwatch_enabled', True)
+            enabled=self.config.get('monitoring.cloudwatch_enabled', True),
+            profile_name=self.config.get('s3.profile')
         )
 
         self.queue_manager = QueueManager(

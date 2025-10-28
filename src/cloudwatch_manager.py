@@ -38,11 +38,12 @@ class CloudWatchManager:
         >>> cw.publish_metrics()
     """
     
-    def __init__(self, region: str, vehicle_id: str, enabled: bool = True):
+    def __init__(self, region: str, vehicle_id: str, enabled: bool = True, profile_name: str = None):
         """Initialize CloudWatch manager."""
         self.region = region
         self.vehicle_id = vehicle_id
         self.enabled = enabled
+        self.profile_name = profile_name
         self.cw_client = None
         self.bytes_uploaded = 0
         self.files_uploaded = 0
@@ -64,8 +65,14 @@ class CloudWatchManager:
                     self.cw_client = boto3.client('cloudwatch', **client_kwargs)
                     logger.info("CloudWatch client created (TEST mode)")
                 else:
-                    self.cw_client = boto3.client('cloudwatch', region_name=region)
-                    logger.info(f"CloudWatch initialized for region: {region}")
+                    # Create session with profile if specified
+                    if profile_name:
+                        session = boto3.Session(profile_name=profile_name)
+                        self.cw_client = session.client('cloudwatch', region_name=region)
+                        logger.info(f"CloudWatch initialized with profile '{profile_name}' for region: {region}")
+                    else:
+                        self.cw_client = boto3.client('cloudwatch', region_name=region)
+                        logger.info(f"CloudWatch initialized for region: {region}")
 
                     try:
                         self.cw_client.put_metric_data(
