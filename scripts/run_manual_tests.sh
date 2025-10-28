@@ -72,8 +72,12 @@ declare -A TEST_NAMES=(
     [8]="Batch Upload Performance"
     [9]="Large File Upload (Multipart)"
     [10]="Error Handling and Retry"
-    [11]="Operational Hours Compliance"
+    [11]="Operational Hours & Schedule Modes"
     [12]="Service Restart Resilience"
+    [13]="Pattern Matching"
+    [14]="Recursive Monitoring"
+    [15]="Startup Scan"
+    [16]="Emergency Cleanup Thresholds"
 )
 
 declare -A TEST_DURATIONS=(
@@ -87,13 +91,17 @@ declare -A TEST_DURATIONS=(
     [8]="10 min"
     [9]="10 min"
     [10]="15 min"
-    [11]="5 min"
+    [11]="10 min"
     [12]="10 min"
+    [13]="5 min"
+    [14]="5 min"
+    [15]="10 min"
+    [16]="10 min"
 )
 
 # Determine which tests to run
 if [ "$TESTS_TO_RUN" = "all" ]; then
-    TESTS=(1 2 3 4 5 6 7 8 9 10 11 12)
+    TESTS=(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16)
 else
     TESTS=($TESTS_TO_RUN)
 fi

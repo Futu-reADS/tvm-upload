@@ -56,10 +56,14 @@ This will:
 | 08 | Batch Upload Performance | 10 min | Test multiple file handling |
 | 09 | Large File Upload | 10 min | Test multipart upload for files > 5MB |
 | 10 | Error Handling & Retry | 15 min | Test resilience to network/auth errors |
-| 11 | Operational Hours | 5 min | Verify upload scheduling (optional) |
-| 12 | Service Restart Resilience | 10 min | Verify graceful shutdown and recovery |
+| 11 | Operational Hours & Schedule Modes | 10 min | Verify operational hours and schedule modes (interval/daily) |
+| 12 | Service Restart Resilience | 10 min | Verify graceful shutdown, recovery, and upload_on_start |
+| 13 | Pattern Matching | 5 min | Verify log_directories pattern filtering (e.g., "syslog*") |
+| 14 | Recursive Monitoring | 5 min | Verify recursive vs non-recursive directory monitoring |
+| 15 | Startup Scan | 10 min | Verify scan_existing_files and max_age_days behavior |
+| 16 | Emergency Cleanup Thresholds | 10 min | Verify emergency cleanup at critical disk threshold (95%) |
 
-**Total Duration:** ~2 hours for all tests
+**Total Duration:** ~2.5 hours for all tests
 
 ## Prerequisites
 
@@ -218,7 +222,7 @@ The master runner (`run_manual_tests.sh`) provides:
 ║     TVM Upload System - Manual Test Suite Runner              ║
 ╔════════════════════════════════════════════════════════════════╗
 
-Running 12 tests: 1 2 3 4 5 6 7 8 9 10 11 12
+Running 16 tests: 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16
 
 [Test execution logs...]
 
@@ -232,14 +236,27 @@ Test Results:
 ├──────┼─────────────────────────────────────────────┼──────────┤
 │ 1    │ Basic File Upload                           │ PASSED   │
 │ 2    │ Source-Based Path Detection                 │ PASSED   │
-...
+│ 3    │ File Date Preservation                      │ PASSED   │
+│ 4    │ CloudWatch Metrics                          │ PASSED   │
+│ 5    │ CloudWatch Alarms                           │ PASSED   │
+│ 6    │ Duplicate Prevention                        │ PASSED   │
+│ 7    │ Disk Space Management                       │ PASSED   │
+│ 8    │ Batch Upload Performance                    │ PASSED   │
+│ 9    │ Large File Upload                           │ PASSED   │
+│ 10   │ Error Handling & Retry                      │ PASSED   │
+│ 11   │ Operational Hours & Schedule Modes          │ PASSED   │
+│ 12   │ Service Restart Resilience                  │ PASSED   │
+│ 13   │ Pattern Matching                            │ PASSED   │
+│ 14   │ Recursive Monitoring                        │ PASSED   │
+│ 15   │ Startup Scan                                │ PASSED   │
+│ 16   │ Emergency Cleanup Thresholds                │ PASSED   │
+└──────┴─────────────────────────────────────────────┴──────────┘
 
 Summary Statistics:
-  Total Tests:    12
-  Passed:         11
+  Total Tests:    16
+  Passed:         16
   Failed:         0
-  Skipped:        1
-  Pass Rate:      91.7%
+  Pass Rate:      100%
 
 Full report saved to: /tmp/manual-test-results-20250127_143022.txt
 ```

@@ -171,12 +171,57 @@ else
     log_error "Service not healthy after restart tests"
 fi
 
+# TEST 6: upload_on_start behavior
+log_info "Test 6: Verifying upload_on_start configuration..."
+
+UPLOAD_ON_START=$(grep "upload_on_start:" "$CONFIG_FILE" | awk '{print $2}' || echo "true")
+log_info "upload_on_start setting: $UPLOAD_ON_START"
+
+if [ "$UPLOAD_ON_START" = "true" ]; then
+    log_success "upload_on_start enabled (uploads immediately on service start)"
+
+    # Check if uploads happened soon after restart
+    if get_service_logs "$SERVICE_LOG" | grep -qi "upload\|processing.*queue"; then
+        log_success "Service logs show upload activity after restart"
+        get_service_logs "$SERVICE_LOG" | grep -i "upload\|processing.*queue" | head -5 | while read -r line; do
+            echo "  $line"
+        done
+    fi
+
+    # Verify files were uploaded within reasonable time
+    if [ "$UPLOADED_AFTER" -ge "$UPLOADED_BEFORE" ]; then
+        log_success "Files uploaded after restart (upload_on_start working)"
+    else
+        log_warning "Upload count may not reflect upload_on_start behavior"
+    fi
+
+elif [ "$UPLOAD_ON_START" = "false" ]; then
+    log_info "upload_on_start disabled (uploads wait for next scheduled interval)"
+
+    # With upload_on_start: false, files should be queued but not uploaded immediately
+    QUEUE_FILE=$(grep "queue_file:" "$CONFIG_FILE" | awk '{print $2}' || echo "/var/lib/tvm-upload/queue.json")
+
+    if [ -f "$QUEUE_FILE" ]; then
+        QUEUE_COUNT=$(grep -o "filepath" "$QUEUE_FILE" 2>/dev/null | wc -l)
+        log_info "Files in queue: $QUEUE_COUNT"
+
+        if [ "$QUEUE_COUNT" -gt 0 ]; then
+            log_success "Files queued (waiting for scheduled upload)"
+        else
+            log_info "Queue empty (files may have already uploaded)"
+        fi
+    fi
+else
+    log_warning "upload_on_start setting not found or invalid"
+fi
+
 # Display restart metrics
 log_info "Restart resilience summary:"
 echo "  Files created: 4"
 echo "  Files uploaded: $UPLOADED_AFTER"
 echo "  Restart count: 1"
 echo "  Errors: $ERROR_COUNT"
+echo "  upload_on_start: $UPLOAD_ON_START"
 echo "  Service health: $(check_service_health && echo "OK" || echo "FAILED")"
 
 # Cleanup

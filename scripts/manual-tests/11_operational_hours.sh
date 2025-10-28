@@ -1,7 +1,7 @@
 #!/bin/bash
-# TEST 11: Operational Hours Compliance
-# Purpose: Verify uploads only happen during configured hours
-# Duration: ~5 minutes
+# TEST 11: Operational Hours & Schedule Modes
+# Purpose: Verify operational hours compliance and schedule mode behavior
+# Duration: ~10 minutes
 # Note: This test is optional and may need configuration changes
 
 set -e
@@ -134,11 +134,94 @@ else
 fi
 
 # Additional info
-log_info "Summary:"
+log_info "Operational Hours Summary:"
 echo "  Current time: $CURRENT_HOUR"
 echo "  Operational hours: $OP_START - $OP_END"
 echo "  In operational hours: $IN_OP_HOURS"
 echo "  File uploaded: $UPLOADED"
+
+# ============================================
+# SCHEDULE MODE TESTING
+# ============================================
+log_info ""
+log_info "============================================"
+log_info "Testing Schedule Modes (interval vs daily)"
+log_info "============================================"
+
+# Get schedule mode from config
+SCHEDULE_MODE=$(grep -A 15 "schedule:" "$CONFIG_FILE" | grep "mode:" | head -1 | awk '{print $2}' | tr -d '"')
+log_info "Current schedule mode: $SCHEDULE_MODE"
+
+if [ "$SCHEDULE_MODE" = "interval" ]; then
+    log_success "Schedule mode: interval detected"
+
+    # Get interval settings
+    INTERVAL_HOURS=$(grep -A 15 "schedule:" "$CONFIG_FILE" | grep "interval_hours:" | awk '{print $2}' || echo "0")
+    INTERVAL_MINUTES=$(grep -A 15 "schedule:" "$CONFIG_FILE" | grep "interval_minutes:" | awk '{print $2}' || echo "0")
+
+    TOTAL_INTERVAL_MIN=$((INTERVAL_HOURS * 60 + INTERVAL_MINUTES))
+    log_info "Upload interval: ${INTERVAL_HOURS}h ${INTERVAL_MINUTES}m (${TOTAL_INTERVAL_MIN} minutes)"
+
+    if [ "$TOTAL_INTERVAL_MIN" -ge 5 ] && [ "$TOTAL_INTERVAL_MIN" -le 1440 ]; then
+        log_success "Interval within valid range (5 min - 24 hours)"
+    else
+        log_error "Interval outside valid range: ${TOTAL_INTERVAL_MIN} minutes"
+    fi
+
+    # Check logs for interval scheduling
+    if get_service_logs "$SERVICE_LOG" | grep -qi "interval\|next.*upload"; then
+        log_success "Service logs show interval scheduling"
+        get_service_logs "$SERVICE_LOG" | grep -i "interval\|next.*upload" | tail -3 | while read -r line; do
+            echo "  $line"
+        done
+    fi
+
+elif [ "$SCHEDULE_MODE" = "daily" ]; then
+    log_success "Schedule mode: daily detected"
+
+    # Get daily time setting
+    DAILY_TIME=$(grep -A 15 "schedule:" "$CONFIG_FILE" | grep "daily_time:" | awk '{print $2}' | tr -d '"')
+    log_info "Daily upload time: $DAILY_TIME"
+
+    # Validate time format (HH:MM)
+    if echo "$DAILY_TIME" | grep -qE "^[0-2][0-9]:[0-5][0-9]$"; then
+        log_success "Daily time format valid (HH:MM)"
+    else
+        log_error "Daily time format invalid: $DAILY_TIME"
+    fi
+
+    # Check logs for daily scheduling
+    if get_service_logs "$SERVICE_LOG" | grep -qi "daily\|scheduled.*upload"; then
+        log_success "Service logs show daily scheduling"
+        get_service_logs "$SERVICE_LOG" | grep -i "daily\|scheduled.*upload" | tail -3 | while read -r line; do
+            echo "  $line"
+        done
+    fi
+
+else
+    log_warning "Unknown schedule mode: $SCHEDULE_MODE"
+fi
+
+# TEST: Verify batch_upload setting
+BATCH_UPLOAD=$(grep -A 20 "batch_upload:" "$CONFIG_FILE" | grep "enabled:" | head -1 | awk '{print $2}' || echo "false")
+log_info "Batch upload enabled: $BATCH_UPLOAD"
+
+if [ "$BATCH_UPLOAD" = "true" ]; then
+    log_success "Batch upload enabled (uploads entire queue on trigger)"
+else
+    log_info "Batch upload disabled (uploads only triggered file)"
+fi
+
+# Display schedule configuration summary
+log_info "Schedule Configuration Summary:"
+echo "  Mode: $SCHEDULE_MODE"
+if [ "$SCHEDULE_MODE" = "interval" ]; then
+    echo "  Interval: ${INTERVAL_HOURS}h ${INTERVAL_MINUTES}m"
+elif [ "$SCHEDULE_MODE" = "daily" ]; then
+    echo "  Daily time: $DAILY_TIME"
+fi
+echo "  Batch upload: $BATCH_UPLOAD"
+echo "  Operational hours: $OP_HOURS_ENABLED ($OP_START - $OP_END)"
 
 # Cleanup
 log_info "Cleaning up..."
@@ -150,7 +233,7 @@ print_test_summary
 
 # Test result
 if [ $TESTS_FAILED -eq 0 ]; then
-    log_success "TEST 11: PASSED - Operational hours compliance working correctly"
+    log_success "TEST 11: PASSED - Operational hours & schedule modes working correctly"
     exit 0
 else
     log_error "TEST 11: FAILED - See errors above"

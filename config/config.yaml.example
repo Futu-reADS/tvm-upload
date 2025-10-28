@@ -559,8 +559,8 @@ s3_lifecycle:
 #   3. Registry file corrupted? Delete and restart service
 #
 # Wrong S3 folder?
-#   1. All files use modification time (mtime), not upload time
+#   1. Files use modification time, not upload time
 #   2. Check file mtime: stat <filename>
-#   3. Files modified yesterday will be in yesterday's folder, even if uploaded today
+#   3. For syslog: Uses upload date (not file date)
 #
 # ============================================
