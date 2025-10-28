@@ -8,22 +8,23 @@ Welcome to the TVM Upload System documentation! This directory contains comprehe
 
 | Document | Purpose | Target Audience | Time to Read |
 |----------|---------|----------------|--------------|
-| **[QUICK_START.md](./QUICK_START.md)** | 5-minute vehicle deployment guide | Deployment Technicians | 5 min |
-| **[DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md)** | Complete deployment guide | Operators, DevOps | 30 min |
+| **[quick_start.md](./quick_start.md)** | 5-minute vehicle deployment guide | Deployment Technicians | 5 min |
+| **[deployment_guide.md](./deployment_guide.md)** | Complete deployment guide | Operators, DevOps | 30 min |
+| **[complete_reference.md](./complete_reference.md)** | Comprehensive feature reference & examples | All Users | 60 min |
 
 ### Testing Documentation
 
 | Document | Purpose | Target Audience | Time to Read |
 |----------|---------|----------------|--------------|
-| **[TESTING_STRATEGY_OVERVIEW.md](./TESTING_STRATEGY_OVERVIEW.md)** | High-level testing strategy & philosophy | Tech Leads, Architects | 15 min |
-| **[MANUAL_TESTING_GUIDE.md](./MANUAL_TESTING_GUIDE.md)** | Step-by-step manual testing procedures | QA Engineers, Operators | 30 min |
-| **[AUTONOMOUS_TESTING_GUIDE.md](./AUTONOMOUS_TESTING_GUIDE.md)** | Automated testing architecture & execution | Developers, DevOps | 20 min |
+| **[testing_strategy_overview.md](./testing_strategy_overview.md)** | High-level testing strategy & philosophy | Tech Leads, Architects | 15 min |
+| **[manual_testing_guide.md](./manual_testing_guide.md)** | Step-by-step manual testing procedures | QA Engineers, Operators | 30 min |
+| **[autonomous_testing_guide.md](./autonomous_testing_guide.md)** | Automated testing architecture & execution | Developers, DevOps | 20 min |
 
 ### CI/CD Documentation
 
 | Document | Purpose | Target Audience | Time to Read |
 |----------|---------|----------------|--------------|
-| **[GITHUB_ACTIONS_OIDC_SETUP.md](./GITHUB_ACTIONS_OIDC_SETUP.md)** | AWS OIDC setup for GitHub Actions | DevOps, Security Team | 45 min |
+| **[github_actions_oidc_setup.md](./github_actions_oidc_setup.md)** | AWS OIDC setup for GitHub Actions | DevOps, Security Team | 45 min |
 
 ### Quick Navigation
 
@@ -31,13 +32,13 @@ Welcome to the TVM Upload System documentation! This directory contains comprehe
 
 | Task | Document | Section |
 |------|----------|---------|
-| Deploy to a vehicle quickly | [QUICK_START.md](./QUICK_START.md) | Full guide |
-| Set up OIDC for GitHub Actions | [GITHUB_ACTIONS_OIDC_SETUP.md](./GITHUB_ACTIONS_OIDC_SETUP.md) | Step-by-step |
-| Understand testing approach | [TESTING_STRATEGY_OVERVIEW.md](./TESTING_STRATEGY_OVERVIEW.md) | Full document |
-| Manually test the system | [MANUAL_TESTING_GUIDE.md](./MANUAL_TESTING_GUIDE.md) | Feature Tests |
-| Run automated tests locally | [AUTONOMOUS_TESTING_GUIDE.md](./AUTONOMOUS_TESTING_GUIDE.md) | Test Execution |
-| Deploy to production | [DEPLOYMENT_GUIDE.md](./DEPLOYMENT_GUIDE.md) | Full guide |
-| Troubleshoot OIDC issues | [GITHUB_ACTIONS_OIDC_SETUP.md](./GITHUB_ACTIONS_OIDC_SETUP.md) | Troubleshooting |
+| Deploy to a vehicle quickly | [quick_start.md](./quick_start.md) | Full guide |
+| Set up OIDC for GitHub Actions | [github_actions_oidc_setup.md](./github_actions_oidc_setup.md) | Step-by-step |
+| Understand testing approach | [testing_strategy_overview.md](./testing_strategy_overview.md) | Full document |
+| Manually test the system | [manual_testing_guide.md](./manual_testing_guide.md) | Feature Tests |
+| Run automated tests locally | [autonomous_testing_guide.md](./autonomous_testing_guide.md) | Test Execution |
+| Deploy to production | [deployment_guide.md](./deployment_guide.md) | Full guide |
+| Troubleshoot OIDC issues | [github_actions_oidc_setup.md](./github_actions_oidc_setup.md) | Troubleshooting |
 
 ---
 
@@ -70,14 +71,14 @@ git push origin feature-branch
 **1. Follow manual testing guide:**
 ```bash
 # Start here
-cat docs/MANUAL_TESTING_GUIDE.md
+cat docs/manual_testing_guide.md
 
 # Run tests sequentially (12 tests, ~2 hours)
 ```
 
 **2. Fill out test report template:**
 ```markdown
-See: MANUAL_TESTING_GUIDE.md
+See: manual_testing_guide.md
 Section: "Manual Testing Summary Report Template"
 ```
 
@@ -85,7 +86,7 @@ Section: "Manual Testing Summary Report Template"
 
 **1. Review CI/CD pipeline:**
 ```bash
-cat docs/AUTONOMOUS_TESTING_GUIDE.md
+cat docs/autonomous_testing_guide.md
 # Section: "CI/CD Pipeline"
 ```
 
@@ -151,7 +152,7 @@ We follow the **Test Pyramid** approach:
 
 ## 📖 Document Descriptions
 
-### TESTING_STRATEGY_OVERVIEW.md
+### testing_strategy_overview.md
 **Purpose:** Strategic view of our testing approach
 
 **Contents:**
@@ -170,7 +171,7 @@ We follow the **Test Pyramid** approach:
 
 ---
 
-### MANUAL_TESTING_GUIDE.md
+### manual_testing_guide.md
 **Purpose:** Hands-on guide for manual testing
 
 **Contents:**
@@ -202,7 +203,7 @@ We follow the **Test Pyramid** approach:
 
 ---
 
-### AUTONOMOUS_TESTING_GUIDE.md
+### autonomous_testing_guide.md
 **Purpose:** Complete guide to automated testing
 
 **Contents:**
@@ -280,22 +281,22 @@ gh workflow run tests.yml
 ### Common Questions
 
 **Q: How do I test before deploying to production?**
-→ See: [MANUAL_TESTING_GUIDE.md](./MANUAL_TESTING_GUIDE.md)
+→ See: [manual_testing_guide.md](./manual_testing_guide.md)
 
 **Q: What tests exist and what do they cover?**
-→ See: [AUTONOMOUS_TESTING_GUIDE.md](./AUTONOMOUS_TESTING_GUIDE.md) - Test Categories
+→ See: [autonomous_testing_guide.md](./autonomous_testing_guide.md) - Test Categories
 
 **Q: How is our testing strategy different from others?**
-→ See: [TESTING_STRATEGY_OVERVIEW.md](./TESTING_STRATEGY_OVERVIEW.md) - My Analysis
+→ See: [testing_strategy_overview.md](./testing_strategy_overview.md) - My Analysis
 
 **Q: How do I add a new test?**
-→ See: [AUTONOMOUS_TESTING_GUIDE.md](./AUTONOMOUS_TESTING_GUIDE.md) - Test Pyramid Architecture
+→ See: [autonomous_testing_guide.md](./autonomous_testing_guide.md) - Test Pyramid Architecture
 
 **Q: Tests are failing, what do I do?**
-→ See: [MANUAL_TESTING_GUIDE.md](./MANUAL_TESTING_GUIDE.md) - Troubleshooting
+→ See: [manual_testing_guide.md](./manual_testing_guide.md) - Troubleshooting
 
 **Q: What's the ROI of our testing investment?**
-→ See: [TESTING_STRATEGY_OVERVIEW.md](./TESTING_STRATEGY_OVERVIEW.md) - Success Metrics
+→ See: [testing_strategy_overview.md](./testing_strategy_overview.md) - Success Metrics
 
 ---
 
@@ -329,9 +330,9 @@ Jan 2025: ████████░░ 85% coverage → Added 30 unit tests
 ### Adding Documentation
 
 **When to update docs:**
-- New test added → Update AUTONOMOUS_TESTING_GUIDE.md
-- New manual test scenario → Update MANUAL_TESTING_GUIDE.md
-- Testing strategy change → Update TESTING_STRATEGY_OVERVIEW.md
+- New test added → Update autonomous_testing_guide.md
+- New manual test scenario → Update manual_testing_guide.md
+- Testing strategy change → Update testing_strategy_overview.md
 
 **How to update:**
 1. Edit relevant markdown file

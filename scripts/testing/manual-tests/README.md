@@ -1,6 +1,6 @@
 # TVM Upload System - Automated Manual Test Scripts
 
-This directory contains automated scripts for running manual test scenarios described in `docs/MANUAL_TESTING_GUIDE.md`.
+This directory contains automated scripts for running manual test scenarios described in `docs/manual_testing_guide.md`.
 
 ## Overview
 
@@ -423,9 +423,9 @@ These scripts can be integrated into CI/CD pipelines:
 
 ## Related Documentation
 
-- [MANUAL_TESTING_GUIDE.md](../../docs/MANUAL_TESTING_GUIDE.md) - Detailed manual test procedures
-- [AUTONOMOUS_TESTING_GUIDE.md](../../docs/AUTONOMOUS_TESTING_GUIDE.md) - Automated test architecture
-- [TESTING_STRATEGY_OVERVIEW.md](../../docs/TESTING_STRATEGY_OVERVIEW.md) - Overall testing strategy
+- [manual_testing_guide.md](../../docs/manual_testing_guide.md) - Detailed manual test procedures
+- [autonomous_testing_guide.md](../../docs/autonomous_testing_guide.md) - Automated test architecture
+- [testing_strategy_overview.md](../../docs/testing_strategy_overview.md) - Overall testing strategy
 
 ## Support
 

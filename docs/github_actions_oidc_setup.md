@@ -93,7 +93,7 @@ Replace these placeholders with your values:
 ## 📖 Related Documentation
 
 **This guide:** First-time OIDC setup (one-time, 30-45 minutes)
-**For daily usage:** See [AUTONOMOUS_TESTING_GUIDE.md](./AUTONOMOUS_TESTING_GUIDE.md)
+**For daily usage:** See [autonomous_testing_guide.md](./autonomous_testing_guide.md)
 
 **When to use which:**
 - **Use this guide:** Setting up OIDC for a NEW repository or troubleshooting OIDC issues

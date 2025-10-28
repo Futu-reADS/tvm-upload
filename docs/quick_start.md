@@ -120,10 +120,10 @@ sudo ./scripts/deployment/install.sh
 
 ## Next Steps
 
-📖 **Full Guide:** `docs/DEPLOYMENT_GUIDE.md`
+📖 **Full Guide:** `docs/deployment_guide.md`
 🔧 **Configuration:** `config/config.yaml`
 🏥 **Health Check:** `sudo ./scripts/deployment/health_check.sh`
 
 ---
 
-**Questions?** Check `docs/DEPLOYMENT_GUIDE.md` or logs: `journalctl -u tvm-upload -f`
+**Questions?** Check `docs/deployment_guide.md` or logs: `journalctl -u tvm-upload -f`

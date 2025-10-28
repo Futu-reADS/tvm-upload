@@ -18,14 +18,148 @@ scripts/
 
 ## 🚀 Deployment Scripts
 
-Located in `deployment/`
+Located in `deployment/` - Professional vehicle deployment toolkit
 
-| Script | Purpose | Usage |
-|--------|---------|-------|
-| **install.sh** | Install TVM Upload system | `sudo ./scripts/deployment/install.sh` |
-| **uninstall.sh** | Remove TVM Upload system | `sudo ./scripts/deployment/uninstall.sh` |
-| **verify_deployment.sh** | Pre-installation validation | `./scripts/deployment/verify_deployment.sh` |
-| **health_check.sh** | Post-installation health check | `sudo ./scripts/deployment/health_check.sh` |
+### 1. verify_deployment.sh
+
+**Pre-installation validation** - Checks environment before installation
+
+**Checks:**
+- ✅ Configuration file exists and is valid
+- ✅ AWS credentials configured
+- ✅ AWS profile accessible
+- ✅ S3 bucket exists and is writable
+- ✅ Python 3.10+ installed
+- ✅ Required packages available
+- ✅ Log directories exist
+- ✅ Sufficient disk space
+
+**Usage:**
+```bash
+./scripts/deployment/verify_deployment.sh [config_file]
+# Default: config/config.yaml
+```
+
+**Exit codes:**
+- `0` - All checks passed (ready for installation)
+- `1` - One or more checks failed
+
+---
+
+### 2. install.sh
+
+**Master installer** - One-command system installation
+
+**What it does:**
+1. Runs pre-deployment validation
+2. Creates system directories (`/opt/tvm-upload`, `/var/lib/tvm-upload`, `/var/log/tvm-upload`)
+3. Installs Python dependencies
+4. Copies application files
+5. Configures systemd service
+6. Enables and starts service
+
+**Usage:**
+```bash
+sudo ./scripts/deployment/install.sh
+```
+
+**Duration:** 2-3 minutes
+
+**Exit codes:**
+- `0` - Installation successful
+- `1` - Installation failed (see error messages)
+
+**Installation creates:**
+- `/opt/tvm-upload/` - Runtime code
+- `/etc/tvm-upload/config.yaml` - Configuration
+- `/var/lib/tvm-upload/` - Queue and registry data
+- `/var/log/tvm-upload/` - Service logs
+- `/etc/systemd/system/tvm-upload.service` - systemd service
+
+---
+
+### 3. health_check.sh
+
+**Post-deployment verification** - Ensures system is working correctly
+
+**Checks:**
+- ✅ Service is running
+- ✅ No recent errors (last 24 hours)
+- ✅ Recent uploads succeeded
+- ✅ Queue status (pending files)
+- ✅ Registry status (uploaded files)
+- ✅ Disk space below threshold
+- ✅ S3 connectivity
+- ✅ Recent uploads visible in S3
+- ✅ Configuration valid
+
+**Usage:**
+```bash
+sudo ./scripts/deployment/health_check.sh
+```
+
+**Duration:** ~10 seconds
+
+**Exit codes:**
+- `0` - All checks passed (system healthy)
+- `>0` - Number of failed checks
+
+**Example output:**
+```
+╔════════════════════════════════════════════════════════════════╗
+║  TVM Upload Health Check - vehicle-CN-001                     ║
+╔════════════════════════════════════════════════════════════════╗
+
+Service Status
+✓ Service is running (started: 2025-01-27 14:32:15)
+
+Recent Activity
+✓ No errors in last 24 hours
+✓ 15 successful uploads in last 24 hours
+
+Upload Queue
+✓ Queue is empty (all files uploaded)
+
+S3 Connectivity
+✓ S3 bucket accessible
+✓ Total files in S3: 47
+
+[PASS] System is healthy ✓
+```
+
+---
+
+### 4. uninstall.sh
+
+**Clean removal** - Safely removes TVM Upload system
+
+**Options:**
+- `--keep-data` - Preserve queue, registry, and logs
+- (default) - Remove everything
+
+**Usage:**
+```bash
+# Complete removal
+sudo ./scripts/deployment/uninstall.sh
+
+# Keep data files
+sudo ./scripts/deployment/uninstall.sh --keep-data
+```
+
+**What it removes:**
+1. Stops and disables service
+2. Removes systemd service file
+3. Removes `/opt/tvm-upload/`
+4. Removes `/etc/tvm-upload/` (unless --keep-data)
+5. Removes `/var/lib/tvm-upload/` (unless --keep-data)
+6. Removes `/var/log/tvm-upload/` (unless --keep-data)
+
+**Duration:** ~30 seconds
+
+**Exit codes:**
+- `0` - Uninstallation successful
+
+---
 
 ### Typical Deployment Workflow
 
@@ -39,6 +173,8 @@ sudo ./scripts/deployment/install.sh
 # 3. Verify installation
 sudo ./scripts/deployment/health_check.sh
 ```
+
+**See [docs/deployment_guide.md](../docs/deployment_guide.md) for complete deployment guide.**
 
 ---
 
@@ -187,9 +323,9 @@ Located in `lib/`
 
 ## 📖 Related Documentation
 
-- **[DEPLOYMENT_GUIDE.md](../docs/DEPLOYMENT_GUIDE.md)** - Complete deployment guide
-- **[MANUAL_TESTING_GUIDE.md](../docs/MANUAL_TESTING_GUIDE.md)** - Manual testing procedures
-- **[AUTONOMOUS_TESTING_GUIDE.md](../docs/AUTONOMOUS_TESTING_GUIDE.md)** - Automated testing guide
+- **[deployment_guide.md](../docs/deployment_guide.md)** - Complete deployment guide
+- **[manual_testing_guide.md](../docs/manual_testing_guide.md)** - Manual testing procedures
+- **[autonomous_testing_guide.md](../docs/autonomous_testing_guide.md)** - Automated testing guide
 
 ---
 

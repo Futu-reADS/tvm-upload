@@ -326,7 +326,7 @@ EXIT_CODE=$?
 
 if [ $EXIT_CODE -eq 0 ]; then
     echo -e "${GREEN}Ready to install:${NC}"
-    echo -e "  ${CYAN}sudo ./scripts/install.sh${NC}"
+    echo -e "  ${CYAN}sudo ./scripts/deployment/install.sh${NC}"
     echo ""
 fi
 

@@ -217,7 +217,7 @@ We have implemented a **comprehensive 3-tier testing strategy** with **180+ auto
                       ↓
 ┌─────────────────────────────────────────────────────┐
 │  Run Manual Tests to Reproduce                      │
-│  - Follow MANUAL_TESTING_GUIDE.md                   │
+│  - Follow manual_testing_guide.md                   │
 │  - Isolate the issue                                │
 │  - Document findings                                │
 └─────────────────────────────────────────────────────┘
@@ -579,12 +579,12 @@ Week 4: ✅✅✅✅✅✅✅  100% pass rate
 
 ## 📚 Related Documents
 
-1. **[MANUAL_TESTING_GUIDE.md](./MANUAL_TESTING_GUIDE.md)**
+1. **[manual_testing_guide.md](./manual_testing_guide.md)**
    - Complete manual testing procedures
    - Step-by-step instructions
    - Troubleshooting guide
 
-2. **[AUTONOMOUS_TESTING_GUIDE.md](./AUTONOMOUS_TESTING_GUIDE.md)**
+2. **[autonomous_testing_guide.md](./autonomous_testing_guide.md)**
    - Automated test architecture
    - CI/CD pipeline details
    - Test execution scripts
