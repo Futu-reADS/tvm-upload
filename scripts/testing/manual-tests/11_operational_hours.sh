@@ -8,7 +8,7 @@ set -e
 
 # Get script directory and load helpers
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/../lib/test_helpers.sh"
+source "${SCRIPT_DIR}/../../lib/test_helpers.sh"
 
 # Configuration
 CONFIG_FILE="${1:-config/config.yaml}"

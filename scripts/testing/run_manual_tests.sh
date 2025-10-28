@@ -15,6 +15,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 SCRIPTS_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 
+# Change to project root so all relative paths work correctly
+cd "$PROJECT_ROOT"
+
 # Load helper functions
 source "${SCRIPTS_ROOT}/lib/test_helpers.sh"
 

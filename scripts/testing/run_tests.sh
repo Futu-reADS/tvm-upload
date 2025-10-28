@@ -3,6 +3,13 @@
 
 set -e
 
+# Get script directory and navigate to project root
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+
+# Change to project root so all paths work correctly
+cd "$PROJECT_ROOT"
+
 VENV_DIR="venv"
 PYTHON="python3"
 AWS_PROFILE="${AWS_PROFILE:-china}"

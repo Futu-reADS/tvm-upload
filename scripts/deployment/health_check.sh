@@ -23,7 +23,7 @@ REGISTRY_FILE="$DATA_DIR/processed_files.json"
 # If config not in /etc, try local
 if [ ! -f "$CONFIG_FILE" ]; then
     SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-    PROJECT_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+    PROJECT_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
     CONFIG_FILE="$PROJECT_ROOT/config/config.yaml"
     DATA_DIR="$PROJECT_ROOT/data"
     QUEUE_FILE="$DATA_DIR/queue.json"
