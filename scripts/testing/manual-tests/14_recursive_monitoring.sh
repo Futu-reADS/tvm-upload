@@ -11,6 +11,7 @@ source "${SCRIPT_DIR}/../../lib/test_helpers.sh"
 
 # Configuration
 CONFIG_FILE="${1:-config/config.yaml}"
+TEST_VEHICLE_ID="${2}"  # Test vehicle ID passed from run_manual_tests.sh
 TEST_DIR="/tmp/tvm-manual-test"
 SERVICE_LOG="/tmp/tvm-service.log"
 
@@ -19,6 +20,12 @@ print_test_header "Recursive Monitoring" "14"
 # Parse configuration
 log_info "Loading configuration..."
 load_config "$CONFIG_FILE"
+
+# Override vehicle ID with test-specific ID
+if [ -n "$TEST_VEHICLE_ID" ]; then
+    VEHICLE_ID="$TEST_VEHICLE_ID"
+    log_info "Using test vehicle ID: $VEHICLE_ID"
+fi
 
 # Create test directories with subdirectories
 mkdir -p "$TEST_DIR/ros/session1"
@@ -41,7 +48,6 @@ log_directories:
 s3:
   bucket: $S3_BUCKET
   region: $AWS_REGION
-  credentials_path: /home/$(whoami)/.aws
   profile: $AWS_PROFILE
 upload:
   schedule:
@@ -110,7 +116,7 @@ log_success "Created: syslog/subdir2/kern.log (subdirectory - should be ignored)
 
 # Start service with test config
 log_info "Starting TVM upload service..."
-if ! start_tvm_service "$TEST_CONFIG" "$SERVICE_LOG"; then
+if ! start_tvm_service "$TEST_CONFIG" "$SERVICE_LOG" "" "$TEST_VEHICLE_ID"; then
     log_error "Failed to start service"
     exit 1
 fi
@@ -186,20 +192,23 @@ aws s3 ls "$S3_SYSLOG_PREFIX" --recursive --profile "$AWS_PROFILE" --region "$AW
     echo "  $line"
 done
 
-# Count uploaded files
-ROS_COUNT=$(aws s3 ls "$S3_ROS_PREFIX" --recursive --profile "$AWS_PROFILE" --region "$AWS_REGION" | wc -l || echo "0")
-SYSLOG_COUNT=$(aws s3 ls "$S3_SYSLOG_PREFIX" --recursive --profile "$AWS_PROFILE" --region "$AWS_REGION" | wc -l || echo "0")
+# Count uploaded files (filter out empty lines and directory markers)
+ROS_COUNT=$(aws s3 ls "$S3_ROS_PREFIX" --recursive --profile "$AWS_PROFILE" --region "$AWS_REGION" 2>/dev/null | grep -v "^$" | grep -v "PRE " | wc -l || echo "0")
+SYSLOG_COUNT=$(aws s3 ls "$S3_SYSLOG_PREFIX" --recursive --profile "$AWS_PROFILE" --region "$AWS_REGION" 2>/dev/null | grep -v "^$" | grep -v "PRE " | wc -l || echo "0")
 
 log_info "ROS files uploaded: $ROS_COUNT (expected: 4 - root + subdirectories)"
 log_info "Syslog files uploaded: $SYSLOG_COUNT (expected: 1 - root only)"
 
-if [ "$ROS_COUNT" -eq 4 ]; then
+EXPECTED_ROS=4
+EXPECTED_SYSLOG=1
+
+if [ "$ROS_COUNT" -eq "$EXPECTED_ROS" ]; then
     log_success "Correct ROS file count (recursive: true includes all subdirectories)"
 else
-    log_error "Incorrect ROS file count (expected 4, got $ROS_COUNT)"
+    log_error "Incorrect ROS file count (expected $EXPECTED_ROS, got $ROS_COUNT)"
 fi
 
-if [ "$SYSLOG_COUNT" -eq 1 ]; then
+if [ "$SYSLOG_COUNT" -eq "$EXPECTED_SYSLOG" ]; then
     log_success "Correct syslog file count (recursive: false ignores subdirectories)"
 else
     log_error "Incorrect syslog file count (expected 1, got $SYSLOG_COUNT)"

@@ -11,6 +11,7 @@ source "${SCRIPT_DIR}/../../lib/test_helpers.sh"
 
 # Configuration
 CONFIG_FILE="${1:-config/config.yaml}"
+TEST_VEHICLE_ID="${2}"  # Test vehicle ID passed from run_manual_tests.sh
 TEST_DIR="/tmp/tvm-manual-test"
 SERVICE_LOG="/tmp/tvm-service.log"
 
@@ -20,13 +21,19 @@ print_test_header "Duplicate Upload Prevention" "6"
 log_info "Loading configuration..."
 load_config "$CONFIG_FILE"
 
+# Override vehicle ID with test-specific ID
+if [ -n "$TEST_VEHICLE_ID" ]; then
+    VEHICLE_ID="$TEST_VEHICLE_ID"
+    log_info "Using test vehicle ID: $VEHICLE_ID"
+fi
+
 # Create test directory
 mkdir -p "$TEST_DIR/terminal"
 log_success "Created test directory"
 
 # Start service (first time)
 log_info "Starting TVM upload service (first time)..."
-if ! start_tvm_service "$CONFIG_FILE" "$SERVICE_LOG" "$TEST_DIR"; then
+if ! start_tvm_service "$CONFIG_FILE" "$SERVICE_LOG" "$TEST_DIR" "$TEST_VEHICLE_ID"; then
     log_error "Failed to start service"
     exit 1
 fi
@@ -88,7 +95,7 @@ sleep 3
 log_info "Restarting TVM upload service..."
 rm -f "$SERVICE_LOG"  # Clear log to see new entries clearly
 
-if ! start_tvm_service "$CONFIG_FILE" "$SERVICE_LOG" "$TEST_DIR"; then
+if ! start_tvm_service "$CONFIG_FILE" "$SERVICE_LOG" "$TEST_DIR" "$TEST_VEHICLE_ID"; then
     log_error "Failed to restart service"
     exit 1
 fi
@@ -136,6 +143,10 @@ fi
 log_info "Cleaning up..."
 stop_tvm_service
 rm -rf "$TEST_DIR"
+
+# Clean S3 test data (safe with production protection)
+log_info "Cleaning S3 test data..."
+cleanup_test_s3_data "$VEHICLE_ID" "$S3_BUCKET" "$AWS_PROFILE" "$AWS_REGION" "$TODAY"
 
 # Print summary
 print_test_summary

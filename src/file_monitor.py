@@ -181,16 +181,20 @@ class FileMonitor:
 
                 if pattern is None:
                     # No pattern configured - accept all files
+                    logger.debug(f"Pattern check: {file_path.name} - no pattern, accepting")
                     return True
                 else:
                     # Check if filename matches pattern
-                    return fnmatch.fnmatch(file_path.name, pattern)
+                    match_result = fnmatch.fnmatch(file_path.name, pattern)
+                    logger.debug(f"Pattern check: {file_path.name} vs '{pattern}' => {match_result}")
+                    return match_result
 
             except ValueError:
                 # File is not in this directory, continue
                 continue
 
         # File not in any configured directory - accept by default
+        logger.warning(f"Pattern check: {file_path} not in any configured directory, accepting by default")
         return True
 
 

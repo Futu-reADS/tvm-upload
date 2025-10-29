@@ -27,6 +27,28 @@ TESTS_TO_RUN="${2:-all}"
 REPORT_FILE="/tmp/manual-test-results-$(date +%Y%m%d_%H%M%S).txt"
 START_TIME=$(date +%s)
 
+# Parse configuration to get original vehicle ID
+ORIGINAL_VEHICLE_ID=$(grep "^vehicle_id:" "$CONFIG_FILE" | awk '{print $2}' | tr -d '"')
+
+# Generate test vehicle ID based on original vehicle name
+# Example: vehicle-CN-01 -> vehicle-TEST-CN-01-MANUAL-1730123456
+if [ -n "$ORIGINAL_VEHICLE_ID" ]; then
+    # Extract the vehicle name part (e.g., CN-01 from vehicle-CN-01)
+    VEHICLE_NAME=$(echo "$ORIGINAL_VEHICLE_ID" | sed 's/^vehicle-//')
+    # Create test vehicle ID with TEST prefix and MANUAL suffix
+    TEST_VEHICLE_ID=$(generate_test_vehicle_id "vehicle-TEST-${VEHICLE_NAME}-MANUAL")
+else
+    # Fallback if vehicle_id not found in config
+    TEST_VEHICLE_ID=$(generate_test_vehicle_id "vehicle-TEST-MANUAL")
+fi
+export TEST_VEHICLE_ID
+
+# Parse S3 configuration for final cleanup
+S3_BUCKET=$(grep "bucket:" "$CONFIG_FILE" | head -1 | awk '{print $2}' | tr -d '"')
+AWS_REGION=$(grep "region:" "$CONFIG_FILE" | head -1 | awk '{print $2}' | tr -d '"')
+AWS_PROFILE=$(grep "profile:" "$CONFIG_FILE" | head -1 | awk '{print $2}' | tr -d '"')
+export S3_BUCKET AWS_REGION AWS_PROFILE
+
 # Banner
 echo ""
 echo "╔════════════════════════════════════════════════════════════════╗"
@@ -35,6 +57,8 @@ echo "╔═══════════════════════�
 echo ""
 log_info "Configuration file: $CONFIG_FILE"
 log_info "Report file: $REPORT_FILE"
+log_info "Test Vehicle ID: $TEST_VEHICLE_ID"
+log_info "S3 Bucket: $S3_BUCKET"
 log_info "Start time: $(date)"
 echo ""
 
@@ -46,6 +70,11 @@ fi
 
 # Change to project root
 cd "$PROJECT_ROOT"
+
+# Pre-test cleanup: Remove any leftover state from previous test runs
+log_info "Cleaning up any leftover state from previous test runs..."
+cleanup_test_env "/tmp/tvm-manual-test" 2>/dev/null || true
+sleep 1
 
 # Initialize report
 cat > "$REPORT_FILE" <<EOF
@@ -146,12 +175,17 @@ for test_num in "${TESTS[@]}"; do
     TEST_START=$(date +%s)
     TEST_LOG="/tmp/test_${test_num}.log"
 
+    # Generate test-specific vehicle ID for isolation
+    TEST_SPECIFIC_ID="${TEST_VEHICLE_ID}-T$(printf "%02d" $test_num)"
+    log_info "Test-specific vehicle ID: $TEST_SPECIFIC_ID"
+
     echo "Running: $ACTUAL_SCRIPT" | tee -a "$REPORT_FILE"
+    echo "Test Vehicle ID: $TEST_SPECIFIC_ID" | tee -a "$REPORT_FILE"
     echo "" | tee -a "$REPORT_FILE"
 
     # Disable pipefail temporarily to capture exit code
     set +o pipefail
-    bash "$ACTUAL_SCRIPT" "$CONFIG_FILE" 2>&1 | tee -a "$TEST_LOG"
+    bash "$ACTUAL_SCRIPT" "$CONFIG_FILE" "$TEST_SPECIFIC_ID" 2>&1 | tee -a "$TEST_LOG"
     EXIT_CODE=${PIPESTATUS[0]}  # Get exit code of bash, not tee
     set -o pipefail
 
@@ -192,6 +226,11 @@ EOF
     # Clean up test environment between tests
     log_info "Cleaning up test environment..."
     cleanup_test_env "/tmp/tvm-manual-test" 2>/dev/null || true
+
+    # Clean up test-specific S3 data
+    log_info "Cleaning up test-specific S3 data..."
+    log_info "Removing S3 folder: ${TEST_SPECIFIC_ID}/"
+    cleanup_complete_vehicle_folder "$TEST_SPECIFIC_ID" "$S3_BUCKET" "$AWS_PROFILE" "$AWS_REGION"
 
     # Brief pause between tests
     sleep 3
@@ -294,6 +333,19 @@ echo "" | tee -a "$REPORT_FILE"
 # Cleanup
 log_info "Cleaning up temporary files..."
 rm -f /tmp/test_*.log
+
+# Final S3 cleanup - safety catch-all for any remaining test data
+echo ""
+echo "╔════════════════════════════════════════════════════════════════╗"
+echo "║     FINAL S3 CLEANUP (Safety Catch-All)                       ║"
+echo "╔════════════════════════════════════════════════════════════════╗"
+echo ""
+log_info "Performing final safety cleanup for base test vehicle ID..."
+log_info "Base Vehicle ID: $TEST_VEHICLE_ID"
+log_info "Note: Individual tests already cleaned their own S3 folders (${TEST_VEHICLE_ID}-T01, T02, etc.)"
+log_info "This cleanup catches any stragglers or test data left behind due to failures."
+cleanup_complete_vehicle_folder "$TEST_VEHICLE_ID" "$S3_BUCKET" "$AWS_PROFILE" "$AWS_REGION"
+echo ""
 
 # Exit with appropriate code
 if [ $TESTS_FAILED -eq 0 ]; then

@@ -11,6 +11,7 @@ source "${SCRIPT_DIR}/../../lib/test_helpers.sh"
 
 # Configuration
 CONFIG_FILE="${1:-config/config.yaml}"
+TEST_VEHICLE_ID="${2}"  # Test vehicle ID passed from run_manual_tests.sh
 TEST_DIR="/tmp/tvm-manual-test"
 SERVICE_LOG="/tmp/tvm-service.log"
 
@@ -19,6 +20,12 @@ print_test_header "Disk Space Management" "7"
 # Parse configuration
 log_info "Loading configuration..."
 load_config "$CONFIG_FILE"
+
+# Override vehicle ID with test-specific ID
+if [ -n "$TEST_VEHICLE_ID" ]; then
+    VEHICLE_ID="$TEST_VEHICLE_ID"
+    log_info "Using test vehicle ID: $VEHICLE_ID"
+fi
 
 # Create test directory
 mkdir -p "$TEST_DIR/terminal"
@@ -31,7 +38,7 @@ log_info "Delete after upload: $DELETE_ENABLED (keep_days: $KEEP_DAYS)"
 
 # Start service
 log_info "Starting TVM upload service..."
-if ! start_tvm_service "$CONFIG_FILE" "$SERVICE_LOG" "$TEST_DIR"; then
+if ! start_tvm_service "$CONFIG_FILE" "$SERVICE_LOG" "$TEST_DIR" "$TEST_VEHICLE_ID"; then
     log_error "Failed to start service"
     exit 1
 fi

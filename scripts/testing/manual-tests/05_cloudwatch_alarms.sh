@@ -11,6 +11,7 @@ source "${SCRIPT_DIR}/../../lib/test_helpers.sh"
 
 # Configuration
 CONFIG_FILE="${1:-config/config.yaml}"
+TEST_VEHICLE_ID="${2}"  # Test vehicle ID passed from run_manual_tests.sh
 SERVICE_LOG="/tmp/tvm-service.log"
 
 print_test_header "CloudWatch Alarm Creation" "5"
@@ -19,13 +20,19 @@ print_test_header "CloudWatch Alarm Creation" "5"
 log_info "Loading configuration..."
 load_config "$CONFIG_FILE"
 
+# Override vehicle ID with test-specific ID
+if [ -n "$TEST_VEHICLE_ID" ]; then
+    VEHICLE_ID="$TEST_VEHICLE_ID"
+    log_info "Using test vehicle ID: $VEHICLE_ID"
+fi
+
 # Get alarm name
 ALARM_NAME="TVM-LowUpload-${VEHICLE_ID}"
 log_info "Expected alarm name: $ALARM_NAME"
 
 # Start service (some implementations auto-create alarms on startup)
 log_info "Starting TVM upload service..."
-if ! start_tvm_service "$CONFIG_FILE" "$SERVICE_LOG" "$TEST_DIR"; then
+if ! start_tvm_service "$CONFIG_FILE" "$SERVICE_LOG" "$TEST_DIR" "$TEST_VEHICLE_ID"; then
     log_error "Failed to start service"
     exit 1
 fi

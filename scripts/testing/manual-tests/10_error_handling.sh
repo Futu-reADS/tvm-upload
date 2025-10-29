@@ -11,6 +11,7 @@ source "${SCRIPT_DIR}/../../lib/test_helpers.sh"
 
 # Configuration
 CONFIG_FILE="${1:-config/config.yaml}"
+TEST_VEHICLE_ID="${2}"  # Test vehicle ID passed from run_manual_tests.sh
 TEST_DIR="/tmp/tvm-manual-test"
 SERVICE_LOG="/tmp/tvm-service.log"
 
@@ -20,13 +21,19 @@ print_test_header "Error Handling and Retry" "10"
 log_info "Loading configuration..."
 load_config "$CONFIG_FILE"
 
+# Override vehicle ID with test-specific ID
+if [ -n "$TEST_VEHICLE_ID" ]; then
+    VEHICLE_ID="$TEST_VEHICLE_ID"
+    log_info "Using test vehicle ID: $VEHICLE_ID"
+fi
+
 # Create test directory
 mkdir -p "$TEST_DIR/terminal"
 log_success "Created test directory"
 
 # Start service
 log_info "Starting TVM upload service..."
-if ! start_tvm_service "$CONFIG_FILE" "$SERVICE_LOG" "$TEST_DIR"; then
+if ! start_tvm_service "$CONFIG_FILE" "$SERVICE_LOG" "$TEST_DIR" "$TEST_VEHICLE_ID"; then
     log_error "Failed to start service"
     exit 1
 fi
@@ -104,7 +111,7 @@ if [ -f "$CREDS_PATH" ]; then
 
     # Restart service
     log_info "Restarting service without credentials..."
-    start_tvm_service "$CONFIG_FILE" "$SERVICE_LOG" "$TEST_DIR" 2>/dev/null || log_info "Service may fail to start (expected)"
+    start_tvm_service "$CONFIG_FILE" "$SERVICE_LOG" "$TEST_DIR" "$TEST_VEHICLE_ID" 2>/dev/null || log_info "Service may fail to start (expected)"
 
     # Create test file
     TEST_FILE2="$TEST_DIR/terminal/nocreds_test.log"
@@ -132,7 +139,7 @@ if [ -f "$CREDS_PATH" ]; then
     sleep 2
 
     rm -f "$SERVICE_LOG"
-    start_tvm_service "$CONFIG_FILE" "$SERVICE_LOG" "$TEST_DIR"
+    start_tvm_service "$CONFIG_FILE" "$SERVICE_LOG" "$TEST_DIR" "$TEST_VEHICLE_ID"
 
     # Wait for recovery
     wait_with_progress 30 "Service recovery"

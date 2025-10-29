@@ -13,6 +13,14 @@ TESTS_PASSED=0
 TESTS_FAILED=0
 TESTS_SKIPPED=0
 
+# Safety: Production vehicle IDs that should NEVER be auto-cleaned
+PRODUCTION_VEHICLE_IDS=(
+    "vehicle-CN-001"
+    "vehicle-CN-002"
+    "vehicle-JP-001"
+    # Add more production IDs here
+)
+
 # Logging functions
 log_info() {
     echo -e "${BLUE}[INFO]${NC} $1"
@@ -226,6 +234,7 @@ start_tvm_service() {
     local config_file=${1:-config/config.yaml}
     local log_file=${2:-/tmp/tvm-service.log}
     local test_dir=${3:-}  # Optional: if provided, creates test config
+    local test_vehicle_id=${4:-}  # Optional: override vehicle_id for testing
 
     log_info "Starting TVM upload service..."
 
@@ -250,23 +259,74 @@ start_tvm_service() {
     if [ -n "$test_dir" ]; then
         actual_config="/tmp/tvm-test-config.yaml"
 
-        # Create test config by replacing log_directories section
-        sed '/^log_directories:/,/^[a-z_]/{
-            /^log_directories:/c\
-log_directories:\
-  - path: '"$test_dir"'/terminal\
-    source: terminal\
-  - path: '"$test_dir"'/ros\
-    source: ros\
-  - path: '"$test_dir"'/syslog\
-    source: syslog\
-  - path: '"$test_dir"'/other\
+        # Create test config by replacing log_directories section using Python
+        python3 - "$config_file" "$actual_config" "$test_dir" <<'EOPY'
+import re
+import sys
+
+config_file = sys.argv[1]
+output_file = sys.argv[2]
+test_dir = sys.argv[3]
+
+with open(config_file, 'r') as f:
+    content = f.read()
+
+# Replace log_directories section with test directories
+# Match from "log_directories:" to the next section divider (comment line starting with # =)
+# This preserves everything else including s3:, upload:, etc.
+pattern = r'(log_directories:).*?(?=\n# =+)'
+replacement = f'''log_directories:
+  - path: {test_dir}/terminal
+    source: terminal
+  - path: {test_dir}/ros
+    source: ros
+  - path: {test_dir}/syslog
+    source: syslog
+  - path: {test_dir}/other
     source: other
-            /^  - path:/d
-            /^    source:/d
-        }' "$config_file" > "$actual_config"
+
+'''
+
+new_content = re.sub(pattern, replacement, content, flags=re.DOTALL | re.MULTILINE)
+
+with open(output_file, 'w') as f:
+    f.write(new_content)
+EOPY
 
         log_info "Created test config monitoring: $test_dir"
+    fi
+
+    # Override queue/registry paths when test_dir is provided (safety: avoid production contamination)
+    if [ -n "$test_dir" ]; then
+        # Generate unique test identifier from test_dir or vehicle_id
+        local test_id=$(basename "$test_dir" | tr '/' '-')
+        if [ -n "$test_vehicle_id" ]; then
+            test_id=$(echo "$test_vehicle_id" | sed 's/[^a-zA-Z0-9-]/-/g')
+        fi
+
+        # Use test-specific queue and registry files
+        local test_queue="/tmp/queue-${test_id}.json"
+        local test_registry="/tmp/registry-${test_id}.json"
+
+        sed -i "s|queue_file:.*|queue_file: $test_queue|" "$actual_config"
+        sed -i "s|registry_file:.*|registry_file: $test_registry|" "$actual_config"
+
+        log_info "Using test-specific state files:"
+        log_info "  Queue: $test_queue"
+        log_info "  Registry: $test_registry"
+    fi
+
+    # Override vehicle_id if test_vehicle_id provided
+    if [ -n "$test_vehicle_id" ]; then
+        # Create temp config if not already created
+        if [ "$actual_config" = "$config_file" ]; then
+            actual_config="/tmp/tvm-test-config.yaml"
+            cp "$config_file" "$actual_config"
+        fi
+
+        # Replace vehicle_id in config
+        sed -i "s/^vehicle_id:.*/vehicle_id: \"$test_vehicle_id\"/" "$actual_config"
+        log_info "Overriding vehicle_id in config: $test_vehicle_id"
     fi
 
     # Start service from project root
@@ -363,10 +423,31 @@ cleanup_test_env() {
         log_success "Removed test directory: $test_dir"
     fi
 
-    # Remove temp files
-    rm -f /tmp/tvm-service.log
-    rm -f /tmp/tvm-service.pid
-    rm -f /tmp/test-*.log
+    # Remove temp files (including root-owned files from previous sudo runs)
+    rm -f /tmp/tvm-service.log 2>/dev/null || true
+    rm -f /tmp/tvm-service.pid 2>/dev/null || true
+    rm -f /tmp/test-*.log 2>/dev/null || true
+
+    # Try to remove test config files; if root-owned, try with sudo
+    if ! rm -f /tmp/tvm-test-config*.yaml 2>/dev/null; then
+        # Check if any root-owned test configs exist
+        if ls -l /tmp/tvm-test-config*.yaml 2>/dev/null | grep -q "^-.*root"; then
+            log_warning "Found root-owned test configs, attempting sudo cleanup..."
+            sudo rm -f /tmp/tvm-test-config*.yaml 2>/dev/null || log_warning "Could not remove root-owned configs"
+        fi
+    fi
+
+    # Clean up persistent state files to avoid cross-test contamination
+    # These files accumulate processed/uploaded file tracking across test runs
+    if [ -d "/var/lib/tvm-upload" ]; then
+        rm -f /var/lib/tvm-upload/queue.json 2>/dev/null || true
+        rm -f /var/lib/tvm-upload/queue.json.bak 2>/dev/null || true
+        rm -f /var/lib/tvm-upload/processed_files.json 2>/dev/null || true
+    fi
+
+    # Clean up test-specific state files (used by Tests 13, 14, 15, 16)
+    rm -f /tmp/queue-*.json 2>/dev/null || true
+    rm -f /tmp/registry-*.json 2>/dev/null || true
 
     log_success "Cleanup complete"
 }
@@ -395,10 +476,80 @@ save_test_result() {
     echo "" >> "$result_file"
 }
 
+# Safe S3 cleanup with production protection
+cleanup_test_s3_data() {
+    local vehicle_id=$1
+    local s3_bucket=$2
+    local aws_profile=$3
+    local aws_region=$4
+    local date_filter=${5:-$(date +%Y-%m-%d)}  # Default to today
+
+    # SAFETY CHECK: Prevent cleaning production vehicle IDs
+    for prod_id in "${PRODUCTION_VEHICLE_IDS[@]}"; do
+        if [ "$vehicle_id" = "$prod_id" ]; then
+            log_error "SAFETY BLOCK: Cannot auto-clean production vehicle ID: $vehicle_id"
+            log_warning "To clean manually, run:"
+            log_warning "  aws s3 rm s3://${s3_bucket}/${vehicle_id}/${date_filter}/ --recursive --profile ${aws_profile} --region ${aws_region}"
+            return 1
+        fi
+    done
+
+    # Only clean test vehicle IDs (must contain "TEST" or "test")
+    if [[ ! "$vehicle_id" =~ (TEST|test) ]]; then
+        log_warning "Vehicle ID doesn't contain 'TEST': $vehicle_id"
+        log_warning "For safety, only test vehicle IDs can be auto-cleaned"
+        log_info "Add 'TEST' to vehicle ID or clean manually"
+        return 1
+    fi
+
+    # Safe to clean test data
+    local s3_path="s3://${s3_bucket}/${vehicle_id}/${date_filter}/"
+    log_info "Cleaning test data: $s3_path"
+
+    if aws s3 rm "$s3_path" --recursive --profile "$aws_profile" --region "$aws_region" 2>/dev/null; then
+        log_success "Cleaned test data from S3"
+    else
+        log_warning "No test data found to clean (or AWS error)"
+    fi
+}
+
+# Generate test-specific vehicle ID
+generate_test_vehicle_id() {
+    local base_name=${1:-"vehicle-TEST"}
+    local timestamp=$(date +%s)
+    echo "${base_name}-${timestamp}"
+}
+
+# Complete vehicle folder cleanup (all dates) - for end of test suite
+# Deletes the EXACT vehicle ID folder that was created for this test run
+cleanup_complete_vehicle_folder() {
+    local vehicle_id=$1
+    local s3_bucket=$2
+    local aws_profile=$3
+    local aws_region=$4
+
+    # Simple check: just verify vehicle_id is not empty
+    if [ -z "$vehicle_id" ]; then
+        log_error "Vehicle ID is empty, cannot clean"
+        return 1
+    fi
+
+    # Clean the EXACT vehicle folder (e.g., s3://bucket/vehicle-TEST-MANUAL-1730123456/)
+    local s3_path="s3://${s3_bucket}/${vehicle_id}/"
+    log_info "Cleaning test vehicle folder: $s3_path"
+
+    if aws s3 rm "$s3_path" --recursive --profile "$aws_profile" --region "$aws_region" 2>/dev/null; then
+        log_success "Cleaned vehicle folder from S3: ${vehicle_id}/"
+    else
+        log_warning "No vehicle data found to clean (or AWS error)"
+    fi
+}
+
 # Export functions
 export -f log_info log_success log_error log_warning log_skip
 export -f print_test_header print_test_summary
 export -f wait_with_progress create_test_dir generate_test_file set_file_mtime
+export -f cleanup_test_s3_data cleanup_complete_vehicle_folder generate_test_vehicle_id
 export -f assert_file_exists assert_file_not_exists assert_equals assert_contains assert_greater_than
 export -f load_config start_tvm_service stop_tvm_service get_service_logs check_service_health
 export -f cleanup_test_env save_test_result

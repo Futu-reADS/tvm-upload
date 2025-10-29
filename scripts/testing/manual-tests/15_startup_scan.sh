@@ -11,6 +11,7 @@ source "${SCRIPT_DIR}/../../lib/test_helpers.sh"
 
 # Configuration
 CONFIG_FILE="${1:-config/config.yaml}"
+TEST_VEHICLE_ID="${2}"  # Test vehicle ID passed from run_manual_tests.sh
 TEST_DIR="/tmp/tvm-manual-test"
 SERVICE_LOG="/tmp/tvm-service.log"
 
@@ -19,6 +20,12 @@ print_test_header "Startup Scan" "15"
 # Parse configuration
 log_info "Loading configuration..."
 load_config "$CONFIG_FILE"
+
+# Override vehicle ID with test-specific ID
+if [ -n "$TEST_VEHICLE_ID" ]; then
+    VEHICLE_ID="$TEST_VEHICLE_ID"
+    log_info "Using test vehicle ID: $VEHICLE_ID"
+fi
 
 # Create test directory
 mkdir -p "$TEST_DIR/terminal"
@@ -35,13 +42,12 @@ log_directories:
 s3:
   bucket: $S3_BUCKET
   region: $AWS_REGION
-  credentials_path: /home/$(whoami)/.aws
   profile: $AWS_PROFILE
 upload:
   schedule:
     mode: "interval"
     interval_hours: 0
-    interval_minutes: 10
+    interval_minutes: 5  # Minimum allowed interval (system enforced)
   file_stable_seconds: 60
   operational_hours:
     enabled: false
@@ -128,14 +134,18 @@ fi
 
 # Start service (this should trigger startup scan)
 log_info "Starting TVM upload service (should trigger startup scan)..."
-if ! start_tvm_service "$TEST_CONFIG" "$SERVICE_LOG"; then
+if ! start_tvm_service "$TEST_CONFIG" "$SERVICE_LOG" "" "$TEST_VEHICLE_ID"; then
     log_error "Failed to start service"
     exit 1
 fi
 
 # Wait for startup scan and upload
+# Note: Files are created before service starts, so startup scan should detect them
+# upload_on_start: true means files should upload immediately after scan
+# Wait: startup scan (5s) + upload processing (10s) + buffer (15s) = 30s
 log_info "Waiting for startup scan and upload..."
-wait_with_progress 90 "Startup scan and upload"
+log_info "Config has upload_on_start: true, so files should upload immediately after scan"
+wait_with_progress 30 "Startup scan and immediate upload"
 
 # Get S3 paths for different dates
 DATE_1DAY=$(date -d "1 day ago" +%Y-%m-%d)
@@ -201,13 +211,13 @@ log_info "First upload time: $FIRST_UPLOAD_TIME"
 # Restart service
 log_info "Restarting service (should check registry, not re-upload)..."
 rm -f "$SERVICE_LOG"
-if ! start_tvm_service "$TEST_CONFIG" "$SERVICE_LOG"; then
+if ! start_tvm_service "$TEST_CONFIG" "$SERVICE_LOG" "" "$TEST_VEHICLE_ID"; then
     log_error "Failed to restart service"
     exit 1
 fi
 
-# Wait for startup scan
-wait_with_progress 90 "Restart and startup scan"
+# Wait for startup scan (files already in registry, should NOT re-upload)
+wait_with_progress 30 "Restart and startup scan (registry check only)"
 
 # Check if file was re-uploaded
 SECOND_UPLOAD_TIME=$(aws s3 ls "$S3_PATH_1DAY" --profile "$AWS_PROFILE" --region "$AWS_REGION" 2>/dev/null | awk '{print $1, $2}' || echo "")

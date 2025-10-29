@@ -11,6 +11,7 @@ source "${SCRIPT_DIR}/../../lib/test_helpers.sh"
 
 # Configuration
 CONFIG_FILE="${1:-config/config.yaml}"
+TEST_VEHICLE_ID="${2}"  # Test vehicle ID passed from run_manual_tests.sh
 TEST_DIR="/tmp/tvm-manual-test"
 SERVICE_LOG="/tmp/tvm-service.log"
 
@@ -20,28 +21,36 @@ print_test_header "File Date Preservation" "3"
 log_info "Loading configuration..."
 load_config "$CONFIG_FILE"
 
+# Override vehicle ID with test-specific ID
+if [ -n "$TEST_VEHICLE_ID" ]; then
+    VEHICLE_ID="$TEST_VEHICLE_ID"
+    log_info "Using test vehicle ID: $VEHICLE_ID"
+fi
+
 # Create test directory
 mkdir -p "$TEST_DIR/terminal"
 log_success "Created test directory"
 
-# Start service
-log_info "Starting TVM upload service..."
-if ! start_tvm_service "$CONFIG_FILE" "$SERVICE_LOG" "$TEST_DIR"; then
-    log_error "Failed to start service"
-    exit 1
-fi
-
-# Create file with old modification time (5 days ago)
+# Create file with old modification time (2 days ago) BEFORE starting service
+# This ensures startup scan picks it up with the correct mtime
+# Note: Must be within max_age_days limit (3 days by default) for startup scan to detect it
 TEST_FILE="$TEST_DIR/terminal/old_file.log"
-DAYS_AGO=5
+DAYS_AGO=2
 OLD_DATE=$(date -d "$DAYS_AGO days ago" +%Y-%m-%d)
 
 log_info "Creating file with old modification time ($DAYS_AGO days ago)..."
-touch "$TEST_FILE"
 echo "Old data from $DAYS_AGO days ago" > "$TEST_FILE"
 
-# Set modification time to 5 days ago
+# Set modification time to DAYS_AGO (do this immediately after creation)
 set_file_mtime "$TEST_FILE" "$DAYS_AGO"
+
+# Start service AFTER file is created with correct mtime
+# This way startup scan will detect it with the old date
+log_info "Starting TVM upload service..."
+if ! start_tvm_service "$CONFIG_FILE" "$SERVICE_LOG" "$TEST_DIR" "$TEST_VEHICLE_ID"; then
+    log_error "Failed to start service"
+    exit 1
+fi
 
 # Verify file timestamp
 FILE_MTIME=$(stat -c %y "$TEST_FILE" | cut -d' ' -f1)

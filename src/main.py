@@ -267,29 +267,29 @@ class TVMUploadSystem:
     def _on_file_ready(self, filepath: str) -> bool:
         """Callback when file monitor detects a stable file (queues or uploads immediately)."""
         self.stats['files_detected'] += 1
-        
+
         logger.info(f"File ready: {Path(filepath).name}")
-        
+
         # Always add to persistent queue first
         self.queue_manager.add_file(filepath)
-        
+
         # Check if operational hours allow immediate upload
         op_hours = self.config.get('upload.operational_hours', {})
-        
+
         if op_hours.get('enabled', False):
             # Operational hours enabled - check if we can upload now
             if self._should_upload_now():
                 logger.info("Within operational hours, uploading")
-                
+
                 if self.batch_upload_enabled:
                     # Batch mode: When ONE file becomes ready, upload ALL queued files
                     # Rationale: Maximizes WiFi usage since connection is already established
                     # Trade-off: Slightly delays single file, but uploads pending files from hours/days ago
                     logger.info("Batch upload enabled - uploading entire queue")
-                    
+
                     # Instead of inferring success from queue state, use actual upload results
                     upload_results = self._process_upload_queue()
-                    
+
                     # Check explicit result for this specific file
                     if filepath in upload_results:
                         success = upload_results[filepath]
@@ -317,9 +317,34 @@ class TVMUploadSystem:
                 logger.info("Outside operational hours, queued for scheduled upload")
                 return False  # Queued, not uploaded yet
         else:
-            # Operational hours disabled - queue for scheduled upload only
-            logger.info(f"Queued for scheduled upload")
-            return False  # Queued, not uploaded yet
+            # Operational hours disabled - upload immediately (no time restrictions)
+            logger.info("Operational hours disabled, uploading immediately")
+
+            if self.batch_upload_enabled:
+                # Batch mode: upload ALL queued files
+                logger.info("Batch upload enabled - uploading entire queue")
+
+                upload_results = self._process_upload_queue()
+
+                # Check explicit result for this specific file
+                if filepath in upload_results:
+                    success = upload_results[filepath]
+                    if success:
+                        logger.debug(f" Batch upload succeeded for trigger file: {Path(filepath).name}")
+                    else:
+                        logger.debug(f" Batch upload failed for trigger file: {Path(filepath).name}")
+                    # Return False to avoid duplicate registry marking
+                    return False
+                else:
+                    logger.warning(
+                        f"Trigger file not in batch results: {Path(filepath).name} "
+                        f"(possibly removed from queue before upload)"
+                    )
+                    return False
+            else:
+                # Upload only this single file
+                logger.info("Batch upload disabled - uploading only this file")
+                return self._upload_single_file_now(filepath)
     
     def _upload_single_file_now(self, filepath: str) -> bool:
         """

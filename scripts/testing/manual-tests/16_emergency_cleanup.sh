@@ -11,6 +11,7 @@ source "${SCRIPT_DIR}/../../lib/test_helpers.sh"
 
 # Configuration
 CONFIG_FILE="${1:-config/config.yaml}"
+TEST_VEHICLE_ID="${2}"  # Test vehicle ID passed from run_manual_tests.sh
 TEST_DIR="/tmp/tvm-manual-test"
 SERVICE_LOG="/tmp/tvm-service.log"
 
@@ -19,6 +20,12 @@ print_test_header "Emergency Cleanup Thresholds" "16"
 # Parse configuration
 log_info "Loading configuration..."
 load_config "$CONFIG_FILE"
+
+# Override vehicle ID with test-specific ID
+if [ -n "$TEST_VEHICLE_ID" ]; then
+    VEHICLE_ID="$TEST_VEHICLE_ID"
+    log_info "Using test vehicle ID: $VEHICLE_ID"
+fi
 
 # Create test directory
 mkdir -p "$TEST_DIR/terminal"
@@ -46,7 +53,6 @@ log_directories:
 s3:
   bucket: $S3_BUCKET
   region: $AWS_REGION
-  credentials_path: /home/$(whoami)/.aws
   profile: $AWS_PROFILE
 upload:
   schedule:
@@ -89,7 +95,7 @@ log_success "Created test config with emergency cleanup enabled"
 
 # Start service
 log_info "Starting TVM upload service..."
-if ! start_tvm_service "$TEST_CONFIG" "$SERVICE_LOG"; then
+if ! start_tvm_service "$TEST_CONFIG" "$SERVICE_LOG" "" "$TEST_VEHICLE_ID"; then
     log_error "Failed to start service"
     exit 1
 fi

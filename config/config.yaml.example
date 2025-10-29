@@ -47,16 +47,20 @@ vehicle_id: "vehicle-CN-001"
 #   - Example use case: /var/log has many system subdirectories that should be ignored
 #
 # Files are automatically organized in S3 by source type.
-# NOTE: The install script automatically replaces 'USER' with your actual username.
-# If manually configuring, update all /home/USER paths to your actual home directory.
+# NOTE: Environment variables are automatically expanded by the system.
+# You can use ${HOME}, ${USER}, or ~ for paths.
+# Examples:
+#   ${HOME}/.aws        → /home/pankaj/.aws (expanded at runtime)
+#   ~/.aws              → /home/pankaj/.aws (tilde expansion)
+#   /home/${USER}/.aws  → /home/pankaj/.aws (variable in middle of path)
 
 log_directories:
-  - path: /home/USER/.parcel/log/terminal
+  - path: ${HOME}/.parcel/log/terminal
     source: terminal
     recursive: true  # Include subdirectories
     # No pattern specified → Uploads ALL files from this directory and subdirectories
 
-  - path: /home/USER/.ros/log
+  - path: ${HOME}/.ros/log
     source: ros
     recursive: true  # Include subdirectories (important for ROS folder structure!)
     # No pattern specified → Uploads ALL files from this directory and subdirectories
@@ -66,7 +70,7 @@ log_directories:
     pattern: "syslog*"  # Only upload files matching "syslog*" (syslog, syslog.1, etc.)
     recursive: false     # Do NOT monitor subdirectories (system logs have many folders)
 
-  - path: /home/USER/ros2_ws/log
+  - path: ${HOME}/ros2_ws/log
     source: ros2
     recursive: true  # Include subdirectories
     # No pattern specified → Uploads ALL files from this directory and subdirectories
@@ -81,10 +85,11 @@ s3:
   # AWS China region
   # Options: cn-north-1 (Beijing), cn-northwest-1 (Ningxia)
   region: cn-north-1
-  
+
   # Path to AWS credentials directory
   # Should contain credentials and config files
-  credentials_path: /home/USER/.aws
+  # Uses ${HOME} for cross-environment compatibility
+  credentials_path: ${HOME}/.aws
   
   # AWS profile name to use
   # Profile must be configured in ~/.aws/credentials and ~/.aws/config

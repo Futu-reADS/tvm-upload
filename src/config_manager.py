@@ -79,6 +79,9 @@ class ConfigManager:
         if self.config is None:
             raise ConfigValidationError("Config file is empty or contains only whitespace")
 
+        # Expand environment variables in paths
+        self.config = self._expand_env_vars(self.config)
+
         self.validate_config(self.config)
         logger.info(f"Loaded config from {self.config_path}")
         return self.config
@@ -135,6 +138,40 @@ class ConfigManager:
             logger.info("Keeping existing configuration")
             return self.config
         
+
+    def _expand_env_vars(self, config: Any) -> Any:
+        """
+        Recursively expand environment variables in configuration values.
+
+        Supports:
+        - ${VAR_NAME} - Environment variable expansion
+        - ${HOME} - User's home directory
+        - ${USER} - Current username
+        - ~ or ~/ - Tilde expansion to home directory
+
+        Args:
+            config: Configuration value (dict, list, str, or other)
+
+        Returns:
+            Configuration with expanded environment variables
+
+        Examples:
+            "/home/USER/.aws" -> "/home/ABC/.aws" (if USER=ABC)
+            "${HOME}/.aws" -> "/home/ABC/.aws"
+            "~/.aws" -> "/home/ABC/.aws"
+        """
+        if isinstance(config, dict):
+            return {key: self._expand_env_vars(value) for key, value in config.items()}
+        elif isinstance(config, list):
+            return [self._expand_env_vars(item) for item in config]
+        elif isinstance(config, str):
+            # First expand tilde (~)
+            expanded = os.path.expanduser(config)
+            # Then expand environment variables (${VAR} or $VAR)
+            expanded = os.path.expandvars(expanded)
+            return expanded
+        else:
+            return config
 
     def _validate_log_directories(self, log_dirs):
         """Validate log directories (supports legacy string list or new dict format)."""
@@ -239,11 +276,12 @@ class ConfigManager:
     
     def _validate_s3_config(self, s3_config: Dict[str, Any]) -> None:
         """Validate S3 configuration section."""
-        s3_required = ['bucket', 'region', 'credentials_path']
+        # credentials_path is optional - AWS SDK will auto-discover credentials
+        s3_required = ['bucket', 'region']
         for key in s3_required:
             if key not in s3_config:
                 raise ConfigValidationError(f"Missing s3.{key}")
-        
+
         # Validate region exists (allow any AWS region)
         if not s3_config['region']:
             raise ConfigValidationError("s3.region cannot be empty")
