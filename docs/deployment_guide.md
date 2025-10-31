@@ -284,6 +284,39 @@ nano config/config.yaml
 
 Save and exit: `Ctrl+X`, `Y`, `Enter`
 
+#### 5.3 Configure System Logrotate (Important for Syslog)
+
+**Why:** System logs rotate weekly by default, but TVM scans files < 3 days old, causing data loss.
+
+**Solution:** Change logrotate to daily rotation:
+
+```bash
+sudo nano /etc/logrotate.d/rsyslog
+```
+
+Find the `/var/log/syslog` section and change `weekly` to `daily`:
+
+```
+/var/log/syslog {
+    daily           # ← Change from 'weekly' to 'daily'
+    rotate 7        # Keep 7 days of logs
+    missingok
+    notifempty
+    delaycompress
+    compress
+    postrotate
+        /usr/lib/rsyslog/rsyslog-rotate
+    endscript
+}
+```
+
+**Apply rotation immediately:**
+```bash
+sudo logrotate -f /etc/logrotate.d/rsyslog
+```
+
+**Note:** This ensures rotated syslogs (syslog.1, syslog.2, etc.) are captured within TVM's 3-day scan window. Active `syslog` file is excluded by pattern matching in config to avoid infinite upload loops.
+
 ---
 
 ### Step 6: Pre-Deployment Validation
@@ -584,6 +617,46 @@ journalctl -u tvm-upload -n 20
 ```
 
 This script tests all AWS permissions comprehensively. Fix any ✗ errors shown.
+
+---
+
+### Problem: Syslog uploading in infinite loop
+
+**Symptoms:**
+- Logs show syslog uploading every 60 seconds repeatedly
+- Upload succeeds but immediately retries
+- Other directories (terminal, ros) not uploading
+- Warning: `✗ Upload failed, NOT marking as processed: syslog`
+
+**Root cause:** Active syslog file is constantly being written to by the system, triggering re-uploads.
+
+**Solution:**
+```bash
+# Edit config to only monitor rotated syslogs
+sudo nano /etc/tvm-upload/config.yaml
+```
+
+Change syslog configuration:
+```yaml
+log_directories:
+  - path: /var/log
+    source: syslog
+    pattern: "syslog.[1-9]*"  # Only rotated files, NOT active syslog
+    recursive: false
+```
+
+Then reload:
+```bash
+sudo systemctl reload tvm-upload
+```
+
+**Verify fix:**
+```bash
+# Should show other directories uploading now
+journalctl -u tvm-upload -f
+```
+
+**Additional step:** Ensure daily logrotate (see Step 5.3) so rotated files are captured within 3-day scan window.
 
 ---
 
