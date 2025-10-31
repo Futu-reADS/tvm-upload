@@ -14,7 +14,7 @@ This guide provides **step-by-step instructions** for deploying the TVM log uplo
 - Pre-deployment validation automatically checks all prerequisites
 - Installation script handles all system setup
 - Health check script verifies successful deployment
-- Diagnostic scripts troubleshoot issues
+- Diagnostic scripts troubleshoot issues.
 
 ---
 
