@@ -10,23 +10,37 @@
 
 ## 🚀 Quick Start
 
-### Install & Run (Production)
+### Production Deployment
 
+**For complete vehicle deployment instructions, see:**
+
+📘 **[Deployment Guide](docs/deployment_guide.md)** - Complete step-by-step deployment process
+
+The deployment guide includes:
+- Prerequisites and S3 bucket setup
+- AWS credentials configuration with S3-specific settings
+- Automated validation scripts
+- Installation with health checks
+- Troubleshooting and maintenance
+
+**Quick overview:**
 ```bash
-# 1. Configure
-cp config/config.yaml.example config/config.yaml
-nano config/config.yaml  # Edit: vehicle_id, S3 bucket, AWS profile
+# 1. Configure AWS credentials
+aws configure --profile china
+aws configure set s3.endpoint_url https://s3.cn-north-1.amazonaws.com.cn --profile china
+# (+ 2 more S3 settings - see deployment guide)
 
-# 2. Install (automated - creates directories, service, starts daemon)
+# 2. Configure and validate
+cp config/config.yaml.example config/config.yaml
+nano config/config.yaml  # Set vehicle_id
+./scripts/deployment/verify_deployment.sh
+
+# 3. Install
 sudo ./scripts/deployment/install.sh
 
-# 3. Verify
-sudo systemctl status tvm-upload
+# 4. Verify
+sudo ./scripts/deployment/health_check.sh
 ```
-
-**Done!** The service is now running and monitoring your log directories.
-
-See [Quick Start Guide](docs/quick_start.md) for detailed walkthrough.
 
 ### Develop & Test (Local)
 
@@ -64,8 +78,7 @@ python3 src/main.py --config config/config.yaml --log-level DEBUG
 
 | Document | Description | Audience |
 |----------|-------------|----------|
-| **[Quick Start](docs/quick_start.md)** | Get running in 5 minutes | Operators |
-| **[Deployment Guide](docs/deployment_guide.md)** | Production deployment steps | DevOps, SRE |
+| **[Deployment Guide](docs/deployment_guide.md)** | **START HERE** - Complete vehicle deployment | Operators, DevOps |
 | **[Complete Reference](docs/complete_reference.md)** | All features, configuration, examples | All Users |
 | **[Testing Guide](docs/autonomous_testing_guide.md)** | Running 235+ automated tests | Developers |
 | **[GitHub Actions OIDC](docs/github_actions_oidc_setup.md)** | CI/CD setup without stored credentials | DevOps |
@@ -122,7 +135,7 @@ vehicle_id: "vehicle-CN-001"
 
 # Directories to monitor
 log_directories:
-  - path: /home/autoware/.parcel/log/terminal
+  - path: ${HOME}/.parcel/log/terminal
     source: terminal
     recursive: true
     pattern: "*.log"

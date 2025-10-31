@@ -1,14 +1,20 @@
 # TVM Log Upload System - Deployment Guide
 
-**Version:** 2.1
-**Last Updated:** 2025-01-27
+**Version:** 2.2
+**Last Updated:** 2025-10-31
 **Target Audience:** Vehicle deployment technicians
 
 ---
 
 ## 📋 Overview
 
-This guide provides **step-by-step instructions** for deploying the TVM log upload system to production vehicles. The installation takes approximately **5-10 minutes** per vehicle.
+This guide provides **step-by-step instructions** for deploying the TVM log upload system to production vehicles. The deployment is **largely automated** using validation and installation scripts. Total time: approximately **5-10 minutes** per vehicle.
+
+**Automation Scripts:**
+- Pre-deployment validation automatically checks all prerequisites
+- Installation script handles all system setup
+- Health check script verifies successful deployment
+- Diagnostic scripts troubleshoot issues
 
 ---
 
@@ -56,19 +62,20 @@ Complete these one-time setup tasks:
 }
 ```
 
-#### 2. AWS CLI Configuration
+#### 2. S3 Bucket Setup
 
-On your laptop (for verification):
-```bash
-aws configure --profile china
-# Enter:
-#   AWS Access Key ID: <your-key-id>
-#   AWS Secret Access Key: <your-secret-key>
-#   Default region: cn-north-1
-#   Default output format: json
-```
+**One-time AWS S3 bucket creation:**
 
-Verify access:
+1. Log into AWS China Console: https://console.amazonaws.cn
+2. Navigate to S3 service
+3. Create bucket:
+   - Name: `t01logs`
+   - Region: `cn-north-1` (Beijing) or `cn-northwest-1` (Ningxia)
+   - Block Public Access: **Enabled** (keep private)
+   - Versioning: Optional
+   - Encryption: Recommended (SSE-S3)
+
+**Verify bucket access from laptop:**
 ```bash
 aws s3 ls s3://t01logs --profile china --region cn-north-1
 ```
@@ -76,6 +83,25 @@ aws s3 ls s3://t01logs --profile china --region cn-north-1
 ---
 
 ## 🚗 Per-Vehicle Deployment
+
+**Deployment Overview:**
+1. Prepare vehicle information (vehicle ID)
+2. Clone repository and install dependencies
+3. Configure AWS credentials (manual + verification script)
+4. Configure system (config.yaml)
+5. **Run pre-deployment validation script**
+6. Install system (automated script)
+7. **Run health check script**
+8. Verify first upload
+
+**Key Scripts:**
+- `./scripts/diagnostics/verify_aws_credentials.sh` - Comprehensive AWS verification
+- `./scripts/deployment/verify_deployment.sh` - Pre-deployment validation
+- `./scripts/deployment/install.sh` - Automated installation
+- `./scripts/deployment/health_check.sh` - Post-deployment health check
+- `./scripts/deployment/uninstall.sh` - Complete removal
+
+---
 
 ### Step 1: Prepare Vehicle Information
 
@@ -85,15 +111,7 @@ Before installation, decide:
    - Format: `vehicle-CN-XXX` (e.g., `vehicle-CN-001`, `vehicle-CN-002`)
    - **IMPORTANT:** Must be unique across all vehicles!
 
-2. **Log Directories** - Paths to monitor (check these exist):
-   - Terminal logs: `/home/USER/.parcel/log/terminal`
-   - ROS logs: `/home/USER/.ros/log`
-   - System logs: `/var/log`
-   - ROS2 logs: `/home/USER/ros2_ws/log`
-
-3. **Network** - Ensure vehicle has:
-   - WiFi connectivity
-   - Access to AWS China endpoints (`.amazonaws.com.cn`)
+2. **Network** - Ensure vehicle has WiFi connectivity to AWS China
 
 ---
 
@@ -106,10 +124,13 @@ On the vehicle:
 cd ~
 
 # Clone repository (if not already present)
-git clone https://github.com/your-org/tvm-upload.git
+git clone git@github.com:Futu-reADS/tvm-upload.git
 
 # Enter project directory
 cd tvm-upload
+
+# Switch to deployment branch
+git checkout main
 ```
 
 If repository already exists:
@@ -120,38 +141,122 @@ git pull origin main
 
 ---
 
-### Step 3: Configure AWS Credentials
+### Step 3: Install Dependencies
 
-Set up AWS credentials on the vehicle:
+Install Python dependencies using requirements.txt:
 
 ```bash
-aws configure --profile china
+cd ~/tvm-upload
+
+# Install dependencies
+pip3 install -r requirements.txt
+
+# Verify installation
+python3 -c "import boto3, yaml, watchdog; print('✓ Dependencies installed')"
 ```
 
-Enter the shared credentials:
-- **AWS Access Key ID:** `<your-access-key-id>`
-- **AWS Secret Access Key:** `<your-secret-access-key>`
-- **Default region:** `cn-north-1`
-- **Default output format:** `json`
+**Expected output:** `✓ Dependencies installed`
 
-**Verify connectivity:**
+**If installation fails:**
 ```bash
-aws s3 ls s3://t01logs --profile china --region cn-north-1
+# Use virtual environment
+python3 -m venv venv
+source venv/bin/activate
+pip install -r requirements.txt
 ```
-
-You should see bucket contents or an empty response (not an error).
 
 ---
 
-### Step 4: Configure System
+### Step 4: Configure AWS Credentials
 
-#### 4.1 Copy Configuration Template
+**Recommended: Interactive setup + S3 configuration**
+
+**Step 1: Configure basic credentials (interactive):**
+```bash
+aws configure --profile china
+```
+Enter when prompted:
+- **AWS Access Key ID:** `YOUR_ACCESS_KEY_ID_HERE`
+- **AWS Secret Access Key:** `YOUR_SECRET_ACCESS_KEY_HERE`
+- **Default region:** `cn-north-1`
+- **Default output format:** `json`
+
+**Step 2: Add S3-specific settings for AWS China (required):**
+```bash
+aws configure set s3.endpoint_url https://s3.cn-north-1.amazonaws.com.cn --profile china
+aws configure set s3.signature_version s3v4 --profile china
+aws configure set s3.addressing_style path --profile china
+```
+
+---
+
+**Alternative: All-in-one commands (for scripting/automation):**
+```bash
+aws configure set aws_access_key_id YOUR_ACCESS_KEY_ID_HERE --profile china
+aws configure set aws_secret_access_key YOUR_SECRET_ACCESS_KEY_HERE --profile china
+aws configure set region cn-north-1 --profile china
+aws configure set output json --profile china
+aws configure set s3.endpoint_url https://s3.cn-north-1.amazonaws.com.cn --profile china
+aws configure set s3.signature_version s3v4 --profile china
+aws configure set s3.addressing_style path --profile china
+```
+
+---
+
+**Alternative: Manual file editing:**
+
+Create `~/.aws/credentials`:
+```bash
+mkdir -p ~/.aws
+nano ~/.aws/credentials
+```
+```ini
+[china]
+aws_access_key_id = YOUR_ACCESS_KEY_ID_HERE
+aws_secret_access_key = YOUR_SECRET_ACCESS_KEY_HERE
+```
+
+Create `~/.aws/config`:
+```bash
+nano ~/.aws/config
+```
+```ini
+[profile china]
+region = cn-north-1
+output = json
+s3 =
+    endpoint_url = https://s3.cn-north-1.amazonaws.com.cn
+    signature_version = s3v4
+    addressing_style = path
+```
+
+---
+
+**Verify AWS credentials:**
+```bash
+./scripts/diagnostics/verify_aws_credentials.sh
+```
+
+This script verifies:
+- AWS CLI installation
+- Credentials file and profile configuration
+- AWS identity (STS check)
+- S3 bucket access and write permissions
+- CloudWatch permissions
+
+**Expected output:** All tests pass with ✓ marks. If any test fails, fix the issue before proceeding.
+
+---
+
+### Step 5: Configure System
+
+#### 5.1 Copy Configuration Template
 
 ```bash
 cp config/config.yaml.example config/config.yaml
 ```
 
-#### 4.2 Edit Configuration
+#### 5.2 Edit Configuration
 
 ```bash
 nano config/config.yaml
@@ -172,14 +277,6 @@ nano config/config.yaml
      profile: china
    ```
 
-3. **Verify log directories** (Lines ~54-73):
-   ```yaml
-   log_directories:
-     - path: /home/USER/.parcel/log/terminal  # ← USER will be auto-replaced
-       source: terminal
-     # ... (other directories)
-   ```
-
 **Optional changes** (advanced):
 - Upload schedule (line ~106): Change from `interval` mode to `daily` if needed
 - Deletion policy (line ~278): Adjust `keep_days` (default: 14)
@@ -189,55 +286,35 @@ Save and exit: `Ctrl+X`, `Y`, `Enter`
 
 ---
 
-### Step 5: Pre-Deployment Validation
+### Step 6: Pre-Deployment Validation
 
-**IMPORTANT:** Run this before installing!
+**IMPORTANT:** Run comprehensive validation before installing:
 
 ```bash
 ./scripts/deployment/verify_deployment.sh
 ```
 
-**Expected output:**
-```
-╔════════════════════════════════════════════════════════════════╗
-║  TVM Log Upload - Pre-Deployment Validation                   ║
-╔════════════════════════════════════════════════════════════════╗
+**This script checks:**
+- ✓ Configuration file exists and is valid
+- ✓ Vehicle ID, S3 bucket, AWS region configured
+- ✓ AWS credentials file and profile exist
+- ✓ AWS connectivity and permissions (S3 + CloudWatch)
+- ✓ Python version (>= 3.8), pip3, disk space (>= 100GB)
+- ✓ Log directories exist or will be created
+- ✓ Network connectivity to AWS China endpoints
+- ✓ Vehicle ID uniqueness check in S3
+- ✓ Python dependencies (boto3, watchdog, PyYAML)
+- ✓ systemd availability
 
-Configuration File
-────────────────────────────────────────────────────────────────
-✓ Config file exists: /home/user/tvm-upload/config/config.yaml
-✓ Vehicle ID: vehicle-CN-001
-✓ S3 Bucket: t01logs
-✓ AWS Region: cn-north-1
-
-AWS Credentials
-────────────────────────────────────────────────────────────────
-✓ AWS credentials file exists
-✓ AWS profile configured: china
-
-AWS Connectivity & Permissions
-────────────────────────────────────────────────────────────────
-ℹ Testing AWS connectivity...
-✓ S3 bucket accessible: s3://t01logs
-✓ S3 write permission verified
-✓ CloudWatch permissions verified
-
-... (more checks)
-
-════════════════════════════════════════════════════════════════
-[PASS] Environment ready for deployment ✓
-
-Ready to install:
-  sudo ./scripts/deployment/install.sh
-```
+**Expected result:** `[PASS] Environment ready for deployment ✓`
 
 **If validation fails:**
 - ✗ Red errors: MUST be fixed before proceeding
-- ⚠ Yellow warnings: Should be reviewed but may be acceptable
+- ⚠ Yellow warnings: Review but may proceed
 
 ---
 
-### Step 6: Install System
+### Step 7: Install System
 
 **One-command installation:**
 
@@ -322,66 +399,40 @@ Useful Commands:
 
 **Installation takes:** ~2-3 minutes
 
+**What happens after installation:**
+- Service starts monitoring log directories immediately
+- Existing logs (created within last 3 days) are scanned and queued
+- Files upload immediately if within operational hours (09:00-16:00)
+- Files upload at next scheduled interval (default: every 2 hours) if outside operational hours
+- File stability period (60 seconds) must elapse before any upload
+
 ---
 
-### Step 7: Verify Deployment
+### Step 8: Verify Deployment
 
-**Run health check:**
+**Run health check script:**
 
 ```bash
 sudo ./scripts/deployment/health_check.sh
 ```
 
-**Expected output:**
-```
-╔════════════════════════════════════════════════════════════════╗
-║  TVM Upload Health Check - vehicle-CN-001                     ║
-╔════════════════════════════════════════════════════════════════╗
+**This script checks:**
+- ✓ Service status and uptime
+- ✓ Recent errors in logs (last 24 hours)
+- ✓ Recent uploads count and last upload time
+- ✓ Queue file status and pending files count
+- ✓ Registry file status and tracked files count
+- ✓ Disk usage percentage and available space
+- ✓ S3 connectivity and recent uploads
+- ✓ Configuration file and critical settings
 
-Service Status
-✓ Service is running (started: 2025-01-27 14:32:15)
+**Expected result:** `[PASS] System is healthy ✓` or `[WARN] System is working with minor issues`
 
-Recent Activity
-✓ No errors in last 24 hours
-⚠ No uploads in last 24 hours
-ℹ This may be normal if no new files were created
-
-Upload Queue
-✓ Queue file exists: /var/lib/tvm-upload/queue.json
-✓ Queue is empty (all files uploaded)
-
-Upload Registry
-⚠ Registry file not found (will be created on first upload)
-
-Disk Space
-✓ Disk usage: 45% (120GB available)
-
-S3 Connectivity
-✓ S3 bucket accessible
-⚠ No files found in S3 yet
-ℹ Files will appear after first upload
-
-Configuration
-✓ Config file exists: /etc/tvm-upload/config.yaml
-✓ Upload schedule: interval
-✓ Deletion policy: enabled (keep 14 days)
-
-════════════════════════════════════════════════════════════════
-Health Check Summary
-════════════════════════════════════════════════════════════════
-  Passed:   8
-  Failed:   0
-  Warnings: 3
-
-[WARN] System is working with minor issues
-       No action required
-```
-
-**Warnings are normal** for a fresh installation (no files uploaded yet).
+**Note:** Warnings are normal for fresh installation (no files uploaded yet).
 
 ---
 
-### Step 8: Verify First Upload
+### Step 9: Verify First Upload
 
 **Create a test file:**
 
@@ -412,6 +463,11 @@ aws s3 ls s3://t01logs/vehicle-CN-001/ --recursive --profile china --region cn-n
 ## 🔧 Post-Deployment
 
 ### Monitor Service
+
+**Check system health (recommended):**
+```bash
+sudo ./scripts/deployment/health_check.sh
+```
 
 **View real-time logs:**
 ```bash
@@ -462,10 +518,19 @@ aws s3 sync s3://t01logs/vehicle-CN-001/ ./downloaded-logs/ --profile china --re
 
 ## 🚨 Troubleshooting
 
+**First step for any issue:**
+```bash
+sudo ./scripts/deployment/health_check.sh
+```
+This will identify most common problems automatically.
+
+---
+
 ### Problem: Service won't start
 
-**Check logs:**
+**Diagnose:**
 ```bash
+sudo ./scripts/deployment/health_check.sh
 journalctl -u tvm-upload -n 50
 ```
 
@@ -473,14 +538,13 @@ journalctl -u tvm-upload -n 50
 - Missing AWS credentials
 - Invalid configuration
 - Python dependencies not installed
-- File permission issues
 
 **Solution:**
 ```bash
-# Re-run pre-deployment validation
+# Re-run validation
 ./scripts/deployment/verify_deployment.sh
 
-# Reinstall
+# If validation fails, fix issues then reinstall
 sudo ./scripts/deployment/uninstall.sh
 sudo ./scripts/deployment/install.sh
 ```
@@ -489,33 +553,22 @@ sudo ./scripts/deployment/install.sh
 
 ### Problem: No files uploading to S3
 
-**Check queue:**
+**Diagnose:**
 ```bash
-cat /var/lib/tvm-upload/queue.json | python3 -m json.tool
-```
-
-**Check logs for errors:**
-```bash
-journalctl -u tvm-upload | grep -i error
+sudo ./scripts/deployment/health_check.sh
 ```
 
 **Common causes:**
-- Operational hours restriction (uploads only 09:00-18:00)
+- Operational hours restriction (default: 09:00-16:00)
 - File stability period not elapsed (60 seconds)
-- No new files created in monitored directories
-- Network connectivity issues
+- No new files in monitored directories
 
 **Solution:**
 ```bash
-# Check operational hours in config
-grep -A 10 "operational_hours:" /etc/tvm-upload/config.yaml
+# Check operational hours
+grep -A 5 "operational_hours:" /etc/tvm-upload/config.yaml
 
-# Temporarily disable operational hours
-sudo nano /etc/tvm-upload/config.yaml
-# Set: operational_hours.enabled: false
-sudo systemctl reload tvm-upload
-
-# Create test file and wait
+# Create test file and wait 90 seconds
 echo "test" > ~/.parcel/log/terminal/test-$(date +%s).log
 sleep 90
 journalctl -u tvm-upload -n 20
@@ -523,71 +576,32 @@ journalctl -u tvm-upload -n 20
 
 ---
 
+### Problem: AWS credentials issues
+
+**Diagnose:**
+```bash
+./scripts/diagnostics/verify_aws_credentials.sh
+```
+
+This script tests all AWS permissions comprehensively. Fix any ✗ errors shown.
+
+---
+
 ### Problem: Disk full
 
-**Check disk usage:**
+**Diagnose:**
 ```bash
+sudo ./scripts/deployment/health_check.sh
 df -h /
 ```
 
-**Check deletion settings:**
-```bash
-grep -A 15 "deletion:" /etc/tvm-upload/config.yaml
-```
-
 **Solution:**
 ```bash
-# Enable deletion if disabled
+# Enable aggressive deletion
 sudo nano /etc/tvm-upload/config.yaml
-# Set: deletion.after_upload.enabled: true
-# Set: deletion.after_upload.keep_days: 0  # Immediate deletion
-sudo systemctl reload tvm-upload
-
-# Enable emergency cleanup
+# Set: deletion.after_upload.keep_days: 0
 # Set: deletion.emergency.enabled: true
 sudo systemctl reload tvm-upload
-```
-
----
-
-### Problem: Duplicate uploads
-
-**Check registry:**
-```bash
-cat /var/lib/tvm-upload/processed_files.json | python3 -m json.tool | less
-```
-
-**Common causes:**
-- Registry file corrupted
-- File modified after upload (size/mtime changed)
-
-**Solution:**
-```bash
-# Clear registry (will re-upload all files)
-sudo systemctl stop tvm-upload
-sudo rm /var/lib/tvm-upload/processed_files.json
-sudo systemctl start tvm-upload
-```
-
----
-
-### Problem: Service crashes on reboot
-
-**Check service status:**
-```bash
-sudo systemctl status tvm-upload
-```
-
-**Check if enabled:**
-```bash
-sudo systemctl is-enabled tvm-upload
-```
-
-**Solution:**
-```bash
-# Re-enable service
-sudo systemctl enable tvm-upload
-sudo systemctl start tvm-upload
 ```
 
 ---
@@ -676,15 +690,14 @@ aws cloudwatch get-metric-statistics \
 
 Use this checklist when deploying to a vehicle:
 
-- [ ] AWS credentials configured on vehicle
-- [ ] Repository cloned/updated
-- [ ] Configuration file created and edited
-- [ ] Vehicle ID is unique
-- [ ] Pre-deployment validation passed
-- [ ] Installation completed successfully
-- [ ] Health check passed
+- [ ] AWS credentials configured (`~/.aws/credentials` + `~/.aws/config`)
+- [ ] AWS credentials verified (`./scripts/diagnostics/verify_aws_credentials.sh`)
+- [ ] Repository cloned and dependencies installed
+- [ ] Configuration file created with unique vehicle ID
+- [ ] Pre-deployment validation passed (`./scripts/deployment/verify_deployment.sh`)
+- [ ] Installation completed (`./scripts/deployment/install.sh`)
+- [ ] Health check passed (`./scripts/deployment/health_check.sh`)
 - [ ] Test file uploaded to S3
-- [ ] Service logs show no errors
 - [ ] Documented vehicle ID in inventory
 
 ---
@@ -697,10 +710,10 @@ Use this checklist when deploying to a vehicle:
 - Review configuration: `/etc/tvm-upload/config.yaml`
 
 **For Help:**
-- GitHub Issues: https://github.com/your-org/tvm-upload/issues
+- GitHub Issues: https://github.com/Futu-reADS/tvm-upload/issues
 - Documentation: `/docs` directory
 
 ---
 
-**Last Updated:** 2025-01-27
-**Version:** 2.1
+**Last Updated:** 2025-10-31
+**Version:** 2.2
