@@ -447,8 +447,12 @@ class UploadManager:
             log_dir = dir_config['path']
             log_dir_resolved = str(Path(log_dir).resolve())
 
+            # Add trailing slash to ensure we match full directory boundary
+            # Prevents /path/ros from matching /path/ros2/file.log
+            log_dir_with_sep = log_dir_resolved if log_dir_resolved.endswith('/') else log_dir_resolved + '/'
+
             # Check if file is under this directory
-            if file_str.startswith(log_dir_resolved):
+            if file_str.startswith(log_dir_with_sep) or file_str == log_dir_resolved:
                 # Use explicit source from config
                 source = dir_config['source']
 
@@ -597,8 +601,14 @@ class UploadManager:
         
         # Determine if this is a syslog file
         file_str = str(file_path.resolve())
+
+        def is_under_directory(file_path_str: str, dir_path_str: str) -> bool:
+            """Check if file is under directory with proper boundary matching."""
+            dir_with_sep = dir_path_str if dir_path_str.endswith('/') else dir_path_str + '/'
+            return file_path_str.startswith(dir_with_sep) or file_path_str == dir_path_str
+
         is_syslog = any(
-            file_str.startswith(str(Path(cfg['path']).resolve())) and cfg['source'] == 'syslog'
+            is_under_directory(file_str, str(Path(cfg['path']).resolve())) and cfg['source'] == 'syslog'
             for cfg in self.log_directory_configs
         )
         
