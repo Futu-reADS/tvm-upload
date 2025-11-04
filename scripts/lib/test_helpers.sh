@@ -55,17 +55,40 @@ print_test_header() {
     echo "================================================================"
 }
 
-# Print test summary
+# Print test summary with color-coded borders
 print_test_summary() {
+    local total=$((TESTS_PASSED + TESTS_FAILED + TESTS_SKIPPED))
+    local summary_color="${NC}"
+    local status_icon=""
+    local status_text=""
+
+    # Determine color based on test results
+    if [ $TESTS_FAILED -gt 0 ]; then
+        # Red if any failures
+        summary_color="${RED}"
+        status_icon="✗"
+        status_text="FAILED"
+    elif [ $TESTS_SKIPPED -gt 0 ]; then
+        # Yellow if warnings/skipped but no failures
+        summary_color="${YELLOW}"
+        status_icon="⚠"
+        status_text="WARNING"
+    else
+        # Green if all passed
+        summary_color="${GREEN}"
+        status_icon="✓"
+        status_text="PASSED"
+    fi
+
     echo ""
-    echo "================================================================"
-    echo "TEST SUMMARY"
-    echo "================================================================"
+    echo -e "${summary_color}================================================================${NC}"
+    echo -e "${summary_color}TEST SUMMARY${NC} [${summary_color}${status_icon} ${status_text}${NC}]"
+    echo -e "${summary_color}================================================================${NC}"
     echo -e "Passed:  ${GREEN}${TESTS_PASSED}${NC}"
     echo -e "Failed:  ${RED}${TESTS_FAILED}${NC}"
     echo -e "Skipped: ${YELLOW}${TESTS_SKIPPED}${NC}"
-    echo "Total:   $((TESTS_PASSED + TESTS_FAILED + TESTS_SKIPPED))"
-    echo "================================================================"
+    echo "Total:   ${total}"
+    echo -e "${summary_color}================================================================${NC}"
 }
 
 # Wait with progress indicator

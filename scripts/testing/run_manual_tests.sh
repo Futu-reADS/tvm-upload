@@ -71,6 +71,213 @@ fi
 # Change to project root
 cd "$PROJECT_ROOT"
 
+# ============================================================================
+# PRE-FLIGHT CHECKS - Smart validation before running tests
+# ============================================================================
+echo ""
+echo "╔════════════════════════════════════════════════════════════════╗"
+echo "║     PRE-FLIGHT CHECKS                                          ║"
+echo "╔════════════════════════════════════════════════════════════════╗"
+echo ""
+
+PREFLIGHT_WARNINGS=0
+PREFLIGHT_ERRORS=0
+
+# ----------------------------------------------------------------------------
+# Check 1: AWS Connectivity & S3 Access
+# ----------------------------------------------------------------------------
+log_info "Checking AWS connectivity and S3 access..."
+
+if [ -n "$AWS_PROFILE" ]; then
+    AWS_CMD="aws --profile $AWS_PROFILE --region $AWS_REGION"
+else
+    AWS_CMD="aws --region $AWS_REGION"
+fi
+
+# Test S3 bucket access
+if $AWS_CMD s3 ls "s3://$S3_BUCKET" &> /dev/null; then
+    log_success "AWS S3 bucket accessible: s3://$S3_BUCKET"
+else
+    log_error "Cannot access S3 bucket: s3://$S3_BUCKET"
+    echo ""
+    echo "  ${YELLOW}Possible causes:${NC}"
+    echo "  • AWS credentials not configured or expired"
+    echo "  • S3 bucket does not exist"
+    echo "  • IAM permissions insufficient (need s3:ListBucket)"
+    echo "  • Network connectivity issues"
+    echo ""
+    echo "  ${CYAN}Troubleshooting:${NC}"
+    echo "  • Run: aws sts get-caller-identity --profile ${AWS_PROFILE:-default}"
+    echo "  • Run: ./scripts/diagnostics/verify_aws_credentials.sh"
+    echo "  • Run: ./scripts/deployment/verify_deployment.sh"
+    echo ""
+
+    PREFLIGHT_ERRORS=$((PREFLIGHT_ERRORS + 1))
+
+    read -p "$(echo -e ${YELLOW}Do you want to continue anyway? [y/N]: ${NC})" -n 1 -r
+    echo ""
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        log_error "Pre-flight checks failed. Exiting."
+        exit 1
+    fi
+    log_warning "Continuing despite AWS connectivity issues (tests will likely fail)"
+fi
+
+# Test S3 write permission
+TEST_KEY="${TEST_VEHICLE_ID}/preflight-test-$(date +%s).txt"
+if echo "preflight test" | $AWS_CMD s3 cp - "s3://$S3_BUCKET/$TEST_KEY" &> /dev/null 2>&1; then
+    log_success "S3 write permission verified"
+    # Cleanup test file
+    $AWS_CMD s3 rm "s3://$S3_BUCKET/$TEST_KEY" &> /dev/null 2>&1 || true
+else
+    log_error "S3 write permission denied"
+    echo ""
+    echo "  ${YELLOW}Possible causes:${NC}"
+    echo "  • IAM policy missing s3:PutObject permission"
+    echo "  • Bucket policy restricts write access"
+    echo ""
+
+    PREFLIGHT_ERRORS=$((PREFLIGHT_ERRORS + 1))
+
+    read -p "$(echo -e ${YELLOW}Do you want to continue anyway? [y/N]: ${NC})" -n 1 -r
+    echo ""
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        log_error "Pre-flight checks failed. Exiting."
+        exit 1
+    fi
+    log_warning "Continuing despite S3 write permission issues (tests will likely fail)"
+fi
+
+# ----------------------------------------------------------------------------
+# Check 2: Operational Hours Configuration
+# ----------------------------------------------------------------------------
+log_info "Checking operational hours configuration..."
+
+# Parse operational hours from config
+# Use awk to parse the YAML correctly (avoids commented sections)
+OPERATIONAL_HOURS_ENABLED=$(awk '/^  operational_hours:/{flag=1; next} flag && /^    enabled:/{print $2; exit}' "$CONFIG_FILE" | tr -d '"')
+OPERATIONAL_START=$(awk '/^  operational_hours:/{flag=1; next} flag && /^    start:/{print $2; exit}' "$CONFIG_FILE" | tr -d '"' | tr -d ' ')
+OPERATIONAL_END=$(awk '/^  operational_hours:/{flag=1; next} flag && /^    end:/{print $2; exit}' "$CONFIG_FILE" | tr -d '"' | tr -d ' ')
+
+if [ "$OPERATIONAL_HOURS_ENABLED" = "true" ] && [ -n "$OPERATIONAL_START" ] && [ -n "$OPERATIONAL_END" ]; then
+    # Get current time in HH:MM format
+    CURRENT_TIME=$(date +%H:%M)
+    CURRENT_HOUR=$(date +%H | sed 's/^0//')  # Remove leading zero
+    CURRENT_MIN=$(date +%M | sed 's/^0//')   # Remove leading zero
+
+    # Handle empty minutes (becomes 0)
+    [ -z "$CURRENT_MIN" ] && CURRENT_MIN=0
+
+    # Parse start/end times (remove leading zeros)
+    START_HOUR=$(echo "$OPERATIONAL_START" | cut -d: -f1 | sed 's/^0//')
+    START_MIN=$(echo "$OPERATIONAL_START" | cut -d: -f2 | sed 's/^0//')
+    END_HOUR=$(echo "$OPERATIONAL_END" | cut -d: -f1 | sed 's/^0//')
+    END_MIN=$(echo "$OPERATIONAL_END" | cut -d: -f2 | sed 's/^0//')
+
+    # Handle empty minutes (becomes 0)
+    [ -z "$START_MIN" ] && START_MIN=0
+    [ -z "$END_MIN" ] && END_MIN=0
+
+    # Convert to minutes since midnight for comparison
+    CURRENT_MINS=$((CURRENT_HOUR * 60 + CURRENT_MIN))
+    START_MINS=$((START_HOUR * 60 + START_MIN))
+    END_MINS=$((END_HOUR * 60 + END_MIN))
+
+    # Check if current time is within operational hours
+    if [ $CURRENT_MINS -ge $START_MINS ] && [ $CURRENT_MINS -lt $END_MINS ]; then
+        log_success "Within operational hours (${OPERATIONAL_START}-${OPERATIONAL_END}, current: ${CURRENT_TIME})"
+    else
+        log_warning "OUTSIDE operational hours!"
+        echo ""
+        echo "  ${YELLOW}Current time:${NC}      $CURRENT_TIME"
+        echo "  ${YELLOW}Operational hours:${NC} ${OPERATIONAL_START} - ${OPERATIONAL_END}"
+        echo ""
+        echo "  ${CYAN}Impact:${NC}"
+        echo "  • Files will be queued instead of uploaded immediately"
+        echo "  • Tests may fail because uploads won't happen within test duration"
+        echo "  • Scheduled uploads (interval: 2 hours) won't trigger in short tests"
+        echo ""
+        echo "  ${CYAN}Recommendations:${NC}"
+        echo "  1. Run tests during operational hours (${OPERATIONAL_START}-${OPERATIONAL_END})"
+        echo "  2. Temporarily disable operational_hours in config:"
+        echo "     ${BLUE}sed -i '/operational_hours:/,/enabled:/s/enabled: true/enabled: false/' $CONFIG_FILE${NC}"
+        echo "  3. Continue anyway (tests will likely fail)"
+        echo ""
+
+        PREFLIGHT_WARNINGS=$((PREFLIGHT_WARNINGS + 1))
+
+        read -p "$(echo -e ${YELLOW}Do you want to continue anyway? [y/N]: ${NC})" -n 1 -r
+        echo ""
+        if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+            log_error "Tests cancelled due to operational hours restriction."
+            exit 1
+        fi
+        log_warning "Continuing outside operational hours (expect test failures)"
+    fi
+else
+    log_success "Operational hours disabled (immediate uploads 24/7)"
+fi
+
+# ----------------------------------------------------------------------------
+# Check 3: Configuration Sanity
+# ----------------------------------------------------------------------------
+log_info "Checking configuration sanity..."
+
+# Check vehicle_id
+if [ -z "$ORIGINAL_VEHICLE_ID" ]; then
+    log_warning "vehicle_id not set in config (will use generated ID)"
+    PREFLIGHT_WARNINGS=$((PREFLIGHT_WARNINGS + 1))
+else
+    log_success "Vehicle ID configured: $ORIGINAL_VEHICLE_ID"
+fi
+
+# Check upload_on_start setting (for Test 12)
+UPLOAD_ON_START=$(grep "upload_on_start:" "$CONFIG_FILE" | head -1 | awk '{print $2}' | tr -d '"')
+if [ -n "$UPLOAD_ON_START" ]; then
+    log_success "upload_on_start setting found: $UPLOAD_ON_START"
+else
+    log_warning "upload_on_start setting not found (Test 12 may have issues)"
+    PREFLIGHT_WARNINGS=$((PREFLIGHT_WARNINGS + 1))
+fi
+
+# ----------------------------------------------------------------------------
+# Check 4: Disk Space
+# ----------------------------------------------------------------------------
+log_info "Checking disk space..."
+
+DISK_FREE_GB=$(df -BG /tmp | tail -1 | awk '{print $4}' | tr -d 'G')
+if [ "$DISK_FREE_GB" -ge 10 ]; then
+    log_success "Disk space: ${DISK_FREE_GB}GB free in /tmp"
+elif [ "$DISK_FREE_GB" -ge 5 ]; then
+    log_warning "Low disk space: ${DISK_FREE_GB}GB free in /tmp (tests need ~2GB)"
+    PREFLIGHT_WARNINGS=$((PREFLIGHT_WARNINGS + 1))
+else
+    log_error "Insufficient disk space: ${DISK_FREE_GB}GB free in /tmp (need at least 5GB)"
+    PREFLIGHT_ERRORS=$((PREFLIGHT_ERRORS + 1))
+
+    read -p "$(echo -e ${YELLOW}Do you want to continue anyway? [y/N]: ${NC})" -n 1 -r
+    echo ""
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        log_error "Pre-flight checks failed. Exiting."
+        exit 1
+    fi
+fi
+
+# ----------------------------------------------------------------------------
+# Pre-flight Summary
+# ----------------------------------------------------------------------------
+echo ""
+echo "════════════════════════════════════════════════════════════════"
+if [ $PREFLIGHT_ERRORS -eq 0 ] && [ $PREFLIGHT_WARNINGS -eq 0 ]; then
+    log_success "All pre-flight checks passed! ✓"
+elif [ $PREFLIGHT_ERRORS -eq 0 ]; then
+    log_warning "Pre-flight checks completed with $PREFLIGHT_WARNINGS warning(s)"
+else
+    log_warning "Pre-flight checks completed with $PREFLIGHT_ERRORS error(s) and $PREFLIGHT_WARNINGS warning(s)"
+fi
+echo "════════════════════════════════════════════════════════════════"
+echo ""
+
 # Pre-test cleanup: Remove any leftover state from previous test runs
 log_info "Cleaning up any leftover state from previous test runs..."
 cleanup_test_env "/tmp/tvm-manual-test" 2>/dev/null || true

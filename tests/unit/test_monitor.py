@@ -484,20 +484,40 @@ def test_mark_file_as_processed(temp_dir, callback_tracker, monitor_config):
     test_file = log_dir / "test.log"
     test_file.write_text("test data")
     
-    # Wait for upload
+    # Wait for upload callback
     result = wait_until(
         lambda: len(callback_tracker.called_files) >= 1,
-        timeout=5
+        timeout=5,
+        description="callback to be called"
     )
-    
     assert result, "File should be uploaded"
-    
-    # Check registry
+
+    # Wait for registry to be written with file entry
+    # Callback is invoked BEFORE _mark_file_processed() completes,
+    # so we need to wait for the registry file to actually contain the entry
+    def registry_contains_file():
+        if not registry_file.exists():
+            return False
+        try:
+            with open(registry_file) as f:
+                data = json.load(f)
+                return len(data.get('files', {})) > 0
+        except (json.JSONDecodeError, FileNotFoundError):
+            return False
+
+    result = wait_until(
+        registry_contains_file,
+        timeout=3,
+        description="registry file to contain processed file"
+    )
+    assert result, "Registry should contain processed file after callback completes"
+
+    # Verify registry contents
     with open(registry_file) as f:
         data = json.load(f)
         files = data['files']
         assert len(files) > 0, "Registry should contain processed file"
-        
+
         # Verify file identity format (filepath::size::mtime)
         file_identity = list(files.keys())[0]
         assert '::' in file_identity, "File identity should contain ::"
