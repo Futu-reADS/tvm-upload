@@ -644,7 +644,7 @@ def test_recursive_boolean_false():
 
 
 def test_recursive_string_value_rejected():
-    """Test recursive: "true" (string) is accepted (YAML converts to bool)"""
+    """Test recursive: "true" (string) is rejected by type validation"""
     config = {
         'vehicle_id': 'vehicle-001',
         'log_directories': [
@@ -660,14 +660,15 @@ def test_recursive_string_value_rejected():
         temp_path = f.name
 
     try:
-        # YAML will keep the string "true", but validation doesn't check type
-        cm = ConfigManager(temp_path)
+        # Validation now checks type - string should be rejected
+        with pytest.raises(ConfigValidationError, match="recursive.*boolean"):
+            cm = ConfigManager(temp_path)
     finally:
         Path(temp_path).unlink()
 
 
 def test_recursive_integer_value_rejected():
-    """Test recursive: 1 (integer) is accepted (validation doesn't check type)"""
+    """Test recursive: 1 (integer) is rejected by type validation"""
     config = {
         'vehicle_id': 'vehicle-001',
         'log_directories': [
@@ -683,8 +684,9 @@ def test_recursive_integer_value_rejected():
         temp_path = f.name
 
     try:
-        # Validation doesn't check type for recursive field
-        cm = ConfigManager(temp_path)
+        # Validation now checks type - integer should be rejected
+        with pytest.raises(ConfigValidationError, match="recursive.*boolean"):
+            cm = ConfigManager(temp_path)
     finally:
         Path(temp_path).unlink()
 
@@ -743,7 +745,7 @@ def test_pattern_empty_string_rejected():
 
 
 def test_pattern_non_string_rejected():
-    """Test non-string pattern is accepted (validation doesn't check type)"""
+    """Test non-string pattern is rejected by type validation"""
     config = {
         'vehicle_id': 'vehicle-001',
         'log_directories': [
@@ -759,8 +761,9 @@ def test_pattern_non_string_rejected():
         temp_path = f.name
 
     try:
-        # Validation doesn't check type for pattern field
-        cm = ConfigManager(temp_path)
+        # Validation now checks type - integer should be rejected
+        with pytest.raises(ConfigValidationError, match="pattern.*string"):
+            cm = ConfigManager(temp_path)
     finally:
         Path(temp_path).unlink()
 

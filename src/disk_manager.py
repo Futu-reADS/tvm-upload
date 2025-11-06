@@ -7,6 +7,7 @@ Monitors disk space and manages file cleanup
 import shutil
 import logging
 import time
+import fnmatch
 from pathlib import Path
 from typing import List, Tuple, Dict
 import os
@@ -53,20 +54,23 @@ class DiskManager:
         uploaded_files (dict): Files safe to delete with deletion time (NEW v2.0)
     """
     
-    def __init__(self, 
+    def __init__(self,
              log_directories: List[str],
              reserved_gb: float = 70.0,
              warning_threshold: float = 0.90,
-             critical_threshold: float = 0.95):
+             critical_threshold: float = 0.95,
+             directory_configs: Dict[str, Dict] = None):
         """
         Initialize disk manager.
-        
+
         Args:
             log_directories: Directories to monitor and clean
             reserved_gb: Minimum free space to maintain (GB)
             warning_threshold: Disk usage % to warn at (0-1, e.g. 0.90 = 90%)
             critical_threshold: Disk usage % to force cleanup (0-1, e.g. 0.95 = 95%)
-            
+            directory_configs: Optional dict mapping directory paths to their configs
+                              Format: {'/var/log': {'pattern': 'syslog.[1-9]*', 'recursive': False}}
+
         Note:
             Thresholds are disk usage percentages, not free space percentages
         """
@@ -74,20 +78,25 @@ class DiskManager:
         self.reserved_bytes = int(reserved_gb * 1024 * 1024 * 1024)
         self.warning_threshold = warning_threshold
         self.critical_threshold = critical_threshold
-        
+
+        # Store directory configurations (pattern, recursive) for deletion filtering
+        self.directory_configs = directory_configs or {}
+
         # Track uploaded files with deletion time (NEW v2.0)
         # Format: {filepath: delete_after_timestamp}
         # If keep_days=0, timestamp is 0 (delete immediately)
         # If keep_days=14, timestamp is upload_time + 14 days
         self.uploaded_files: Dict[str, float] = {}
-        
+
         # Callback for registry cleanup (set by main.py)
         self._on_file_deleted_callback = None
-        
+
         logger.info("Initialized")
         logger.info(f"Reserved space: {reserved_gb} GB")
         logger.info(f"Warning threshold: {warning_threshold * 100}%")
         logger.info(f"Critical threshold: {critical_threshold * 100}%")
+        if self.directory_configs:
+            logger.info(f"Directory configs loaded for {len(self.directory_configs)} directories")
     
     def mark_uploaded(self, filepath: str, keep_until_days: int = 0):
         """
@@ -115,7 +124,46 @@ class DiskManager:
                 delete_after = time.time() + (keep_until_days * SECONDS_PER_DAY)
         
         self.uploaded_files[abs_path] = delete_after
-    
+
+    def _matches_pattern(self, file_path: Path) -> bool:
+        """
+        Check if file matches the configured pattern for its parent directory.
+
+        Args:
+            file_path: Path to the file to check
+
+        Returns:
+            bool: True if file matches pattern (or no pattern configured), False otherwise
+        """
+        # Find which monitored directory this file belongs to
+        for log_dir in self.log_directories:
+            try:
+                # Check if file is under this log directory
+                file_path.relative_to(log_dir)
+
+                # Found the parent directory, check pattern
+                dir_str = str(log_dir.resolve())
+                config = self.directory_configs.get(dir_str, {})
+                pattern = config.get('pattern')
+
+                if pattern is None:
+                    # No pattern configured - accept all files
+                    logger.debug(f"Deletion pattern check: {file_path.name} - no pattern, accepting")
+                    return True
+                else:
+                    # Check if filename matches pattern
+                    match_result = fnmatch.fnmatch(file_path.name, pattern)
+                    logger.debug(f"Deletion pattern check: {file_path.name} vs '{pattern}' => {match_result}")
+                    return match_result
+
+            except ValueError:
+                # file_path is not relative to this log_dir, continue
+                continue
+
+        # File is not in any monitored directory - should not happen, but be safe
+        logger.warning(f"File {file_path} not in any monitored directory, skipping deletion")
+        return False
+
     def get_disk_usage(self, path: str = "/") -> Tuple[float, int, int]:
         """Get disk usage statistics (returns: usage_percent, used_bytes, free_bytes)."""
         stat = shutil.disk_usage(path)
@@ -227,16 +275,21 @@ class DiskManager:
             
             for file_path in directory.rglob('*'):
                 if file_path.is_file() and not file_path.name.startswith('.'):
+                    # NEW: Check if file matches the upload pattern before deletion
+                    if not self._matches_pattern(file_path):
+                        logger.debug(f"Skipping {file_path.name} - doesn't match upload pattern")
+                        continue
+
                     try:
                         mtime = file_path.stat().st_mtime
-                        
+
                         if mtime < cutoff_time:
                             size = file_path.stat().st_size
                             age_days = (time.time() - mtime) / 86400
-                            
+
                             logger.info(f"Deleting old file: {file_path.name} "
                                     f"({age_days:.1f} days old, {size / (1024**2):.1f} MB)")
-                            
+
                             file_path.unlink()
                             deleted_count += 1
                             freed_bytes += size
@@ -338,6 +391,11 @@ class DiskManager:
             
             for file_path in directory.rglob('*'):
                 if file_path.is_file() and not file_path.name.startswith('.'):
+                    # NEW: Check if file matches the upload pattern before deletion
+                    if not self._matches_pattern(file_path):
+                        logger.debug(f"EMERGENCY: Skipping {file_path.name} - doesn't match upload pattern")
+                        continue
+
                     try:
                         mtime = file_path.stat().st_mtime
                         size = file_path.stat().st_size

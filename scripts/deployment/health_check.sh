@@ -188,6 +188,14 @@ fi
 print_section "S3 Connectivity"
 
 if command -v aws &> /dev/null; then
+    # Detect if running with sudo and use actual user's AWS credentials
+    if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ]; then
+        # Running with sudo - use actual user's home for credentials
+        REAL_HOME=$(eval echo ~$SUDO_USER)
+        export AWS_SHARED_CREDENTIALS_FILE="$REAL_HOME/.aws/credentials"
+        export AWS_CONFIG_FILE="$REAL_HOME/.aws/config"
+    fi
+
     if [ -n "$AWS_PROFILE" ]; then
         AWS_CMD="aws --profile $AWS_PROFILE --region $AWS_REGION"
     else
@@ -197,35 +205,43 @@ if command -v aws &> /dev/null; then
     # Check recent uploads
     info "Checking recent uploads..."
 
-    RECENT_UPLOADS=$($AWS_CMD s3 ls "s3://$S3_BUCKET/$VEHICLE_ID/" --recursive 2>/dev/null | tail -10)
-
-    if [ -n "$RECENT_UPLOADS" ]; then
-        check_pass "S3 bucket accessible"
-
-        TOTAL_FILES=$($AWS_CMD s3 ls "s3://$S3_BUCKET/$VEHICLE_ID/" --recursive 2>/dev/null | wc -l)
-        check_pass "Total files in S3: $TOTAL_FILES"
-
-        echo ""
-        echo -e "${BOLD}Latest Uploads:${NC}"
-        echo "$RECENT_UPLOADS" | tail -5 | while read -r line; do
-            FILE_DATE=$(echo "$line" | awk '{print $1, $2}')
-            FILE_SIZE=$(echo "$line" | awk '{print $3}')
-            FILE_NAME=$(echo "$line" | awk '{print $4}' | rev | cut -d'/' -f1 | rev)
-
-            # Convert size to human readable
-            if [ "$FILE_SIZE" -gt 1048576 ]; then
-                FILE_SIZE_H="$(echo "scale=1; $FILE_SIZE / 1048576" | bc) MB"
-            elif [ "$FILE_SIZE" -gt 1024 ]; then
-                FILE_SIZE_H="$(echo "scale=1; $FILE_SIZE / 1024" | bc) KB"
-            else
-                FILE_SIZE_H="${FILE_SIZE} B"
-            fi
-
-            echo -e "  ${CYAN}$FILE_DATE${NC} - $FILE_NAME (${FILE_SIZE_H})"
-        done
+    # Test AWS credentials first
+    AWS_TEST_OUTPUT=$($AWS_CMD sts get-caller-identity 2>&1)
+    if [ $? -ne 0 ]; then
+        check_warn "Cannot access AWS (credentials issue)"
+        info "Error: $(echo "$AWS_TEST_OUTPUT" | head -1)"
+        info "Make sure AWS credentials are configured for profile: $AWS_PROFILE"
     else
-        check_warn "No files found in S3 yet"
-        info "Files will appear after first upload"
+        RECENT_UPLOADS=$($AWS_CMD s3 ls "s3://$S3_BUCKET/$VEHICLE_ID/" --recursive 2>/dev/null | tail -10)
+
+        if [ -n "$RECENT_UPLOADS" ]; then
+            check_pass "S3 bucket accessible"
+
+            TOTAL_FILES=$($AWS_CMD s3 ls "s3://$S3_BUCKET/$VEHICLE_ID/" --recursive 2>/dev/null | wc -l)
+            check_pass "Total files in S3: $TOTAL_FILES"
+
+            echo ""
+            echo -e "${BOLD}Latest Uploads:${NC}"
+            echo "$RECENT_UPLOADS" | tail -5 | while read -r line; do
+                FILE_DATE=$(echo "$line" | awk '{print $1, $2}')
+                FILE_SIZE=$(echo "$line" | awk '{print $3}')
+                FILE_NAME=$(echo "$line" | awk '{print $4}' | rev | cut -d'/' -f1 | rev)
+
+                # Convert size to human readable
+                if [ "$FILE_SIZE" -gt 1048576 ]; then
+                    FILE_SIZE_H="$(echo "scale=1; $FILE_SIZE / 1048576" | bc) MB"
+                elif [ "$FILE_SIZE" -gt 1024 ]; then
+                    FILE_SIZE_H="$(echo "scale=1; $FILE_SIZE / 1024" | bc) KB"
+                else
+                    FILE_SIZE_H="${FILE_SIZE} B"
+                fi
+
+                echo -e "  ${CYAN}$FILE_DATE${NC} - $FILE_NAME (${FILE_SIZE_H})"
+            done
+        else
+            check_warn "No files found in S3 yet"
+            info "Files will appear after first upload"
+        fi
     fi
 else
     check_warn "AWS CLI not available for S3 verification"

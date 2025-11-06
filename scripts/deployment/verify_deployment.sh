@@ -240,8 +240,9 @@ if [ -z "$LOG_DIRS" ]; then
     check_warn "No log directories configured"
 else
     for dir in $LOG_DIRS; do
-        # Replace USER placeholder
+        # Replace USER placeholder and expand ${HOME}
         dir="${dir//USER/$USER}"
+        dir="${dir//\$\{HOME\}/$HOME}"
 
         if [ -d "$dir" ]; then
             check_pass "Log directory exists: $dir"

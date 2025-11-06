@@ -20,6 +20,10 @@ vehicle_id: "vehicle-CN-001"
 ## ============================================
 # LOG DIRECTORIES TO MONITOR
 # ============================================
+# ⚠️ CRITICAL: When monitoring /var/log/syslog, you MUST use pattern "syslog.[1-9]*"
+#    to avoid uploading the active syslog file. Uploading the active file creates
+#    an infinite loop where the service continuously re-uploads the file it just wrote to.
+#
 # Four log sources are monitored with explicit source names:
 # 1. Terminal logs: terminal/ in S3
 # 2. ROS logs: ros/ in S3
@@ -37,7 +41,7 @@ vehicle_id: "vehicle-CN-001"
 #   - If pattern is omitted, ALL files in the directory are uploaded
 #   - Supports wildcards: * (any characters), ? (single character)
 #   - Examples:
-#       pattern: "syslog*"       → Matches: syslog, syslog.1, syslog.2.gz
+#       pattern: "syslog.[1-9]*" → Matches: syslog.1, syslog.2.gz (skips active syslog)
 #       pattern: "*.log"         → Matches: error.log, debug.log
 #       pattern: "test_*.mcap"   → Matches: test_2024.mcap, test_run1.mcap
 #
@@ -67,7 +71,8 @@ log_directories:
 
   - path: /var/log
     source: syslog
-    pattern: "syslog.[1-9]*"  # Only rotated files, NOT active syslog1, etc
+    pattern: "syslog.[1-9]*"  # CRITICAL: Only rotated files (syslog.1, syslog.2.gz)
+                               # Skips /var/log/syslog (active file - would cause infinite loop!)
     recursive: false     # Do NOT monitor subdirectories (system logs have many folders)
 
   - path: ${HOME}/ros2_ws/log

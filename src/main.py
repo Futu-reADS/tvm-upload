@@ -93,11 +93,22 @@ class TVMUploadSystem:
             log_directories=log_dir_configs
         )
 
+        # Build directory_configs for disk manager (pattern-aware deletion)
+        directory_configs = {}
+        if is_new_format:
+            for item in log_dir_configs:
+                resolved_path = str(Path(item['path']).expanduser().resolve())
+                directory_configs[resolved_path] = {
+                    'pattern': item.get('pattern'),
+                    'recursive': item.get('recursive', True)
+                }
+
         self.disk_manager = DiskManager(
             log_directories=monitor_paths,
             reserved_gb=self.config.get('disk.reserved_gb'),
             warning_threshold=self.config.get('disk.warning_threshold', 0.90),
-            critical_threshold=self.config.get('disk.critical_threshold', 0.95)
+            critical_threshold=self.config.get('disk.critical_threshold', 0.95),
+            directory_configs=directory_configs if is_new_format else None
         )
 
         def on_file_deleted(filepath):
