@@ -242,7 +242,21 @@ class ConfigManager:
                     f"log_directories[{idx}]: Duplicate source name '{source}'"
                 )
             seen_sources.add(source)
-        
+
+            # Validate recursive parameter
+            if 'recursive' in item:
+                if not isinstance(item['recursive'], bool):
+                    raise ConfigValidationError(
+                        f"log_directories[{idx}].recursive: Must be boolean, got {type(item['recursive'])}"
+                    )
+
+            # Validate pattern parameter
+            if 'pattern' in item:
+                if not isinstance(item['pattern'], str):
+                    raise ConfigValidationError(
+                        f"log_directories[{idx}].pattern: Must be string, got {type(item['pattern'])}"
+                    )
+
         logger.info(f"Validated {len(log_dirs)} log directories")
         if seen_sources:
             logger.info(f"Sources: {', '.join(sorted(seen_sources))}")
@@ -422,19 +436,33 @@ class ConfigManager:
                         "upload.processed_files_registry.retention_days must be > 0"
                     )
 
+        # Validate upload_on_start
+        if 'upload_on_start' in upload_config:
+            if not isinstance(upload_config['upload_on_start'], bool):
+                raise ConfigValidationError(
+                    "upload.upload_on_start must be boolean"
+                )
+
+        # Validate queue_file
+        if 'queue_file' in upload_config:
+            if not isinstance(upload_config['queue_file'], str):
+                raise ConfigValidationError(
+                    "upload.queue_file must be string"
+                )
+
         if 'batch_upload' in upload_config:
             batch = upload_config['batch_upload']
-            
+
             if 'enabled' in batch and not isinstance(batch['enabled'], bool):
                 raise ConfigValidationError(
                     "upload.batch_upload.enabled must be boolean"
                 )
-            
+
             if 'include_run_directory' in batch and not isinstance(batch['include_run_directory'], bool):
                 raise ConfigValidationError(
                     "upload.batch_upload.include_run_directory must be boolean"
                 )
-        
+
         # Validate directory_configs (NEW v2.1)
         if 'directory_configs' in upload_config:
             dir_configs = upload_config['directory_configs']
