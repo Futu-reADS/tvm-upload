@@ -279,9 +279,41 @@ echo "════════════════════════�
 echo ""
 
 # Pre-test cleanup: Remove any leftover state from previous test runs
-log_info "Cleaning up any leftover state from previous test runs..."
+log_info "Cleaning up any leftover local state from previous test runs..."
 cleanup_test_env "/tmp/tvm-manual-test" 2>/dev/null || true
 sleep 1
+
+# ============================================================================
+# S3 PRE-FLIGHT CLEANUP - Remove leftover test data from interrupted runs
+# ============================================================================
+echo ""
+echo "╔════════════════════════════════════════════════════════════════╗"
+echo "║     S3 PRE-FLIGHT CLEANUP                                      ║"
+echo "╔════════════════════════════════════════════════════════════════╗"
+echo ""
+
+# Extract vehicle name for pattern matching
+if [ -n "$ORIGINAL_VEHICLE_ID" ]; then
+    VEHICLE_NAME=$(echo "$ORIGINAL_VEHICLE_ID" | sed 's/^vehicle-//')
+    CLEANUP_PATTERN="vehicle-TEST-${VEHICLE_NAME}-MANUAL"
+else
+    CLEANUP_PATTERN="vehicle-TEST-MANUAL"
+fi
+
+log_info "Checking for leftover test data on S3..."
+log_info "Pattern: ${CLEANUP_PATTERN}*"
+echo ""
+
+# Call cleanup function (non-interactive mode for automation)
+if cleanup_all_test_folders "$CLEANUP_PATTERN" "$S3_BUCKET" "$AWS_PROFILE" "$AWS_REGION" false; then
+    log_success "S3 pre-flight cleanup complete"
+else
+    log_warning "S3 pre-flight cleanup completed with issues (continuing anyway)"
+fi
+
+echo ""
+echo "════════════════════════════════════════════════════════════════"
+echo ""
 
 # Initialize report
 cat > "$REPORT_FILE" <<EOF

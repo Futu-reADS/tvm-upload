@@ -648,11 +648,117 @@ cleanup_complete_vehicle_folder() {
     fi
 }
 
+# Cleanup all test folders matching a pattern (pre-flight cleanup)
+# Finds and removes all old test data from S3 for a specific vehicle pattern
+# Used to clean up leftover data from interrupted test runs
+cleanup_all_test_folders() {
+    local vehicle_pattern=$1  # e.g., "vehicle-TEST-CN-001-MANUAL"
+    local s3_bucket=$2
+    local aws_profile=$3
+    local aws_region=$4
+    local dry_run=${5:-false}  # Optional: set to 'true' for preview only
+
+    # ========================================================================
+    # SAFETY CHECK 1: Pattern must contain "TEST"
+    # ========================================================================
+    if [[ ! "$vehicle_pattern" =~ TEST ]]; then
+        log_error "SAFETY BLOCK: Pattern does not contain 'TEST': $vehicle_pattern"
+        log_warning "Refusing to search for non-test vehicles"
+        return 1
+    fi
+
+    # ========================================================================
+    # SAFETY CHECK 2: Production vehicle ID protection
+    # ========================================================================
+    for prod_id in "${PRODUCTION_VEHICLE_IDS[@]}"; do
+        if [[ "$vehicle_pattern" == "$prod_id"* ]]; then
+            log_error "SAFETY BLOCK: Pattern matches production vehicle ID: $vehicle_pattern"
+            return 1
+        fi
+    done
+
+    log_info "Searching for test folders matching pattern: ${vehicle_pattern}*"
+
+    # Build AWS command
+    if [ -n "$aws_profile" ]; then
+        AWS_CMD="aws --profile $aws_profile --region $aws_region"
+    else
+        AWS_CMD="aws --region $aws_region"
+    fi
+
+    # List all folders in bucket and filter for matching pattern
+    local matching_folders=$($AWS_CMD s3 ls "s3://${s3_bucket}/" 2>/dev/null | \
+        grep "PRE ${vehicle_pattern}" | \
+        awk '{print $2}' | \
+        sed 's|/$||' || true)
+
+    if [ -z "$matching_folders" ]; then
+        log_info "No matching test folders found"
+        return 0
+    fi
+
+    # Count folders
+    local folder_count=$(echo "$matching_folders" | wc -l)
+    log_info "Found $folder_count test folder(s) to clean:"
+    echo ""
+
+    # Display folders with file counts
+    local total_files=0
+    while IFS= read -r folder; do
+        local file_count=$($AWS_CMD s3 ls "s3://${s3_bucket}/${folder}/" --recursive 2>/dev/null | wc -l || echo "0")
+        total_files=$((total_files + file_count))
+        echo "  - $folder ($file_count files)"
+    done <<< "$matching_folders"
+
+    echo ""
+    log_info "Total: $folder_count folders, $total_files files"
+
+    if [ "$dry_run" = "true" ]; then
+        log_warning "DRY RUN MODE - No deletions performed"
+        return 0
+    fi
+
+    # Confirm deletion (only if interactive)
+    if [ -t 0 ]; then
+        echo ""
+        read -p "Delete these test folders? (y/N): " confirm
+        if [[ ! "$confirm" =~ ^[Yy]$ ]]; then
+            log_info "Cleanup cancelled by user"
+            return 0
+        fi
+    fi
+
+    echo ""
+    log_info "Cleaning up test folders..."
+
+    # Delete each folder
+    local success_count=0
+    local fail_count=0
+
+    while IFS= read -r folder; do
+        # Use the existing cleanup_complete_vehicle_folder function with safety checks
+        if cleanup_complete_vehicle_folder "$folder" "$s3_bucket" "$aws_profile" "$aws_region"; then
+            success_count=$((success_count + 1))
+        else
+            fail_count=$((fail_count + 1))
+        fi
+    done <<< "$matching_folders"
+
+    echo ""
+    log_info "Cleanup complete: $success_count cleaned, $fail_count failed"
+
+    if [ $fail_count -gt 0 ]; then
+        return 1
+    fi
+
+    return 0
+}
+
 # Export functions
 export -f log_info log_success log_error log_warning log_skip
 export -f print_test_header print_test_summary
 export -f wait_with_progress create_test_dir generate_test_file set_file_mtime
-export -f cleanup_test_s3_data cleanup_complete_vehicle_folder generate_test_vehicle_id
+export -f cleanup_test_s3_data cleanup_complete_vehicle_folder generate_test_vehicle_id cleanup_all_test_folders
 export -f assert_file_exists assert_file_not_exists assert_equals assert_contains assert_greater_than
 export -f load_config start_tvm_service stop_tvm_service get_service_logs check_service_health
 export -f cleanup_test_env save_test_result
