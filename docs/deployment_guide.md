@@ -1,6 +1,6 @@
 # TVM Log Upload System - Deployment Guide
 
-**Version:** 2.3
+**Version:** 2.6
 **Last Updated:** 2025-11-05
 **Target Audience:** Vehicle deployment technicians
 
@@ -18,9 +18,8 @@ This guide provides **step-by-step instructions** for deploying the TVM log uplo
 
 ---
 
-## ⚠️ Prerequisites
+##  Prerequisites
 
-### Before Visiting Vehicle
 
 Complete these one-time setup tasks:
 
@@ -80,19 +79,73 @@ Complete these one-time setup tasks:
 aws s3 ls s3://t01logs --profile china --region cn-north-1
 ```
 
+
+
+#### 3. Vehicle System Requirements
+
+Before deploying to any vehicle, ensure the following prerequisites are met:
+
+**System Requirements**
+
+✅ **Operating System:** Ubuntu 22.04+ or Debian 11+
+✅ **Python:** Python 3.10 or higher
+✅ **Package Manager:** pip3 (Python package installer)
+✅ **Network:** WiFi connectivity with access to AWS China regions
+✅ **Disk Space:** Minimum 10GB free space
+✅ **Permissions:** sudo/root access for systemd service installation
+
+**Verify system prerequisites:**
+```bash
+# Check OS version
+lsb_release -a
+
+# Check Python version (must be 3.10+)
+python3 --version
+
+# Check pip3 is installed
+pip3 --version
+
+# Check network connectivity to AWS China
+ping -c 3 s3.cn-north-1.amazonaws.com.cn
+
+# Check available disk space
+df -h /
+```
+
+**Expected outputs:**
+- Ubuntu: 22.04 or higher
+- Python: 3.10.x or higher
+- pip3: any recent version (e.g., 22.0+)
+- Network: Successful ping response
+- Disk: At least 10GB available
+
+#### Vehicle Information
+
+Before installation, prepare:
+
+1. **Vehicle ID** - Unique identifier for this vehicle
+   - Format: `vehicle-CN-XXX` (e.g., `vehicle-CN-001`, `vehicle-CN-002`)
+   - **IMPORTANT:** Must be unique across all vehicles!
+
+2. **AWS Credentials** - Access Key ID and Secret Access Key (from AWS setup above)
+
 ---
 
 ## 🚗 Per-Vehicle Deployment
 
 **Deployment Overview:**
-1. Prepare vehicle information (vehicle ID)
-2. Clone repository and install dependencies
-3. Configure AWS credentials (manual + verification script)
+
+**Required Steps (System Setup):**
+1. Clone repository to vehicle
+2. Install Python dependencies
+3. Configure AWS credentials
 4. Configure system (config.yaml)
-5. **Run pre-deployment validation script**
-6. Install system (automated script)
-7. **Run health check script**
-8. Verify first upload
+5. Run pre-deployment validation script
+6. **Install system (automated script)** ← System is now running!
+
+**Optional Steps (Verification - Recommended but not mandatory):**
+7. Run health check script (verify installation)
+8. Verify first upload (confirm S3 connectivity)
 
 **Key Scripts:**
 - `./scripts/diagnostics/verify_aws_credentials.sh` - Comprehensive AWS verification
@@ -103,19 +156,7 @@ aws s3 ls s3://t01logs --profile china --region cn-north-1
 
 ---
 
-### Step 1: Prepare Vehicle Information
-
-Before installation, decide:
-
-1. **Vehicle ID** - Unique identifier for this vehicle
-   - Format: `vehicle-CN-XXX` (e.g., `vehicle-CN-001`, `vehicle-CN-002`)
-   - **IMPORTANT:** Must be unique across all vehicles!
-
-2. **Network** - Ensure vehicle has WiFi connectivity to AWS China
-
----
-
-### Step 2: Clone Repository
+### Step 1: Clone Repository
 
 On the vehicle:
 
@@ -141,9 +182,9 @@ git pull origin main
 
 ---
 
-### Step 3: Install Dependencies
+### Step 2: Install Dependencies
 
-Install Python dependencies using requirements.txt:
+**Main Method - Direct Installation:**
 
 ```bash
 cd ~/tvm-upload
@@ -157,24 +198,49 @@ python3 -c "import boto3, yaml, watchdog; print('✓ Dependencies installed')"
 
 **Expected output:** `✓ Dependencies installed`
 
-**If installation fails:**
+---
+
+<details>
+<summary><b>📌 Alternative Method: Virtual Environment (click to expand)</b></summary>
+
+<br>
+
+**Use this if the main installation fails or you prefer isolated dependencies:**
+
 ```bash
-# Use virtual environment
+cd ~/tvm-upload
+
+# Create virtual environment
 python3 -m venv venv
+
+# Activate virtual environment
 source venv/bin/activate
+
+# Install dependencies
 pip install -r requirements.txt
+
+# Verify installation
+python3 -c "import boto3, yaml, watchdog; print('✓ Dependencies installed')"
 ```
+
+**Note:** If using virtual environment, you'll need to activate it before running any commands:
+```bash
+source ~/tvm-upload/venv/bin/activate
+```
+
+</details>
 
 ---
 
-### Step 4: Configure AWS Credentials
+### Step 3: Configure AWS Credentials
 
-**Recommended: Interactive setup + S3 configuration**
+**✅ Recommended Method - Interactive Setup:**
 
 **Step 1: Configure basic credentials (interactive):**
 ```bash
 aws configure --profile china
 ```
+
 Enter when prompted:
 - **AWS Access Key ID:** `YOUR_ACCESS_KEY_ID_HERE`
 - **AWS Secret Access Key:** `YOUR_SECRET_ACCESS_KEY_HERE`
@@ -190,7 +256,13 @@ aws configure set s3.addressing_style path --profile china
 
 ---
 
-**Alternative: All-in-one commands (for scripting/automation):**
+<details>
+<summary><b>📌 Alternative Method 1: All-in-One Commands (for scripting/automation - click to expand)</b></summary>
+
+<br>
+
+**Use this for automated deployments or scripting:**
+
 ```bash
 aws configure set aws_access_key_id YOUR_ACCESS_KEY_ID_HERE --profile china
 aws configure set aws_secret_access_key YOUR_SECRET_ACCESS_KEY_HERE --profile china
@@ -201,25 +273,40 @@ aws configure set s3.signature_version s3v4 --profile china
 aws configure set s3.addressing_style path --profile china
 ```
 
+**Advantage:** Single block of commands, easier to automate.
+
+</details>
+
 ---
 
-**Alternative: Manual file editing:**
+<details>
+<summary><b>📌 Alternative Method 2: Manual File Editing (for advanced users - click to expand)</b></summary>
 
-Create `~/.aws/credentials`:
+<br>
+
+**Use this if you prefer direct file editing or AWS CLI is not available:**
+
+**Step 1: Create credentials file:**
 ```bash
 mkdir -p ~/.aws
 nano ~/.aws/credentials
 ```
+
+Add the following content:
 ```ini
 [china]
 aws_access_key_id = YOUR_ACCESS_KEY_ID_HERE
 aws_secret_access_key = YOUR_SECRET_ACCESS_KEY_HERE
 ```
 
-Create `~/.aws/config`:
+Save and exit: `Ctrl+X`, `Y`, `Enter`
+
+**Step 2: Create config file:**
 ```bash
 nano ~/.aws/config
 ```
+
+Add the following content:
 ```ini
 [profile china]
 region = cn-north-1
@@ -230,9 +317,15 @@ s3 =
     addressing_style = path
 ```
 
+Save and exit: `Ctrl+X`, `Y`, `Enter`
+
+**Advantage:** Direct control over configuration files, works without AWS CLI.
+
+</details>
+
 ---
 
-**Verify AWS credentials:**
+**Verify AWS Credentials (required for all methods):**
 ```bash
 ./scripts/diagnostics/verify_aws_credentials.sh
 ```
@@ -248,15 +341,15 @@ This script verifies:
 
 ---
 
-### Step 5: Configure System
+### Step 4: Configure System
 
-#### 5.1 Copy Configuration Template
+#### 4.1 Copy Configuration Template
 
 ```bash
 cp config/config.yaml.example config/config.yaml
 ```
 
-#### 5.2 Edit Configuration
+#### 4.2 Edit Configuration
 
 ```bash
 nano config/config.yaml
@@ -281,15 +374,14 @@ nano config/config.yaml
 - Upload schedule (line ~106): Change from `interval` mode to `daily` if needed
 - Deletion policy (line ~278): Adjust `keep_days` (default: 14)
 - Operational hours (line ~153): Adjust upload time window
-- Startup scan (line ~140): Configure `scan_existing_files` settings:
-  - `enabled: true` - Scan for existing files on service start (recommended)
-  - `max_age_days: 3` - Only scan files newer than 3 days
 
 Save and exit: `Ctrl+X`, `Y`, `Enter`
 
-#### 5.3 Configure System Logrotate (Important for Syslog)
+#### 4.3 Configure System Logrotate (Required ONLY if monitoring /var/log/syslog)
 
-**Why:** System logs rotate weekly by default, but TVM scans files < 3 days old, causing data loss.
+**⚠️ Skip this step if you are NOT monitoring system logs (/var/log/syslog)**
+
+**Why this is needed:** System logs rotate weekly by default, but TVM scans files < 3 days old. Weekly rotation means you lose 4+ days of logs.
 
 **Solution:** Change logrotate to daily rotation:
 
@@ -313,18 +405,13 @@ Find the `/var/log/syslog` section and change `weekly` to `daily`:
 }
 ```
 
-**Apply rotation immediately:**
-```bash
-sudo logrotate -f /etc/logrotate.d/rsyslog
-```
+Save and exit: `Ctrl+X`, `Y`, `Enter`
 
-**Note:** This ensures rotated syslogs (syslog.1, syslog.2, etc.) are captured within TVM's 3-day scan window. Active `syslog` file is excluded by pattern matching in config to avoid infinite upload loops.
-
-**About the 3-day scan window:** When the service starts, it scans for existing files modified within the last 3 days (configurable via `scan_existing_files.max_age_days`). This startup scan ensures existing files are uploaded without waiting for new file creation.
+**Note:** The new rotation schedule will take effect on the next scheduled rotation (typically daily at 6:25 AM). For testing purposes, see Appendix A for how to trigger immediate rotation.
 
 ---
 
-### Step 6: Pre-Deployment Validation
+### Step 5: Pre-Deployment Validation
 
 **IMPORTANT:** Run comprehensive validation before installing:
 
@@ -352,7 +439,7 @@ sudo logrotate -f /etc/logrotate.d/rsyslog
 
 ---
 
-### Step 7: Install System
+### Step 6: Install System
 
 **One-command installation:**
 
@@ -446,7 +533,11 @@ Useful Commands:
 
 ---
 
-### Step 8: Verify Deployment
+### Step 7: Verify Deployment (Optional - Recommended)
+
+> **✅ System Setup Complete!** After Step 6, the TVM upload system is installed and running.
+>
+> **This step is optional but recommended** to verify the installation was successful. You can skip this and proceed to production, or run this health check for peace of mind.
 
 **Run health check script:**
 
@@ -470,9 +561,13 @@ sudo ./scripts/deployment/health_check.sh
 
 ---
 
-### Step 9: Verify First Upload
+### Step 8: Verify First Upload (Optional - For Testing Only)
 
-**Create a test file:**
+> **This step is optional** and intended for testing/verification purposes only.
+>
+> **Skip this in production** - The system will automatically upload real log files when they're created. You don't need to manually test unless troubleshooting.
+
+**If you want to test, create a test file:**
 
 ```bash
 echo "Test upload $(date)" > ~/.parcel/log/terminal/test.log
@@ -495,9 +590,6 @@ aws s3 ls s3://t01logs/vehicle-CN-001/ --recursive --profile china --region cn-n
 1. Check service logs: `journalctl -u tvm-upload -n 100`
 2. Verify file stability period (60 seconds by default)
 3. Check operational hours configuration
-4. Check startup scan settings (`scan_existing_files` in config.yaml)
-
-**Note:** If the test file existed before the service started and is within the `max_age_days` window (default: 3 days), it should upload immediately. New files created after service start require 60 seconds stability period.
 
 ---
 
@@ -664,7 +756,7 @@ sudo systemctl reload tvm-upload
 journalctl -u tvm-upload -f
 ```
 
-**Additional step:** Ensure daily logrotate (see Step 5.3) so rotated files are captured within 3-day scan window.
+**Additional step:** Ensure daily logrotate (see Step 4.3) so rotated files are captured within 3-day scan window.
 
 ---
 
@@ -796,9 +888,49 @@ Use this checklist when deploying to a vehicle:
 
 ---
 
-**Last Updated:** 2025-11-05
-**Version:** 2.3
+## 📚 Appendix
 
-**Recent Changes:**
-- v2.3 (2025-11-05): Added startup scan configuration documentation, updated for critical bug fixes
-- v2.2 (2025-10-31): Previous version
+### Appendix A: Force Immediate Logrotate (Testing Only)
+
+> **⚠️ This is for testing purposes only** - Not required for production deployment.
+>
+> By default, logrotate runs on its scheduled time (typically daily at 6:25 AM). The configuration changes in Step 4.3 will take effect on the next scheduled run.
+
+**If you need to test logrotate immediately** (e.g., during deployment testing):
+
+```bash
+# Force immediate rotation of rsyslog
+sudo logrotate -f /etc/logrotate.d/rsyslog
+
+# Verify rotation occurred
+ls -lh /var/log/syslog*
+```
+
+**Expected output:**
+```
+-rw-r----- 1 syslog adm    0 Nov  5 14:30 /var/log/syslog
+-rw-r----- 1 syslog adm  15K Nov  5 14:29 /var/log/syslog.1
+-rw-r----- 1 syslog adm  12K Nov  4 06:25 /var/log/syslog.2.gz
+-rw-r----- 1 syslog adm  10K Nov  3 06:25 /var/log/syslog.3.gz
+```
+
+**When to use this:**
+- During initial deployment testing to verify syslog upload works
+- When troubleshooting syslog upload issues
+- When you want to test the system immediately without waiting for scheduled rotation
+
+**When NOT to use this:**
+- In production (let rotation happen naturally)
+- For regular operations (automatic rotation is sufficient)
+
+---
+
+**Version:** 2.6
+**Last Updated:** 2025-11-05
+
+### Changelog
+- **v2.6** (2025-11-05): Clarified Steps 7 & 8 as optional verification (not mandatory setup), moved immediate logrotate command to Appendix A (testing only), improved deployment overview
+- **v2.5** (2025-11-05): Improved formatting - alternate methods now use collapsible sections for clearer main vs. alternative paths
+- **v2.4** (2025-11-05): Added detailed system prerequisites (Python 3.10+, pip3, Ubuntu 22.04+, WiFi), moved vehicle info to prerequisites, renumbered all steps
+- **v2.3** (2025-11-05): Added scan_existing_files documentation, 2-minute threshold startup scan fix
+- **v2.2** (2025-10-31): Previous version
