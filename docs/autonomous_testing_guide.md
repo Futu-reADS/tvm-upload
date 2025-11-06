@@ -19,24 +19,28 @@
 Our autonomous testing follows the **Test Pyramid** approach:
 
 ```
-         /\
-        /  \  E2E Tests (Real AWS)         ← 60 tests  (Slow, Expensive, High Confidence)
-       /────\
-      /      \  Integration Tests (Mocked AWS) ← 20 tests  (Medium Speed, Medium Confidence)
-     /────────\
-    /          \  Unit Tests (No External Deps) ← 100+ tests (Fast, Cheap, Immediate Feedback)
-   /────────────\
+           /\
+          /  \  Manual Tests (Production Validation)  ← 16 tests  (~24 min, Real Production)
+         /────\
+        /      \  E2E Tests (Real AWS)                ← 60 tests  (~7.5 min, High Confidence)
+       /────────\
+      /          \  Integration Tests (Mocked AWS)    ← 42 tests  (~35 sec, Medium Confidence)
+     /────────────\
+    /              \  Unit Tests (No External Deps)   ← 159 tests (~5 sec, Immediate Feedback)
+   /────────────────\
 ```
 
 ### Test Coverage Goals
-- **Unit Tests:** 90%+ code coverage
-- **Integration Tests:** All component interactions
-- **E2E Tests:** Critical user workflows with real AWS
+- **Unit Tests:** 90%+ code coverage (159 tests)
+- **Integration Tests:** All component interactions (42 tests)
+- **E2E Tests:** Critical user workflows with real AWS (60 tests)
+- **Manual Tests:** Production validation scenarios (16 tests)
 
 ### Automation Strategy
-- **Local Development:** Unit + Integration (fast feedback)
-- **PR Checks:** Unit + Integration (< 2 minutes)
-- **CI/CD:** Unit + Integration + E2E (< 10 minutes)
+- **Local Development:** Unit + Integration (~40 seconds)
+- **PR Checks:** Unit + Integration (< 1 minute)
+- **CI/CD:** Unit + Integration + E2E (~8 minutes)
+- **Manual Testing:** Production validation before deployment (~24 minutes)
 - **Scheduled:** Full regression + Performance (nightly)
 
 ---
@@ -46,9 +50,9 @@ Our autonomous testing follows the **Test Pyramid** approach:
 ### Layer 1: Unit Tests (Bottom - Foundation)
 
 **What:** Test individual functions/classes in isolation
-**Speed:** < 1 second per test
+**Speed:** < 0.05 seconds per test (~5 seconds total)
 **Dependencies:** None (all mocked)
-**Count:** 100+ tests
+**Count:** 159 tests
 
 **Example:**
 ```python
@@ -67,9 +71,9 @@ def test_build_s3_key():
 ### Layer 2: Integration Tests (Middle - Interactions)
 
 **What:** Test component interactions with mocked AWS
-**Speed:** 1-5 seconds per test
+**Speed:** ~1 second per test (~35 seconds total)
 **Dependencies:** Mocked (boto3 responses)
-**Count:** 20 tests
+**Count:** 42 tests
 
 **Example:**
 ```python
@@ -126,6 +130,53 @@ def test_real_upload_workflow(real_s3_client):
 
 ---
 
+### Layer 4: Manual Tests (Top - Production Validation)
+
+**What:** End-to-end production validation with real AWS
+**Speed:** 1-3 minutes per test (~24 minutes total)
+**Dependencies:** Real AWS S3, CloudWatch, production config
+**Count:** 16 tests
+**Location:** `scripts/testing/manual-tests/`
+
+**Purpose:**
+- Validate critical production scenarios before deployment
+- Test features that require real-world conditions
+- Verify operational workflows (startup scan, emergency cleanup, etc.)
+
+**Example Manual Test:**
+```bash
+# Test 01: Startup Scan
+# Validates that existing files are uploaded on service restart
+
+./scripts/testing/run_manual_tests.sh 1
+```
+
+**Key Manual Tests:**
+1. **Startup Scan** - Existing file detection and upload
+2. **Source-Based Path Detection** - File routing by source
+3. **File Date Preservation** - Timestamp handling
+4. **CloudWatch Metrics** - Real metrics publishing
+5. **CloudWatch Alarms** - Alarm creation and management
+6. **Duplicate Prevention** - Registry-based deduplication
+7. **Disk Management** - Space monitoring and cleanup
+8. **Batch Upload** - Multiple file handling
+9. **Large File Upload** - Multipart upload (>5MB)
+10. **Error Handling** - Retry logic and failure recovery
+11. **Operational Hours** - Schedule modes and time restrictions
+12. **Service Restart** - State persistence across restarts
+13. **Pattern Matching** - File filtering by patterns
+14. **Recursive Monitoring** - Subdirectory scanning
+15. **Basic File Upload** - Core upload functionality
+16. **Emergency Cleanup** - Critical disk space handling
+
+**Recent Critical Fixes:**
+- **Startup Scan Bug Fixed** (2025-11-05): Bypass stability check for existing files
+  - Issue: Files waited 60s for stability, but `upload_on_start` checked queue immediately
+  - Fix: Call callback directly for startup scan files (already stable)
+  - Location: `src/file_monitor.py:264-270`
+
+---
+
 ## Unit Tests
 
 ### Location
@@ -164,7 +215,11 @@ pytest tests/unit/ --cov=src --cov-report=html
 
 ### Unit Test Categories
 
-#### 1. File Monitor Tests (20 tests)
+**Total:** 159 tests across multiple files
+
+**Note:** Specific per-category counts are not maintained. Run `pytest tests/unit/ --collect-only` for current breakdown.
+
+#### 1. File Monitor Tests
 **File:** `test_file_monitor.py`
 
 | Test | Purpose | Validation |
@@ -198,7 +253,7 @@ def test_file_stability_delay():
 
 ---
 
-#### 2. Upload Manager Tests (30 tests)
+#### 2. Upload Manager Tests
 **File:** `test_upload_manager.py`
 
 | Test | Purpose | Validation |
@@ -242,7 +297,7 @@ def test_source_based_paths():
 
 ---
 
-#### 3. Disk Manager Tests (15 tests)
+#### 3. Disk Manager Tests
 **File:** `test_disk_manager.py`
 
 | Test | Purpose | Validation |
@@ -256,7 +311,7 @@ def test_source_based_paths():
 
 ---
 
-#### 4. S3 Uploader Tests (20 tests)
+#### 4. S3 Uploader Tests
 **File:** `test_s3_uploader.py`
 
 | Test | Purpose | Validation |
@@ -270,7 +325,7 @@ def test_source_based_paths():
 
 ---
 
-#### 5. CloudWatch Manager Tests (15 tests)
+#### 5. CloudWatch Manager Tests
 **File:** `test_cloudwatch_manager.py`
 
 | Test | Purpose | Validation |
@@ -421,7 +476,7 @@ tests/integration/test_integration.py::test_multiple_directories_monitoring     
 tests/integration/test_integration.py::test_callback_exception_handling          PASSED [65%] (2.7s)
 tests/integration/test_integration.py::test_disk_usage_tracking                  PASSED [70%] (0.3s)
 
-Total: 20 tests in ~35 seconds
+Total: 42 tests in ~42 seconds
 ```
 
 ---
@@ -725,7 +780,7 @@ jobs:
 
 ### Script 1: `scripts/testing/run_tests.sh`
 
-**Purpose:** Unified test runner for all test types
+**Purpose:** Unified test runner for automated tests (unit, integration, E2E)
 
 **Usage:**
 ```bash
@@ -784,49 +839,44 @@ esac
 
 ---
 
-### Script 2: `scripts/test_coverage.sh`
+### Script 2: `scripts/testing/run_manual_tests.sh`
 
-**Purpose:** Generate comprehensive coverage report
-
-**Usage:**
-```bash
-./scripts/testing/test_coverage.sh
-```
-
-**Output:**
-```
-Coverage Report:
-=================
-src/file_monitor.py          95%
-src/upload_manager.py        92%
-src/disk_manager.py          88%
-src/s3_uploader.py          90%
-src/cloudwatch_manager.py   85%
----------------------------------
-TOTAL                        90%
-
-HTML report: htmlcov/index.html
-```
-
----
-
-### Script 3: `scripts/quick_check.sh`
-
-**Purpose:** Fast pre-commit checks
+**Purpose:** Execute manual production validation tests
 
 **Usage:**
 ```bash
-./scripts/testing/quick_check.sh
+# Run all 16 manual tests
+./scripts/testing/run_manual_tests.sh all
+
+# Run specific test
+./scripts/testing/run_manual_tests.sh 1
+
+# Run specific tests
+./scripts/testing/run_manual_tests.sh 1,5,10
+
+# Run with cleanup
+./scripts/testing/run_manual_tests.sh all --cleanup
 ```
 
-**What it runs:**
-```bash
-1. Linting (flake8)
-2. Type checking (mypy)
-3. Unit tests only
-4. Security scan (bandit)
+**Features:**
+- Pre-flight validation (AWS credentials, operational hours, config, disk space)
+- Per-test S3 cleanup with triple safety checks
+- Batch cleanup at end of suite
+- Color-coded output with progress tracking
+- Test duration tracking
 
-Total time: < 30 seconds
+**Example output:**
+```
+╔════════════════════════════════════════════════════════════════╗
+║ TEST 01: Startup Scan
+║ Expected duration: 10 min
+╚════════════════════════════════════════════════════════════════╝
+
+[INFO] Test-specific vehicle ID: vehicle-TEST-CN-001-MANUAL-1762312003-T01
+[✓] All test files exist
+[✓] 1-day old file uploaded (within max_age_days)
+[✓] 2-day old file uploaded (within max_age_days)
+[✓] TEST 01: PASSED - Startup scan working correctly
 ```
 
 ---
@@ -835,19 +885,14 @@ Total time: < 30 seconds
 
 ### Current Coverage Metrics
 
-```
-Module                      Coverage    Lines    Covered    Missing
-------------------------------------------------------------------------
-src/file_monitor.py            95%       250       238         12
-src/upload_manager.py          92%       350       322         28
-src/disk_manager.py            88%       200       176         24
-src/s3_uploader.py            90%       180       162         18
-src/cloudwatch_manager.py     85%       150       127         23
-src/config.py                 100%       100       100          0
-src/utils.py                  100%        50        50          0
-------------------------------------------------------------------------
-TOTAL                          90%      1280      1175        105
-```
+**Note:** Run `pytest tests/unit/ --cov=src --cov-report=term` for latest coverage metrics.
+
+**Target:** 90%+ overall coverage
+
+**Recent improvements:**
+- Startup scan logic: Enhanced with stability bypass
+- Boundary conditions: Fixed >= vs > comparison
+- File age calculations: Unix timestamp precision
 
 ### Coverage Goals
 
@@ -857,8 +902,8 @@ TOTAL                          90%      1280      1175        105
 1. ✅ Config validation: 100%
 2. ✅ Utils: 100%
 3. ✅ File monitor: 95%+
-4. ⚠️ CloudWatch: 85% → 90%
-5. ⚠️ Disk manager: 88% → 90%
+4. ⏳ CloudWatch: Improve to 90%
+5. ⏳ Disk manager: Improve to 90%
 
 ---
 
@@ -867,15 +912,17 @@ TOTAL                          90%      1280      1175        105
 ### 🎯 **What We've Achieved**
 
 1. **Comprehensive Test Coverage:**
-   - 60 E2E tests covering all real AWS scenarios
-   - 20 integration tests for component interactions
-   - 100+ unit tests for individual functions
-   - **Total: 180+ automated tests**
+   - 16 manual tests for production validation (~24 min)
+   - 60 E2E tests covering all real AWS scenarios (~7.5 min)
+   - 42 integration tests for component interactions (~35 sec)
+   - 159 unit tests for individual functions (~5 sec)
+   - **Total: 277 tests (261 automated + 16 manual)**
 
 2. **Test Pyramid Implemented:**
    - Fast feedback from unit tests
    - Confidence from integration tests
    - Real-world validation from E2E tests
+   - Production validation from manual tests
 
 3. **CI/CD Ready:**
    - GitHub Actions configured
@@ -971,6 +1018,10 @@ Monitor CloudWatch metrics
 
 ---
 
-**Document Version:** 1.0
-**Last Updated:** 2025-01-27
+**Document Version:** 2.0
+**Last Updated:** 2025-11-05
 **Maintained By:** TVM Upload Team
+
+**Changelog:**
+- v2.0 (2025-11-05): Added manual test suite (16 tests), updated test counts (159/42/60/16), documented startup scan fix, removed non-existent scripts
+- v1.0 (2025-01-27): Initial version

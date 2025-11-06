@@ -261,9 +261,33 @@ start_tvm_service() {
 
     log_info "Starting TVM upload service..."
 
-    # Kill existing process if running (using killall instead of pkill to avoid hang)
-    killall -9 python3 2>/dev/null || true
-    sleep 2
+    # FIX P0-6: Safe process cleanup - only kill TVM service, not all python3 processes
+    # This prevents killing IDE processes, user scripts, and other Python applications
+    log_info "Ensuring no previous TVM service is running..."
+
+    # Method 1: Check PID file and kill that specific process
+    if [ -f /tmp/tvm-service.pid ]; then
+        OLD_PID=$(cat /tmp/tvm-service.pid 2>/dev/null)
+        if [ -n "$OLD_PID" ] && ps -p "$OLD_PID" > /dev/null 2>&1; then
+            # Verify it's actually a TVM process before killing
+            if ps -p "$OLD_PID" -o cmd= 2>/dev/null | grep -q "src.main\|tvm"; then
+                log_info "Found previous TVM service (PID: $OLD_PID), stopping it..."
+                kill "$OLD_PID" 2>/dev/null || true
+                sleep 2
+                # Force kill if still running
+                if ps -p "$OLD_PID" > /dev/null 2>&1; then
+                    kill -9 "$OLD_PID" 2>/dev/null || true
+                    sleep 1
+                fi
+            fi
+        fi
+        rm -f /tmp/tvm-service.pid
+    fi
+
+    # Method 2: Find TVM processes by exact command pattern and kill only those
+    # Use pkill with exact pattern match to avoid killing other Python processes
+    pkill -f "python.*src.main" 2>/dev/null || true
+    sleep 1
 
     # Find project root (where src/ directory is located)
     if [ -d "src" ]; then
@@ -500,12 +524,29 @@ save_test_result() {
 }
 
 # Safe S3 cleanup with production protection
+# DEPRECATED: cleanup_test_s3_data()
+# This function only cleans a single date folder, which is insufficient for tests
+# that create data across multiple dates (like Test 15: Startup Scan).
+#
+# RECOMMENDED: Use cleanup_complete_vehicle_folder() instead, which:
+# - Cleans entire vehicle folder (all dates)
+# - Has triple safety checks (empty ID, production protection, TEST pattern validation)
+# - Provides better logging and verification
+# - Is the standard used by the master test runner's batch cleanup
+#
+# This function is kept for backward compatibility only.
 cleanup_test_s3_data() {
     local vehicle_id=$1
     local s3_bucket=$2
     local aws_profile=$3
     local aws_region=$4
     local date_filter=${5:-$(date +%Y-%m-%d)}  # Default to today
+
+    # DEPRECATION WARNING
+    log_warning "⚠️  DEPRECATION: cleanup_test_s3_data() is deprecated"
+    log_warning "   Use cleanup_complete_vehicle_folder() instead for complete cleanup"
+    log_warning "   This function only cleans one date folder: $date_filter"
+    echo ""
 
     # SAFETY CHECK: Prevent cleaning production vehicle IDs
     for prod_id in "${PRODUCTION_VEHICLE_IDS[@]}"; do
@@ -545,26 +586,65 @@ generate_test_vehicle_id() {
 
 # Complete vehicle folder cleanup (all dates) - for end of test suite
 # Deletes the EXACT vehicle ID folder that was created for this test run
+# Features: Triple safety checks to prevent accidental production data deletion
 cleanup_complete_vehicle_folder() {
     local vehicle_id=$1
     local s3_bucket=$2
     local aws_profile=$3
     local aws_region=$4
 
-    # Simple check: just verify vehicle_id is not empty
+    # ========================================================================
+    # SAFETY CHECK 1: Vehicle ID not empty
+    # ========================================================================
     if [ -z "$vehicle_id" ]; then
-        log_error "Vehicle ID is empty, cannot clean"
+        log_error "SAFETY BLOCK: Vehicle ID is empty, cannot clean"
         return 1
     fi
 
-    # Clean the EXACT vehicle folder (e.g., s3://bucket/vehicle-TEST-MANUAL-1730123456/)
-    local s3_path="s3://${s3_bucket}/${vehicle_id}/"
-    log_info "Cleaning test vehicle folder: $s3_path"
+    # ========================================================================
+    # SAFETY CHECK 2: Production vehicle ID protection
+    # ========================================================================
+    for prod_id in "${PRODUCTION_VEHICLE_IDS[@]}"; do
+        if [[ "$vehicle_id" == "$prod_id"* ]]; then
+            log_error "SAFETY BLOCK: Cannot auto-clean production vehicle ID: $vehicle_id"
+            log_warning "This matches production vehicle ID pattern: $prod_id"
+            log_warning "To clean manually, run:"
+            log_warning "  aws s3 rm s3://${s3_bucket}/${vehicle_id}/ --recursive --profile ${aws_profile} --region ${aws_region}"
+            return 1
+        fi
+    done
 
-    if aws s3 rm "$s3_path" --recursive --profile "$aws_profile" --region "$aws_region" 2>/dev/null; then
-        log_success "Cleaned vehicle folder from S3: ${vehicle_id}/"
+    # ========================================================================
+    # SAFETY CHECK 3: Vehicle ID must contain "TEST"
+    # ========================================================================
+    if [[ ! "$vehicle_id" =~ TEST ]]; then
+        log_error "SAFETY BLOCK: Vehicle ID does not contain 'TEST': $vehicle_id"
+        log_warning "This doesn't look like a test vehicle ID. Refusing to delete."
+        log_warning "Test vehicle IDs should follow pattern: vehicle-TEST-*"
+        return 1
+    fi
+
+    # ========================================================================
+    # All safety checks passed - proceed with cleanup
+    # ========================================================================
+    local s3_path="s3://${s3_bucket}/${vehicle_id}/"
+
+    # Check if folder exists before attempting deletion
+    if aws s3 ls "$s3_path" --profile "$aws_profile" --region "$aws_region" &>/dev/null; then
+        local file_count=$(aws s3 ls "$s3_path" --recursive --profile "$aws_profile" --region "$aws_region" 2>/dev/null | wc -l)
+
+        # Perform deletion
+        if aws s3 rm "$s3_path" --recursive --profile "$aws_profile" --region "$aws_region" 2>/dev/null; then
+            log_success "Cleaned vehicle folder from S3: ${vehicle_id}/ ($file_count files)"
+            return 0
+        else
+            log_error "Failed to clean vehicle folder (AWS error): ${vehicle_id}/"
+            return 1
+        fi
     else
-        log_warning "No vehicle data found to clean (or AWS error)"
+        # No data found - this is OK (test may not have uploaded anything)
+        log_info "No S3 data found for: ${vehicle_id}/ (test may not have uploaded files)"
+        return 0
     fi
 }
 

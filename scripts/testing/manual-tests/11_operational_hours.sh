@@ -56,15 +56,20 @@ log_info "Operational hours: $OP_START - $OP_END"
 CURRENT_HOUR=$(date +%H:%M)
 log_info "Current time: $CURRENT_HOUR"
 
-# Determine if we're in operational hours
+# FIX P0-4: Determine if we're in operational hours using numeric comparison
+# String comparison with > and < doesn't work correctly for times
 IN_OP_HOURS=false
 
-# Simple time comparison (assumes HH:MM format)
-if [[ "$CURRENT_HOUR" > "$OP_START" ]] && [[ "$CURRENT_HOUR" < "$OP_END" ]]; then
+# Convert times to seconds since midnight for proper numeric comparison
+CURRENT_SEC=$(date +%s)
+START_SEC=$(date -d "$OP_START today" +%s 2>/dev/null || date -d "today $OP_START" +%s 2>/dev/null || echo "0")
+END_SEC=$(date -d "$OP_END today" +%s 2>/dev/null || date -d "today $OP_END" +%s 2>/dev/null || echo "86400")
+
+if [ "$CURRENT_SEC" -ge "$START_SEC" ] && [ "$CURRENT_SEC" -lt "$END_SEC" ]; then
     IN_OP_HOURS=true
-    log_info "Currently INSIDE operational hours"
+    log_info "Currently INSIDE operational hours ($CURRENT_HOUR is between $OP_START and $OP_END)"
 else
-    log_info "Currently OUTSIDE operational hours"
+    log_info "Currently OUTSIDE operational hours ($CURRENT_HOUR is NOT between $OP_START and $OP_END)"
 fi
 
 # Create test directory

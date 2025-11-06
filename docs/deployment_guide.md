@@ -1,7 +1,7 @@
 # TVM Log Upload System - Deployment Guide
 
-**Version:** 2.2
-**Last Updated:** 2025-10-31
+**Version:** 2.3
+**Last Updated:** 2025-11-05
 **Target Audience:** Vehicle deployment technicians
 
 ---
@@ -281,6 +281,9 @@ nano config/config.yaml
 - Upload schedule (line ~106): Change from `interval` mode to `daily` if needed
 - Deletion policy (line ~278): Adjust `keep_days` (default: 14)
 - Operational hours (line ~153): Adjust upload time window
+- Startup scan (line ~140): Configure `scan_existing_files` settings:
+  - `enabled: true` - Scan for existing files on service start (recommended)
+  - `max_age_days: 3` - Only scan files newer than 3 days
 
 Save and exit: `Ctrl+X`, `Y`, `Enter`
 
@@ -316,6 +319,8 @@ sudo logrotate -f /etc/logrotate.d/rsyslog
 ```
 
 **Note:** This ensures rotated syslogs (syslog.1, syslog.2, etc.) are captured within TVM's 3-day scan window. Active `syslog` file is excluded by pattern matching in config to avoid infinite upload loops.
+
+**About the 3-day scan window:** When the service starts, it scans for existing files modified within the last 3 days (configurable via `scan_existing_files.max_age_days`). This startup scan ensures existing files are uploaded without waiting for new file creation.
 
 ---
 
@@ -490,6 +495,9 @@ aws s3 ls s3://t01logs/vehicle-CN-001/ --recursive --profile china --region cn-n
 1. Check service logs: `journalctl -u tvm-upload -n 100`
 2. Verify file stability period (60 seconds by default)
 3. Check operational hours configuration
+4. Check startup scan settings (`scan_existing_files` in config.yaml)
+
+**Note:** If the test file existed before the service started and is within the `max_age_days` window (default: 3 days), it should upload immediately. New files created after service start require 60 seconds stability period.
 
 ---
 
@@ -788,5 +796,9 @@ Use this checklist when deploying to a vehicle:
 
 ---
 
-**Last Updated:** 2025-10-31
-**Version:** 2.2
+**Last Updated:** 2025-11-05
+**Version:** 2.3
+
+**Recent Changes:**
+- v2.3 (2025-11-05): Added startup scan configuration documentation, updated for critical bug fixes
+- v2.2 (2025-10-31): Previous version

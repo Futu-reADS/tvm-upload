@@ -18,8 +18,8 @@ Welcome to the TVM Upload System documentation! This directory contains guides f
 | Document | Purpose | Target Audience |
 |----------|---------|-----------------|
 | **[testing_strategy_overview.md](./testing_strategy_overview.md)** | High-level testing strategy and philosophy | Tech Leads, Architects |
-| **[manual_testing_guide.md](./manual_testing_guide.md)** | 12 manual test scenarios with step-by-step procedures | QA Engineers |
-| **[autonomous_testing_guide.md](./autonomous_testing_guide.md)** | 180+ automated tests architecture and execution | Developers, DevOps |
+| **[manual_testing_guide.md](./manual_testing_guide.md)** | 16 automated manual test scenarios with step-by-step procedures | QA Engineers |
+| **[autonomous_testing_guide.md](./autonomous_testing_guide.md)** | 277 automated tests (159 unit + 42 integration + 60 E2E + 16 manual) | Developers, DevOps |
 
 ### CI/CD Documentation
 
@@ -47,8 +47,8 @@ Welcome to the TVM Upload System documentation! This directory contains guides f
 ## 📊 Quick Facts
 
 **System Overview:**
-- Total automated tests: 180+ (90%+ code coverage)
-- Manual test scenarios: 12 comprehensive scenarios
+- Total automated tests: 277 (159 unit + 42 integration + 60 E2E + 16 manual, 90%+ code coverage)
+- Manual test scenarios: 16 comprehensive automated scenarios (~24 min runtime)
 - Deployment time: ~5-10 minutes per vehicle
 - Supports: AWS China region (cn-north-1, cn-northwest-1)
 
@@ -74,7 +74,7 @@ Welcome to the TVM Upload System documentation! This directory contains guides f
 
 ### For QA Engineers
 1. Read [manual_testing_guide.md](./manual_testing_guide.md)
-2. Execute 12 test scenarios
+2. Execute 16 automated test scenarios using `scripts/testing/run_manual_tests.sh`
 3. Fill out test report template
 
 ---
@@ -88,5 +88,5 @@ Welcome to the TVM Upload System documentation! This directory contains guides f
 
 ---
 
-**Last Updated:** 2025-10-31
+**Last Updated:** 2025-11-05
 **Maintained By:** TVM Upload Team

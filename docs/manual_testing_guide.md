@@ -1,5 +1,7 @@
 # TVM Upload System - Manual Testing Guide
 
+> **Note:** This guide documents manual testing procedures for key features. For the complete automated test suite (16 tests, ~24 minutes), see `scripts/testing/run_manual_tests.sh` or refer to the [Autonomous Testing Guide](autonomous_testing_guide.md).
+
 ## 📋 Table of Contents
 1. [Pre-requisites](#pre-requisites)
 2. [Test Environment Setup](#test-environment-setup)
@@ -738,30 +740,47 @@ After completing all tests, fill out this report:
 
 ## Next Steps After Manual Testing
 
-1. **Run Automated Tests:**
+1. **Run Complete Automated Test Suite:**
    ```bash
-   # Unit tests
+   # Complete manual test suite (16 tests, ~24 minutes)
+   cd scripts/testing
+   ./run_manual_tests.sh
+
+   # Or run specific tests
+   cd manual-tests
+   ./01_startup_scan.sh
+   ./02_source_based_path_detection.sh
+   # ... etc
+   ```
+
+2. **Run Unit/Integration/E2E Tests:**
+   ```bash
+   # Unit tests (159 tests)
    pytest tests/unit/ -v
 
-   # Integration tests
+   # Integration tests (42 tests)
    pytest tests/integration/ -v
 
-   # E2E tests (requires AWS)
+   # E2E tests (60 tests, requires AWS)
    pytest tests/e2e/ -v -m e2e
    ```
 
-2. **Deploy to Production:**
+3. **Deploy to Production:**
    - Update config with production values
    - Set up as systemd service
    - Configure monitoring and alerts
 
-3. **Monitor Production:**
+4. **Monitor Production:**
    - Check CloudWatch dashboards
    - Review logs regularly
    - Monitor S3 costs
 
 ---
 
-**Document Version:** 1.0
-**Last Updated:** 2025-01-27
+**Document Version:** 1.1
+**Last Updated:** 2025-11-05
 **Maintained By:** TVM Upload Team
+
+### Changelog
+- **v1.1** (2025-11-05): Added reference to complete automated test suite (16 tests)
+- **v1.0** (2025-01-27): Initial manual testing guide with 12 key tests

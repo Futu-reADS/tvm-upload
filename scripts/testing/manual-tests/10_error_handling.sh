@@ -17,6 +17,25 @@ SERVICE_LOG="/tmp/tvm-service.log"
 
 print_test_header "Error Handling and Retry" "10"
 
+# FIX P0-2: Add trap handler to guarantee credential restoration and service cleanup
+CREDS_PATH="${HOME}/.aws/credentials"
+cleanup_test_10() {
+    log_info "Running Test 10 cleanup handler..."
+
+    # Restore credentials if backed up
+    if [ -f "${CREDS_PATH}.bak" ]; then
+        mv "${CREDS_PATH}.bak" "$CREDS_PATH" 2>/dev/null || true
+        log_success "AWS credentials restored"
+    fi
+
+    # Stop service
+    stop_tvm_service 2>/dev/null || true
+
+    # Clean up test files
+    rm -rf "$TEST_DIR" 2>/dev/null || true
+}
+trap cleanup_test_10 EXIT
+
 # Parse configuration
 log_info "Loading configuration..."
 load_config "$CONFIG_FILE"
@@ -41,15 +60,21 @@ fi
 # TEST 1: Network error simulation (optional - requires sudo)
 log_info "Test 1: Network error handling..."
 
-if [ "$EUID" -eq 0 ]; then
+# FIX P0-1: Use $(id -u) instead of $EUID which is not automatically set
+if [ "$(id -u)" -eq 0 ]; then
     log_warning "Running as root - can simulate network errors"
 
     # Create test file
     TEST_FILE="$TEST_DIR/terminal/retry_test.log"
     echo "Retry test - $(date)" > "$TEST_FILE"
 
-    # Block AWS endpoint temporarily
-    S3_ENDPOINT="s3.${AWS_REGION}.amazonaws.com.cn"
+    # FIX P0-3: Determine correct S3 endpoint based on region
+    # China regions use .com.cn, others use .com
+    if [[ "$AWS_REGION" == cn-* ]]; then
+        S3_ENDPOINT="s3.${AWS_REGION}.amazonaws.com.cn"
+    else
+        S3_ENDPOINT="s3.${AWS_REGION}.amazonaws.com"
+    fi
     log_info "Blocking S3 endpoint: $S3_ENDPOINT"
 
     iptables -A OUTPUT -d "$S3_ENDPOINT" -j DROP 2>/dev/null || log_warning "Could not block endpoint"
@@ -102,9 +127,14 @@ if [ -f "$CREDS_PATH" ]; then
     stop_tvm_service
     sleep 2
 
-    # Temporarily rename credentials
+    # FIX P0-2: Fail properly if credentials cannot be disabled
     log_info "Temporarily disabling AWS credentials..."
-    mv "$CREDS_PATH" "${CREDS_PATH}.bak" 2>/dev/null || log_warning "Could not rename credentials"
+    if ! mv "$CREDS_PATH" "${CREDS_PATH}.bak" 2>/dev/null; then
+        log_error "Failed to disable credentials (cannot proceed with test)"
+        log_error "Credentials file might be in use or permissions issue"
+        exit 1
+    fi
+    log_success "AWS credentials temporarily disabled"
 
     # Clear service log
     rm -f "$SERVICE_LOG"
@@ -182,13 +212,20 @@ echo "Recovery test - $(date)" > "$TEST_FILE3"
 STABILITY_PERIOD=$(grep "file_stable_seconds:" "$CONFIG_FILE" | awk '{print $2}' || echo "60")
 wait_with_progress $((STABILITY_PERIOD + 20)) "Recovery upload"
 
-# Check if we're in operational hours
+# FIX P0-4: Check if we're in operational hours using numeric comparison
+# String comparison with > and < doesn't work for times
 CURRENT_HOUR=$(date +%H:%M)
 OP_START=$(grep -A 10 "operational_hours:" "$CONFIG_FILE" | grep "start:" | head -1 | awk '{print $2}' | tr -d '"' || echo "00:00")
 OP_END=$(grep -A 10 "operational_hours:" "$CONFIG_FILE" | grep "end:" | head -1 | awk '{print $2}' | tr -d '"' || echo "23:59")
 
 IN_OP_HOURS=false
-if [[ "$CURRENT_HOUR" > "$OP_START" ]] && [[ "$CURRENT_HOUR" < "$OP_END" ]]; then
+
+# Convert times to seconds since midnight for proper numeric comparison
+CURRENT_SEC=$(date +%s)
+START_SEC=$(date -d "$OP_START today" +%s 2>/dev/null || date -d "today $OP_START" +%s 2>/dev/null || echo "0")
+END_SEC=$(date -d "$OP_END today" +%s 2>/dev/null || date -d "today $OP_END" +%s 2>/dev/null || echo "86400")
+
+if [ "$CURRENT_SEC" -ge "$START_SEC" ] && [ "$CURRENT_SEC" -lt "$END_SEC" ]; then
     IN_OP_HOURS=true
 fi
 

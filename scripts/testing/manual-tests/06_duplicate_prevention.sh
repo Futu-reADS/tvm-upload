@@ -144,9 +144,8 @@ log_info "Cleaning up..."
 stop_tvm_service
 rm -rf "$TEST_DIR"
 
-# Clean S3 test data (safe with production protection)
-log_info "Cleaning S3 test data..."
-cleanup_test_s3_data "$VEHICLE_ID" "$S3_BUCKET" "$AWS_PROFILE" "$AWS_REGION" "$TODAY"
+# Note: S3 cleanup handled by master test runner
+# (Master cleans entire vehicle folder including all dates)
 
 # Print summary
 print_test_summary

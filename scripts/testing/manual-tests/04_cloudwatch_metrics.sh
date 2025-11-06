@@ -81,11 +81,15 @@ BYTES_RESULT=$(aws cloudwatch get-metric-statistics \
     --period 3600 \
     --statistics Sum \
     --profile "$AWS_PROFILE" --region "$AWS_REGION" \
-    --output json 2>&1 || echo "ERROR")
+    --output json 2>&1)
 
-if echo "$BYTES_RESULT" | grep -q "ERROR\|AccessDenied"; then
-    log_warning "Cannot query CloudWatch metrics (permission issue)"
-    log_info "Skipping metric verification - check AWS console manually"
+# FIX P1-1: Properly check AWS CLI exit code instead of relying on string matching
+BYTES_EXIT_CODE=$?
+
+if [ $BYTES_EXIT_CODE -ne 0 ]; then
+    log_warning "Cannot query CloudWatch metrics (AWS CLI error, exit code: $BYTES_EXIT_CODE)"
+    log_info "Error details: $BYTES_RESULT"
+    log_info "Skipping metric verification - check AWS console manually or verify permissions"
 else
     DATAPOINTS=$(echo "$BYTES_RESULT" | grep "Timestamp" | wc -l)
     DATAPOINTS=$(echo "$DATAPOINTS" | tr -d '[:space:]')  # Remove whitespace
@@ -115,9 +119,12 @@ COUNT_RESULT=$(aws cloudwatch get-metric-statistics \
     --period 3600 \
     --statistics Sum \
     --profile "$AWS_PROFILE" --region "$AWS_REGION" \
-    --output json 2>&1 || echo "ERROR")
+    --output json 2>&1)
 
-if ! echo "$COUNT_RESULT" | grep -q "ERROR\|AccessDenied"; then
+# FIX P1-1: Properly check AWS CLI exit code
+COUNT_EXIT_CODE=$?
+
+if [ $COUNT_EXIT_CODE -eq 0 ]; then
     DATAPOINTS=$(echo "$COUNT_RESULT" | grep "Timestamp" | wc -l)
     DATAPOINTS=$(echo "$DATAPOINTS" | tr -d '[:space:]')  # Remove whitespace
 

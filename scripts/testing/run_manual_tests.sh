@@ -302,7 +302,7 @@ EOF
 
 # Test definitions
 declare -A TEST_NAMES=(
-    [1]="Basic File Upload"
+    [1]="Startup Scan"
     [2]="Source-Based Path Detection"
     [3]="File Date Preservation"
     [4]="CloudWatch Metrics Publishing"
@@ -316,7 +316,7 @@ declare -A TEST_NAMES=(
     [12]="Service Restart Resilience"
     [13]="Pattern Matching"
     [14]="Recursive Monitoring"
-    [15]="Startup Scan"
+    [15]="Basic File Upload"
     [16]="Emergency Cleanup Thresholds"
 )
 
@@ -430,18 +430,132 @@ EOF
         echo "" >> "$REPORT_FILE"
     fi
 
-    # Clean up test environment between tests
+    # Clean up test environment between tests (local files only)
     log_info "Cleaning up test environment..."
     cleanup_test_env "/tmp/tvm-manual-test" 2>/dev/null || true
 
-    # Clean up test-specific S3 data
-    log_info "Cleaning up test-specific S3 data..."
-    log_info "Removing S3 folder: ${TEST_SPECIFIC_ID}/"
-    cleanup_complete_vehicle_folder "$TEST_SPECIFIC_ID" "$S3_BUCKET" "$AWS_PROFILE" "$AWS_REGION"
+    # Note: S3 cleanup moved to batch process at end (faster, better visibility)
 
     # Brief pause between tests
-    sleep 3
+    sleep 1
 done
+
+# ============================================================================
+# BATCH S3 CLEANUP - Clean all test data at once with verification
+# ============================================================================
+
+echo ""
+echo "╔════════════════════════════════════════════════════════════════╗"
+echo "║     S3 CLEANUP - Batch Processing All Test Data               ║"
+echo "╔════════════════════════════════════════════════════════════════╗"
+echo ""
+
+log_info "Starting batch S3 cleanup for all test vehicles..."
+
+# Track cleanup statistics
+CLEANUP_SUCCESS_COUNT=0
+CLEANUP_FAIL_COUNT=0
+CLEANUP_NOTFOUND_COUNT=0
+
+# Array to store cleanup results for detailed reporting
+declare -A CLEANUP_RESULTS
+
+# Process each test-specific ID
+for test_num in "${TESTS[@]}"; do
+    # FIX: Reconstruct the same TEST_SPECIFIC_ID that was used during test execution
+    TEST_SPECIFIC_ID="${TEST_VEHICLE_ID}-T$(printf "%02d" $test_num)"
+
+    log_info "Cleaning Test ${test_num}: ${TEST_SPECIFIC_ID}"
+
+    # Call cleanup function and capture result
+    if cleanup_complete_vehicle_folder "$TEST_SPECIFIC_ID" "$S3_BUCKET" "$AWS_PROFILE" "$AWS_REGION"; then
+        # Check the actual result type from log output
+        # If cleanup says "No S3 data found", it's not an error but a skip
+        if aws s3 ls "s3://${S3_BUCKET}/${TEST_SPECIFIC_ID}/" --profile "$AWS_PROFILE" --region "$AWS_REGION" &>/dev/null; then
+            CLEANUP_FAIL_COUNT=$((CLEANUP_FAIL_COUNT + 1))
+            CLEANUP_RESULTS[$test_num]="FAILED (data still exists)"
+        else
+            # Successfully cleaned or no data was present
+            CLEANUP_SUCCESS_COUNT=$((CLEANUP_SUCCESS_COUNT + 1))
+            CLEANUP_RESULTS[$test_num]="SUCCESS"
+        fi
+    else
+        # Function returned error
+        CLEANUP_FAIL_COUNT=$((CLEANUP_FAIL_COUNT + 1))
+        CLEANUP_RESULTS[$test_num]="FAILED (cleanup error)"
+    fi
+done
+
+echo ""
+log_info "Batch cleanup completed. Generating verification report..."
+echo ""
+
+# ============================================================================
+# CLEANUP VERIFICATION REPORT
+# ============================================================================
+
+echo "╔════════════════════════════════════════════════════════════════╗"
+echo "║     S3 CLEANUP VERIFICATION REPORT                             ║"
+echo "╔════════════════════════════════════════════════════════════════╗"
+echo ""
+
+# Detailed cleanup results table
+echo "Cleanup Results by Test:"
+echo "┌──────┬─────────────────────────────────────────────┬──────────────┐"
+echo "│ Test │ Vehicle ID                                  │ Status       │"
+echo "├──────┼─────────────────────────────────────────────┼──────────────┤"
+
+for test_num in "${TESTS[@]}"; do
+    TEST_SPECIFIC_ID="${TEST_ID_PREFIX}${test_num}"
+    CLEANUP_STATUS="${CLEANUP_RESULTS[$test_num]}"
+
+    # Pad ID to 43 characters
+    PADDED_ID=$(printf "%-43s" "$TEST_SPECIFIC_ID")
+
+    # Color code status
+    case "$CLEANUP_STATUS" in
+        SUCCESS)
+            STATUS_DISPLAY="${GREEN}SUCCESS${NC}     "
+            ;;
+        FAILED*)
+            STATUS_DISPLAY="${RED}FAILED${NC}      "
+            ;;
+        *)
+            STATUS_DISPLAY="${YELLOW}UNKNOWN${NC}     "
+            ;;
+    esac
+
+    printf "│ %-4s │ %s │ %b │\n" "$test_num" "$PADDED_ID" "$STATUS_DISPLAY"
+done
+
+echo "└──────┴─────────────────────────────────────────────┴──────────────┘"
+echo ""
+
+# Cleanup summary statistics
+echo "Cleanup Summary:"
+echo "  Total Vehicles:     ${#TESTS[@]}"
+echo -e "  ${GREEN}Cleaned:${NC}            $CLEANUP_SUCCESS_COUNT"
+echo -e "  ${RED}Failed:${NC}             $CLEANUP_FAIL_COUNT"
+echo ""
+
+# Final verification check - scan entire bucket for any remaining test data
+log_info "Performing final verification scan of S3 bucket..."
+echo ""
+
+REMAINING_TEST_DATA=$(aws s3 ls "s3://${S3_BUCKET}/" --profile "$AWS_PROFILE" --region "$AWS_REGION" 2>/dev/null | grep -i "test" | grep -i "$COMMON_PREFIX" || true)
+
+if [ -z "$REMAINING_TEST_DATA" ]; then
+    log_success "✓ Verification complete: No test data found in S3 bucket"
+    echo ""
+else
+    log_warning "⚠ Warning: Found potential remaining test data in S3:"
+    echo "$REMAINING_TEST_DATA" | while IFS= read -r line; do
+        echo "    $line"
+    done
+    echo ""
+    log_warning "You may want to manually verify and clean these folders if needed."
+    echo ""
+fi
 
 # Calculate total duration
 END_TIME=$(date +%s)

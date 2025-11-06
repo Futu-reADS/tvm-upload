@@ -95,14 +95,28 @@ log_info "Testing age-based cleanup..."
 OLD_FILE="$TEST_DIR/terminal/very_old.log"
 echo "Very old data" > "$OLD_FILE"
 
-# Set file time to 10 days ago
-touch -t $(date -d "10 days ago" +%Y%m%d0000) "$OLD_FILE" 2>/dev/null || log_warning "Could not set old timestamp"
+# FIX P1-2: Set file time to 10 days ago with proper quoting and error handling
+OLD_DATE=$(date -d "10 days ago" +%Y%m%d0000)
+if [ -z "$OLD_DATE" ]; then
+    log_error "Failed to calculate date for 10 days ago"
+    exit 1
+fi
 
+log_info "Setting file timestamp to: $OLD_DATE"
+if ! touch -t "$OLD_DATE" "$OLD_FILE" 2>/dev/null; then
+    log_error "Failed to set file timestamp"
+    log_error "This test requires ability to set file modification times"
+    exit 1
+fi
+log_success "File timestamp set to 10 days ago"
+
+# Verify file age
 FILE_AGE=$(find "$OLD_FILE" -mtime +9 2>/dev/null | wc -l)
 if [ "$FILE_AGE" -gt 0 ]; then
-    log_success "Old file created (>9 days old)"
+    log_success "Old file created and verified (>9 days old)"
 else
-    log_warning "File may not be old enough for cleanup test"
+    log_error "File age verification failed - timestamp may not be set correctly"
+    exit 1
 fi
 
 # Check if age-based cleanup is enabled

@@ -1,5 +1,5 @@
 #!/bin/bash
-# TEST 1: Basic File Upload
+# TEST 15: Basic File Upload
 # Purpose: Verify basic file monitoring and S3 upload functionality
 # Duration: ~10 minutes
 
@@ -15,7 +15,15 @@ TEST_VEHICLE_ID="${2}"  # Test vehicle ID passed from run_manual_tests.sh
 TEST_DIR="/tmp/tvm-manual-test"
 SERVICE_LOG="/tmp/tvm-service.log"
 
-print_test_header "Basic File Upload" "1"
+print_test_header "Basic File Upload" "15"
+
+# Add trap handler to ensure cleanup on exit
+cleanup_test_15() {
+    log_info "Running Test 15 cleanup handler..."
+    stop_tvm_service 2>/dev/null || true
+    rm -rf "$TEST_DIR" 2>/dev/null || true
+}
+trap cleanup_test_15 EXIT
 
 # Parse configuration
 log_info "Loading configuration..."
@@ -123,9 +131,9 @@ print_test_summary
 
 # Test result
 if [ $TESTS_FAILED -eq 0 ]; then
-    log_success "TEST 1: PASSED - Basic file upload working correctly"
+    log_success "TEST 15: PASSED - Basic file upload working correctly"
     exit 0
 else
-    log_error "TEST 1: FAILED - See errors above"
+    log_error "TEST 15: FAILED - See errors above"
     exit 1
 fi

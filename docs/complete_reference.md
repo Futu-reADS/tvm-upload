@@ -8,6 +8,7 @@ Automated log upload daemon for Autoware vehicles in China. Monitors log directo
 ## Features
 
 - **Automatic file detection** with 60s stability check
+- **Startup scan** - Automatically detects and uploads existing files on service start
 - **Flexible scheduling** - Daily uploads or interval-based (every N hours)
 - **Dual upload modes** - Immediate uploads during operational hours + scheduled batch uploads
 - **Source-based organization** - Files organized by type (terminal/ros/syslog/ros2)
@@ -159,6 +160,10 @@ upload:
     enabled: true             # Upload entire queue when file ready
 
   upload_on_start: true       # Upload immediately on service start
+
+  scan_existing_files:
+    enabled: true             # Scan for existing files on startup
+    max_age_days: 3           # Only scan files < 3 days old
 
 # Deletion Policies
 deletion:
@@ -318,10 +323,12 @@ sudo journalctl -u tvm-upload | grep ERROR
 ```
 1. SERVICE STARTS (9:30 AM)
    ├─ Load processed_files_registry
-   ├─ Scan directories for files < 3 days old
-   ├─ Filter out already-uploaded files
-   ├─ Add to queue
-   └─ If upload_on_start: true → Upload immediately
+   ├─ If scan_existing_files.enabled: true
+   │  ├─ Scan directories for files < max_age_days (default: 3 days)
+   │  ├─ Filter out already-uploaded files (from registry)
+   │  ├─ Add to queue immediately (bypasses 60s stability check)
+   │  └─ Note: Existing files assumed stable, no wait required
+   └─ If upload_on_start: true → Upload queue immediately
 
 2. FILE BECOMES READY (after 60s stability)
    ├─ Check operational_hours
@@ -575,12 +582,61 @@ For end-to-end validation, use the manual test suite (16 scenarios covering all 
 ./scripts/testing/run_manual_tests.sh config/config.yaml "1 2 3"
 
 # Individual test
-./scripts/testing/manual-tests/01_basic_upload.sh
+./scripts/testing/manual-tests/01_startup_scan.sh
 ```
 
-**Test Scenarios:** Basic upload, source detection, date preservation, CloudWatch metrics/alarms, duplicate prevention, disk management, batch upload, large files, error handling, operational hours, service restart, pattern matching, recursive monitoring, startup scan, emergency cleanup.
+**Test Scenarios (16 tests):**
+1. Startup scan
+2. Source detection
+3. Date preservation
+4. CloudWatch metrics
+5. CloudWatch alarms
+6. Duplicate prevention
+7. Disk management
+8. Batch upload
+9. Large files
+10. Error handling
+11. Operational hours
+12. Service restart
+13. Pattern matching
+14. Recursive monitoring
+15. Basic upload
+16. Emergency cleanup
 
 See `scripts/testing/manual-tests/README.md` for detailed test descriptions.
+
+## Recent Fixes & Known Issues
+
+### Critical Fixes (2025-11-05)
+
+**🔧 Startup Scan Edge Case - FIXED (LATEST)**
+- **Issue:** Files being written during service startup could be uploaded incomplete
+- **Root Cause:** File identity uses `path::size::mtime` - when file changes (incomplete → complete), mtime changes, registry sees as "different" file
+- **Impact:** Both incomplete AND complete files uploaded to S3 (data corruption risk)
+- **Discovery:** User identified edge case during registry analysis
+- **Fix:** 2-minute threshold - files < 2 min old use stability check, older files bypass it
+- **Benefits:** Prevents incomplete uploads while maintaining fast startup for stable files
+- **Location:** `src/file_monitor.py:264-276`
+
+**🔧 Startup Scan Race Condition - FIXED**
+- **Issue:** Files found during startup scan waited 60s for stability check, but `upload_on_start` checked queue immediately (finding 0 files)
+- **Impact:** Existing files never uploaded on service start
+- **Fix:** Integrated with 2-minute threshold fix - older files bypass stability check
+- **Location:** `src/file_monitor.py:264-276`
+
+**🔧 Boundary Condition Bug - FIXED**
+- **Issue:** Files exactly at `max_age_days` boundary (e.g., 3.0 days) were excluded due to `>` instead of `>=` comparison
+- **Impact:** Edge case files not uploaded
+- **Fix:** Changed comparison to `mtime >= cutoff_time`
+- **Location:** `src/file_monitor.py:263`
+
+### Known Limitations
+
+- Systemd service only (no container/Docker support)
+- AWS China regions only (cn-north-1, cn-northwest-1)
+- Linux only (Ubuntu 20.04+, Debian 11+)
+
+---
 
 ## Troubleshooting
 
@@ -900,6 +956,11 @@ For issues and questions:
 
 ---
 
-**Version:** 2.1
-**Last Updated:** 2025-10-24
+**Version:** 2.3
+**Last Updated:** 2025-11-05
 **Maintained by:** Futu-reADS Team
+
+**Changelog:**
+- v2.3 (2025-11-05): Fixed startup scan edge case (2-min threshold), updated Recent Fixes section with detailed analysis
+- v2.2 (2025-11-05): Fixed critical startup scan race condition, added scan_existing_files documentation, fixed boundary condition
+- v2.1 (2025-10-24): Previous version

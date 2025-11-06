@@ -258,10 +258,22 @@ class FileMonitor:
                             skipped_tracked += 1
                             continue
 
-                        if max_age_days == 0 or mtime > cutoff_time:
-                            self._on_file_event(str(file_path))
+                        # FIX: Use >= instead of > to include files exactly at boundary
+                        # Example: With max_age_days=3, files exactly 3 days old should be included
+                        if max_age_days == 0 or mtime >= cutoff_time:
+                            # CRITICAL: For very recent files (< 2 minutes), use stability check
+                            # to avoid uploading incomplete files that are still being written
+                            file_age_seconds = time.time() - mtime
+                            if file_age_seconds < 120:  # Less than 2 minutes old
+                                logger.debug(f"Found recent file (using stability check): {file_path.name}")
+                                self._on_file_event(str(file_path))  # Use stability check
+                            else:
+                                # For older files, call callback directly (already stable)
+                                # If we use _on_file_event(), files wait 60s for stability, but
+                                # upload_on_start check happens immediately (queue size = 0)
+                                logger.debug(f"Found existing file: {file_path.name}")
+                                self.callback(str(file_path))
                             existing_count += 1
-                            logger.debug(f"Found existing file: {file_path}")
                         else:
                             age_days = (time.time() - mtime) / 86400
                             logger.debug(
