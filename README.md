@@ -70,7 +70,7 @@ python3 src/main.py --config config/config.yaml --log-level DEBUG
 - **CloudWatch Integration** - Metrics and alarms for monitoring
 - **Pattern Matching** - Wildcard support for selective file uploads
 - **Recursive Monitoring** - Automatically watches subdirectories
-- **Configuration Reload** - SIGHUP signal updates config without restart
+- **Configuration Validation** - SIGHUP signal validates config (restart required to apply changes)
 
 ---
 
@@ -173,6 +173,71 @@ See `config/config.yaml.example` for full configuration options.
 
 ---
 
+## 🎯 Pattern Matching
+
+Filter which files to upload using glob patterns. This is crucial for preventing infinite upload loops with active log files.
+
+### Basic Usage
+
+```yaml
+log_directories:
+  - path: /var/log
+    source: syslog
+    pattern: "syslog.[1-9]*"  # Only rotated files
+    recursive: false
+```
+
+**Supported Wildcards:**
+- `*` - Matches any characters (e.g., `*.log` matches `app.log`, `system.log`)
+- `?` - Matches single character (e.g., `log.?` matches `log.1`, `log.2`)
+- `[1-9]` - Matches character range (e.g., `syslog.[1-9]*` matches `syslog.1`, `syslog.2.gz`)
+
+### Critical Use Case: Avoid Active Syslog File
+
+**Problem:** Uploading `/var/log/syslog` creates an infinite loop:
+1. Service uploads `/var/log/syslog`
+2. Upload writes to syslog: "Uploaded file X"
+3. Service detects change, uploads again
+4. Repeat forever...
+
+**Solution:** Use pattern to skip active file:
+
+```yaml
+log_directories:
+  - path: /var/log
+    source: syslog
+    pattern: "syslog.[1-9]*"  # ✅ Uploads: syslog.1, syslog.2.gz
+                               # ❌ Skips: /var/log/syslog (active)
+```
+
+### More Examples
+
+```yaml
+# Upload only .log files
+log_directories:
+  - path: ~/.parcel/log/terminal
+    source: terminal
+    pattern: "*.log"
+
+# Upload compressed logs only
+log_directories:
+  - path: /var/log
+    source: archived
+    pattern: "*.gz"
+
+# Upload specific date pattern
+log_directories:
+  - path: ~/logs
+    source: daily
+    pattern: "2025-11-*.log"
+```
+
+**Important:** If `pattern` is omitted, ALL files in the directory are uploaded.
+
+See [Configuration Reference](./docs/configuration_reference.md#pattern) for detailed pattern syntax and examples.
+
+---
+
 ## 🧪 Testing
 
 **235+ automated tests** covering all functionality:
@@ -218,14 +283,16 @@ cat /var/lib/tvm-upload/queue.json         # Pending uploads
 cat /var/lib/tvm-upload/processed_files.json  # Upload history
 ```
 
-### Reload Configuration
+### Validate and Reload Configuration
 
 ```bash
 # Edit config
 sudo nano /etc/tvm-upload/config.yaml
 
-# Reload without restart (sends SIGHUP)
+# Validate configuration (sends SIGHUP)
 sudo systemctl reload tvm-upload
+# Note: This only validates the config. To apply changes, restart is required:
+sudo systemctl restart tvm-upload
 ```
 
 ### Health Check

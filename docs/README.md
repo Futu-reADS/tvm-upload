@@ -13,6 +13,14 @@ Welcome to the TVM Upload System documentation! This directory contains guides f
 | **[deployment_guide.md](./deployment_guide.md)** | **START HERE** - Step-by-step vehicle deployment with automated scripts | Operators, DevOps |
 | **[complete_reference.md](./complete_reference.md)** | Comprehensive feature reference, configuration options, and examples | All Users |
 
+### Operational Guides
+
+| Document | Purpose | Target Audience |
+|----------|---------|-----------------|
+| **[error_handling_guide.md](./error_handling_guide.md)** | Error classification, troubleshooting, queue management | Operators, DevOps |
+| **[configuration_reference.md](./configuration_reference.md)** | Complete configuration parameter reference with examples | All Users |
+| **[s3_organization_guide.md](./s3_organization_guide.md)** | S3 structure, date handling, download strategies | Data Analysts, DevOps |
+
 ### Testing Documentation
 
 | Document | Purpose | Target Audience |
@@ -37,6 +45,9 @@ Welcome to the TVM Upload System documentation! This directory contains guides f
 |------|-------|
 | Deploy the system to a vehicle | [deployment_guide.md](./deployment_guide.md) |
 | Understand all features and configuration | [complete_reference.md](./complete_reference.md) |
+| Troubleshoot upload errors | [error_handling_guide.md](./error_handling_guide.md) |
+| Look up configuration parameters | [configuration_reference.md](./configuration_reference.md) |
+| Understand S3 folder structure | [s3_organization_guide.md](./s3_organization_guide.md) |
 | Run manual tests before production | [manual_testing_guide.md](./manual_testing_guide.md) |
 | Run automated tests locally | [autonomous_testing_guide.md](./autonomous_testing_guide.md) |
 | Set up CI/CD with GitHub Actions | [github_actions_oidc_setup.md](./github_actions_oidc_setup.md) |
@@ -45,6 +56,10 @@ Welcome to the TVM Upload System documentation! This directory contains guides f
 ---
 
 ## 📊 Quick Facts
+
+**Documentation:**
+- 10 comprehensive guides (3 new: error handling, configuration, S3 organization)
+- 277 total tests documented
 
 **System Overview:**
 - Total automated tests: 277 (159 unit + 42 integration + 60 E2E + 16 manual, 90%+ code coverage)
@@ -88,5 +103,5 @@ Welcome to the TVM Upload System documentation! This directory contains guides f
 
 ---
 
-**Last Updated:** 2025-11-05
+**Last Updated:** 2025-11-06
 **Maintained By:** TVM Upload Team
