@@ -100,7 +100,8 @@ class TVMUploadSystem:
                 resolved_path = str(Path(item['path']).expanduser().resolve())
                 directory_configs[resolved_path] = {
                     'pattern': item.get('pattern'),
-                    'recursive': item.get('recursive', True)
+                    'recursive': item.get('recursive', True),
+                    'allow_deletion': item.get('allow_deletion', True)
                 }
 
         self.disk_manager = DiskManager(

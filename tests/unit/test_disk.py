@@ -858,3 +858,271 @@ def test_disk_usage_with_very_large_files(temp_dir):
 
     # Cleanup
     large_file.unlink()
+
+
+# ============================================
+# System Directory Protection Tests
+# ============================================
+
+def test_system_directory_detection():
+    """Test that system directories are correctly detected"""
+    from src.disk_manager import SYSTEM_DIRECTORIES
+
+    dm = DiskManager(["/tmp"])
+
+    # System directories should be detected
+    assert dm._is_system_directory(Path("/var/log/syslog"))
+    assert dm._is_system_directory(Path("/etc/passwd"))
+    assert dm._is_system_directory(Path("/usr/bin/bash"))
+    assert dm._is_system_directory(Path("/opt/app/config"))
+    assert dm._is_system_directory(Path("/sys/kernel"))
+    assert dm._is_system_directory(Path("/proc/cpuinfo"))
+    assert dm._is_system_directory(Path("/boot/grub"))
+    assert dm._is_system_directory(Path("/dev/null"))
+
+    # User directories should NOT be detected as system
+    assert not dm._is_system_directory(Path("/home/user/file.log"))
+    assert not dm._is_system_directory(Path("/tmp/test.log"))
+
+
+def test_pattern_matching_blocks_system_directory(temp_dir):
+    """Test that _matches_pattern blocks files in system directories"""
+    # Create config with pattern
+    dir_configs = {
+        "/var/log": {
+            'pattern': 'syslog.*',
+            'recursive': False,
+            'allow_deletion': True  # Even with allow_deletion=true...
+        }
+    }
+
+    dm = DiskManager(
+        log_directories=["/var/log"],
+        directory_configs=dir_configs
+    )
+
+    # System directory files should be blocked (even if pattern matches)
+    syslog_file = Path("/var/log/syslog.1")
+    result = dm._matches_pattern(syslog_file)
+
+    assert result is False, "System directory files should be blocked from deletion"
+
+
+def test_pattern_matching_respects_allow_deletion_false(temp_dir):
+    """Test that _matches_pattern respects allow_deletion=false"""
+    # Create test file in temp directory
+    test_file = Path(temp_dir) / "test.log"
+    test_file.write_text("data")
+
+    # Config with allow_deletion=false
+    dir_configs = {
+        str(Path(temp_dir).resolve()): {
+            'pattern': '*.log',
+            'recursive': True,
+            'allow_deletion': False
+        }
+    }
+
+    dm = DiskManager(
+        log_directories=[temp_dir],
+        directory_configs=dir_configs
+    )
+
+    # File matches pattern but allow_deletion=false
+    result = dm._matches_pattern(test_file)
+
+    assert result is False, "Files should be blocked when allow_deletion=false"
+
+
+def test_pattern_matching_respects_allow_deletion_true(temp_dir):
+    """Test that _matches_pattern allows deletion when allow_deletion=true"""
+    # Create test file
+    test_file = Path(temp_dir) / "test.log"
+    test_file.write_text("data")
+
+    # Config with allow_deletion=true
+    dir_configs = {
+        str(Path(temp_dir).resolve()): {
+            'pattern': '*.log',
+            'recursive': True,
+            'allow_deletion': True
+        }
+    }
+
+    dm = DiskManager(
+        log_directories=[temp_dir],
+        directory_configs=dir_configs
+    )
+
+    # File matches pattern and allow_deletion=true
+    result = dm._matches_pattern(test_file)
+
+    assert result is True, "Files should be allowed when allow_deletion=true and pattern matches"
+
+
+def test_pattern_matching_default_allow_deletion(temp_dir):
+    """Test that allow_deletion defaults to true for backward compatibility"""
+    # Create test file
+    test_file = Path(temp_dir) / "test.log"
+    test_file.write_text("data")
+
+    # Config WITHOUT allow_deletion specified (should default to true)
+    dir_configs = {
+        str(Path(temp_dir).resolve()): {
+            'pattern': '*.log',
+            'recursive': True
+            # allow_deletion not specified
+        }
+    }
+
+    dm = DiskManager(
+        log_directories=[temp_dir],
+        directory_configs=dir_configs
+    )
+
+    # Should default to allow_deletion=true
+    result = dm._matches_pattern(test_file)
+
+    assert result is True, "allow_deletion should default to true"
+
+
+def test_age_cleanup_skips_system_directory():
+    """Test that age-based cleanup skips system directories"""
+    # This is a functional test - we verify the logic, not actual /var/log access
+    import time
+
+    dir_configs = {
+        "/var/log": {
+            'pattern': 'syslog.*',
+            'recursive': False,
+            'allow_deletion': True  # Even if mistakenly set to true
+        }
+    }
+
+    dm = DiskManager(
+        log_directories=["/var/log"],
+        directory_configs=dir_configs
+    )
+
+    # Mock file in /var/log
+    fake_file = Path("/var/log/syslog.1")
+
+    # Should be blocked by system directory check
+    result = dm._matches_pattern(fake_file)
+    assert result is False, "Age cleanup should skip system directory files"
+
+
+def test_emergency_cleanup_skips_system_directory():
+    """Test that emergency cleanup skips system directories"""
+    dir_configs = {
+        "/var/log": {
+            'pattern': '*',
+            'recursive': False,
+            'allow_deletion': True  # Even if mistakenly set to true
+        }
+    }
+
+    dm = DiskManager(
+        log_directories=["/var/log"],
+        directory_configs=dir_configs
+    )
+
+    # Mock file in /var/log
+    fake_file = Path("/var/log/kern.log")
+
+    # Should be blocked by system directory check
+    result = dm._matches_pattern(fake_file)
+    assert result is False, "Emergency cleanup should skip system directory files"
+
+
+def test_recursive_false_blocks_subdirectory_files(temp_dir):
+    """Test that recursive=false blocks files in subdirectories"""
+    # Create file structure:
+    # temp_dir/
+    #   top.log (should be allowed)
+    #   subdir/
+    #     nested.log (should be blocked)
+
+    top_file = Path(temp_dir) / "top.log"
+    top_file.write_text("data")
+
+    subdir = Path(temp_dir) / "subdir"
+    subdir.mkdir()
+    nested_file = subdir / "nested.log"
+    nested_file.write_text("data")
+
+    # Config with recursive=false
+    dir_configs = {
+        str(Path(temp_dir).resolve()): {
+            'pattern': '*.log',
+            'recursive': False,  # Don't delete from subdirectories
+            'allow_deletion': True
+        }
+    }
+
+    dm = DiskManager(
+        log_directories=[temp_dir],
+        directory_configs=dir_configs
+    )
+
+    # Top-level file should be allowed
+    result_top = dm._matches_pattern(top_file)
+    assert result_top is True, "Top-level file should be allowed when recursive=false"
+
+    # Subdirectory file should be blocked
+    result_nested = dm._matches_pattern(nested_file)
+    assert result_nested is False, "Subdirectory file should be blocked when recursive=false"
+
+
+def test_recursive_true_allows_subdirectory_files(temp_dir):
+    """Test that recursive=true allows files in subdirectories"""
+    # Create file structure
+    subdir = Path(temp_dir) / "subdir"
+    subdir.mkdir()
+    nested_file = subdir / "nested.log"
+    nested_file.write_text("data")
+
+    # Config with recursive=true
+    dir_configs = {
+        str(Path(temp_dir).resolve()): {
+            'pattern': '*.log',
+            'recursive': True,  # Allow deletion from subdirectories
+            'allow_deletion': True
+        }
+    }
+
+    dm = DiskManager(
+        log_directories=[temp_dir],
+        directory_configs=dir_configs
+    )
+
+    # Subdirectory file should be allowed
+    result = dm._matches_pattern(nested_file)
+    assert result is True, "Subdirectory file should be allowed when recursive=true"
+
+
+def test_recursive_default_true(temp_dir):
+    """Test that recursive defaults to true for backward compatibility"""
+    # Create nested file
+    subdir = Path(temp_dir) / "subdir"
+    subdir.mkdir()
+    nested_file = subdir / "nested.log"
+    nested_file.write_text("data")
+
+    # Config WITHOUT recursive specified
+    dir_configs = {
+        str(Path(temp_dir).resolve()): {
+            'pattern': '*.log',
+            'allow_deletion': True
+            # recursive not specified
+        }
+    }
+
+    dm = DiskManager(
+        log_directories=[temp_dir],
+        directory_configs=dir_configs
+    )
+
+    # Should default to recursive=true
+    result = dm._matches_pattern(nested_file)
+    assert result is True, "recursive should default to true (backward compatibility)"

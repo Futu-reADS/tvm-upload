@@ -1063,3 +1063,142 @@ def test_multiple_log_directories_with_different_settings():
         assert log_dirs[3]['source'] == 'ros2'
     finally:
         Path(temp_path).unlink()
+
+
+def test_allow_deletion_boolean_validation():
+    """Test that allow_deletion must be boolean"""
+    config = {
+        'vehicle_id': 'vehicle-001',
+        'log_directories': [
+            {
+                'path': '/home/user/logs',
+                'source': 'terminal',
+                'allow_deletion': "true"  # String instead of boolean
+            }
+        ],
+        's3': {'bucket': 'test', 'region': 'cn-north-1', 'credentials_path': '~/.aws'},
+        'upload': {'schedule': {'mode': 'daily', 'daily_time': '15:00'}, 'file_stable_seconds': 60},
+        'disk': {'reserved_gb': 70}
+    }
+
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        yaml.dump(config, f)
+        temp_path = f.name
+
+    try:
+        with pytest.raises(ConfigValidationError, match="allow_deletion.*boolean"):
+            cm = ConfigManager(temp_path)
+    finally:
+        Path(temp_path).unlink()
+
+
+def test_allow_deletion_integer_rejected():
+    """Test that allow_deletion with integer value is rejected"""
+    config = {
+        'vehicle_id': 'vehicle-001',
+        'log_directories': [
+            {
+                'path': '/home/user/logs',
+                'source': 'terminal',
+                'allow_deletion': 1  # Integer instead of boolean
+            }
+        ],
+        's3': {'bucket': 'test', 'region': 'cn-north-1', 'credentials_path': '~/.aws'},
+        'upload': {'schedule': {'mode': 'daily', 'daily_time': '15:00'}, 'file_stable_seconds': 60},
+        'disk': {'reserved_gb': 70}
+    }
+
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        yaml.dump(config, f)
+        temp_path = f.name
+
+    try:
+        with pytest.raises(ConfigValidationError, match="allow_deletion.*boolean"):
+            cm = ConfigManager(temp_path)
+    finally:
+        Path(temp_path).unlink()
+
+
+def test_allow_deletion_valid_true():
+    """Test that allow_deletion=true is accepted"""
+    config = {
+        'vehicle_id': 'vehicle-001',
+        'log_directories': [
+            {
+                'path': '/home/user/logs',
+                'source': 'terminal',
+                'allow_deletion': True
+            }
+        ],
+        's3': {'bucket': 'test', 'region': 'cn-north-1', 'credentials_path': '~/.aws'},
+        'upload': {'schedule': {'mode': 'daily', 'daily_time': '15:00'}, 'file_stable_seconds': 60},
+        'disk': {'reserved_gb': 70}
+    }
+
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        yaml.dump(config, f)
+        temp_path = f.name
+
+    try:
+        cm = ConfigManager(temp_path)
+        log_dirs = cm.get('log_directories')
+        assert log_dirs[0]['allow_deletion'] is True
+    finally:
+        Path(temp_path).unlink()
+
+
+def test_allow_deletion_valid_false():
+    """Test that allow_deletion=false is accepted"""
+    config = {
+        'vehicle_id': 'vehicle-001',
+        'log_directories': [
+            {
+                'path': '/var/log',
+                'source': 'syslog',
+                'allow_deletion': False
+            }
+        ],
+        's3': {'bucket': 'test', 'region': 'cn-north-1', 'credentials_path': '~/.aws'},
+        'upload': {'schedule': {'mode': 'daily', 'daily_time': '15:00'}, 'file_stable_seconds': 60},
+        'disk': {'reserved_gb': 70}
+    }
+
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        yaml.dump(config, f)
+        temp_path = f.name
+
+    try:
+        cm = ConfigManager(temp_path)
+        log_dirs = cm.get('log_directories')
+        assert log_dirs[0]['allow_deletion'] is False
+    finally:
+        Path(temp_path).unlink()
+
+
+def test_allow_deletion_optional():
+    """Test that allow_deletion is optional (defaults handled by disk_manager)"""
+    config = {
+        'vehicle_id': 'vehicle-001',
+        'log_directories': [
+            {
+                'path': '/home/user/logs',
+                'source': 'terminal'
+                # allow_deletion not specified
+            }
+        ],
+        's3': {'bucket': 'test', 'region': 'cn-north-1', 'credentials_path': '~/.aws'},
+        'upload': {'schedule': {'mode': 'daily', 'daily_time': '15:00'}, 'file_stable_seconds': 60},
+        'disk': {'reserved_gb': 70}
+    }
+
+    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+        yaml.dump(config, f)
+        temp_path = f.name
+
+    try:
+        cm = ConfigManager(temp_path)
+        log_dirs = cm.get('log_directories')
+        # Should load successfully without allow_deletion
+        assert 'path' in log_dirs[0]
+    finally:
+        Path(temp_path).unlink()

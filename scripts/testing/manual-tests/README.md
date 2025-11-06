@@ -4,7 +4,7 @@ This directory contains automated scripts for running manual test scenarios desc
 
 ## Overview
 
-These scripts automate the 12 manual test scenarios, allowing you to:
+These scripts automate the 17 manual test scenarios, allowing you to:
 - Validate system functionality before deployment
 - Verify features work correctly in your environment
 - Run regression tests after code changes
@@ -20,7 +20,7 @@ These scripts automate the 12 manual test scenarios, allowing you to:
 ```
 
 This will:
-1. Run all 12 test scenarios sequentially
+1. Run all 17 test scenarios sequentially
 2. Generate a detailed test report
 3. Display pass/fail summary
 4. Save results to `/tmp/manual-test-results-<timestamp>.txt`
@@ -62,6 +62,7 @@ This will:
 | 14 | Recursive Monitoring | 5 min | Verify recursive vs non-recursive directory monitoring |
 | 15 | Startup Scan | 10 min | Verify scan_existing_files and max_age_days behavior |
 | 16 | Emergency Cleanup Thresholds | 10 min | Verify emergency cleanup at critical disk threshold (95%) |
+| 17 | Deletion Safety System | 5 min | Verify 4-layer deletion protection (system dirs, allow_deletion, recursive, pattern) |
 
 **Total Duration:** ~2.5 hours for all tests
 
@@ -222,7 +223,7 @@ The master runner (`run_manual_tests.sh`) provides:
 ║     TVM Upload System - Manual Test Suite Runner              ║
 ╔════════════════════════════════════════════════════════════════╗
 
-Running 16 tests: 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16
+Running 17 tests: 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17
 
 [Test execution logs...]
 
@@ -250,11 +251,12 @@ Test Results:
 │ 14   │ Recursive Monitoring                        │ PASSED   │
 │ 15   │ Startup Scan                                │ PASSED   │
 │ 16   │ Emergency Cleanup Thresholds                │ PASSED   │
+│ 17   │ Deletion Safety System                      │ PASSED   │
 └──────┴─────────────────────────────────────────────┴──────────┘
 
 Summary Statistics:
-  Total Tests:    16
-  Passed:         16
+  Total Tests:    17
+  Passed:         17
   Failed:         0
   Pass Rate:      100%
 
@@ -408,7 +410,7 @@ These scripts can be integrated into CI/CD pipelines:
 
 ### Adding New Tests
 
-1. Create new script: `scripts/manual-tests/13_new_test.sh`
+1. Create new script: `scripts/manual-tests/18_new_test.sh`
 2. Follow existing script structure
 3. Use helper functions from `test_helpers.sh`
 4. Update `run_manual_tests.sh` with new test entry

@@ -257,6 +257,13 @@ class ConfigManager:
                         f"log_directories[{idx}].pattern: Must be string, got {type(item['pattern'])}"
                     )
 
+            # Validate allow_deletion parameter
+            if 'allow_deletion' in item:
+                if not isinstance(item['allow_deletion'], bool):
+                    raise ConfigValidationError(
+                        f"log_directories[{idx}].allow_deletion: Must be boolean, got {type(item['allow_deletion'])}"
+                    )
+
         logger.info(f"Validated {len(log_dirs)} log directories")
         if seen_sources:
             logger.info(f"Sources: {', '.join(sorted(seen_sources))}")

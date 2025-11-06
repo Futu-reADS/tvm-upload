@@ -35,6 +35,7 @@ vehicle_id: "vehicle-CN-001"
 #   - source: Source name for S3 organization
 #   - pattern: (Optional) Glob pattern to filter files
 #   - recursive: (Optional) Monitor subdirectories (default: true)
+#   - allow_deletion: (Optional) Allow deletion from this directory (default: true)
 #
 # Pattern matching:
 #   - If pattern is specified, ONLY files matching the pattern are uploaded
@@ -50,6 +51,30 @@ vehicle_id: "vehicle-CN-001"
 #   - recursive: false → Only monitors top-level directory, ignores subdirectories
 #   - Example use case: /var/log has many system subdirectories that should be ignored
 #
+# Deletion control:
+#   - allow_deletion: true  → Allow file deletion after upload (default for user directories)
+#   - allow_deletion: false → NEVER delete files from this directory (for system directories)
+#   - ⚠️  System directories (/var, /etc, /usr, etc.) are HARD-CODED protected
+#   - Even if allow_deletion=true, files in /var, /etc, /usr will NEVER be deleted
+#   - This is a safety mechanism to prevent accidental deletion of system files
+#
+# ⚠️ IMPORTANT: Upload and Deletion Settings Relationship
+# ==========================================
+# The pattern and recursive settings apply to BOTH upload and deletion:
+#
+#   - pattern: "*.log"    → Uploads ONLY *.log files
+#                         → Deletes ONLY *.log files (after upload/age conditions met)
+#
+#   - recursive: false    → Uploads ONLY top-level files (skips subdirectories)
+#                         → Deletes ONLY top-level files (skips subdirectories)
+#
+#   - recursive: true     → Uploads files from all subdirectories
+#                         → Deletes files from all subdirectories (after conditions met)
+#
+# EXCEPTION: System directory protection applies ONLY to deletion
+#   - /var/log files CAN be uploaded (if pattern matches)
+#   - /var/log files will NEVER be deleted (hard-coded protection)
+#
 # Files are automatically organized in S3 by source type.
 # NOTE: Environment variables are automatically expanded by the system.
 # You can use ${HOME}, ${USER}, or ~ for paths.
@@ -63,22 +88,27 @@ log_directories:
     source: terminal
     recursive: true  # Include subdirectories
     # No pattern specified → Uploads ALL files from this directory and subdirectories
+    # allow_deletion: true (default) - Safe to delete from user directory
 
   - path: ${HOME}/.ros/log
     source: ros
     recursive: true  # Include subdirectories (important for ROS folder structure!)
     # No pattern specified → Uploads ALL files from this directory and subdirectories
+    # allow_deletion: true (default) - Safe to delete from user directory
 
   - path: /var/log
     source: syslog
     pattern: "syslog.[1-9]*"  # CRITICAL: Only rotated files (syslog.1, syslog.2.gz)
                                # Skips /var/log/syslog (active file - would cause infinite loop!)
     recursive: false     # Do NOT monitor subdirectories (system logs have many folders)
+    allow_deletion: false  # NEVER delete from system directories!
+                           # NOTE: /var is also hard-coded protected, but this makes it explicit
 
   - path: ${HOME}/ros2_ws/log
     source: ros2
     recursive: true  # Include subdirectories
     # No pattern specified → Uploads ALL files from this directory and subdirectories
+    # allow_deletion: true (default) - Safe to delete from user directory
 
 # ============================================
 # AWS S3 CONFIGURATION (China Region)
@@ -331,6 +361,76 @@ deletion:
     # Enable emergency cleanup
     # MUST be true for production!
     enabled: true
+
+# ============================================
+# DELETION SAFETY SYSTEM (4-LAYER PROTECTION)
+# ============================================
+# The system uses multiple safety layers to prevent accidental deletion:
+#
+# LAYER 1: System Directory Protection (Hard-coded, CANNOT be overridden)
+#   - System directories are NEVER touched for deletion
+#   - Protected: /var, /etc, /usr, /opt, /sys, /proc, /boot, /dev
+#   - Even if allow_deletion=true, files in these directories are BLOCKED
+#   - This prevents accidental deletion of critical system files
+#
+# LAYER 2: allow_deletion Flag (User Control)
+#   - Set per directory in log_directories configuration
+#   - allow_deletion: false → NEVER delete from this directory
+#   - allow_deletion: true → Allow deletion (subject to other layers)
+#   - Default: true (for user directories)
+#
+# LAYER 3: recursive Flag (Subdirectory Control)
+#   - recursive: false → Only delete from top-level directory
+#   - recursive: true → Allow deletion from subdirectories
+#   - Files in subdirectories are skipped when recursive=false
+#   - Default: true
+#
+# LAYER 4: Pattern Matching (Upload Pattern)
+#   - Only files matching the upload pattern can be deleted
+#   - If pattern is specified, only matching files are deleted
+#   - If no pattern, all files in directory can be deleted
+#
+# IMPORTANT NOTES:
+# ==========================================
+# 1. System directories (/var/log, /etc, etc.) are PROTECTED by Layer 1
+#    - Even if you set allow_deletion=true, deletion is BLOCKED
+#    - This is a hard-coded safety mechanism
+#
+# 2. For /var/log:
+#    - ALWAYS set allow_deletion: false (makes intention explicit)
+#    - ALWAYS set recursive: false (only scan top-level)
+#    - System directory protection is automatic, but explicit config is clearer
+#
+# 3. Deletion respects ALL layers:
+#    - File must pass ALL 4 layers to be deleted
+#    - If ANY layer blocks it, file is NOT deleted
+#
+# 4. No errors generated:
+#    - Files blocked by safety layers are silently skipped
+#    - No "permission denied" errors in logs
+#    - Clean operation
+#
+# Example Deletion Decision:
+# ==========================================
+# File: /var/log/syslog.1
+#   Layer 1 (System Dir):     BLOCKED ❌ → File NOT deleted
+#   Layer 2 (allow_deletion): (not checked, already blocked)
+#   Layer 3 (recursive):      (not checked, already blocked)
+#   Layer 4 (pattern):        (not checked, already blocked)
+#
+# File: /home/user/.ros/log/old.log (allow_deletion=true, recursive=true, pattern=*.log)
+#   Layer 1 (System Dir):     PASS ✅ (not a system directory)
+#   Layer 2 (allow_deletion): PASS ✅ (true)
+#   Layer 3 (recursive):      PASS ✅ (true)
+#   Layer 4 (pattern):        PASS ✅ (matches *.log)
+#   → File CAN be deleted (if age/upload conditions met)
+#
+# File: /home/user/.ros/log/subdir/nested.log (allow_deletion=true, recursive=false)
+#   Layer 1 (System Dir):     PASS ✅
+#   Layer 2 (allow_deletion): PASS ✅
+#   Layer 3 (recursive):      BLOCKED ❌ (file in subdirectory, recursive=false)
+#   Layer 4 (pattern):        (not checked, already blocked)
+#   → File NOT deleted
 
 # ============================================
 # DISK MANAGEMENT

@@ -18,6 +18,10 @@ SECONDS_PER_DAY = 86400
 BYTES_PER_GB = 1024**3
 IMMEDIATE_DELETION = 0
 
+# System directories where deletion is NEVER allowed
+# This is a hard-coded safety mechanism that cannot be overridden by config
+SYSTEM_DIRECTORIES = ['/var', '/etc', '/usr', '/opt', '/sys', '/proc', '/boot', '/dev']
+
 
 class DiskManager:
     """
@@ -69,7 +73,9 @@ class DiskManager:
             warning_threshold: Disk usage % to warn at (0-1, e.g. 0.90 = 90%)
             critical_threshold: Disk usage % to force cleanup (0-1, e.g. 0.95 = 95%)
             directory_configs: Optional dict mapping directory paths to their configs
-                              Format: {'/var/log': {'pattern': 'syslog.[1-9]*', 'recursive': False}}
+                              Format: {'/var/log': {'pattern': 'syslog.[1-9]*',
+                                                     'recursive': False,
+                                                     'allow_deletion': False}}
 
         Note:
             Thresholds are disk usage percentages, not free space percentages
@@ -125,27 +131,73 @@ class DiskManager:
         
         self.uploaded_files[abs_path] = delete_after
 
-    def _matches_pattern(self, file_path: Path) -> bool:
+    def _is_system_directory(self, file_path: Path) -> bool:
         """
-        Check if file matches the configured pattern for its parent directory.
+        Check if file is in a protected system directory.
+
+        System directories are hard-coded and cannot be overridden by config.
+        This is a safety mechanism to prevent accidental deletion of system files.
 
         Args:
             file_path: Path to the file to check
 
         Returns:
-            bool: True if file matches pattern (or no pattern configured), False otherwise
+            bool: True if file is in a system directory, False otherwise
         """
+        file_str = str(file_path.resolve())
+        for sys_dir in SYSTEM_DIRECTORIES:
+            if file_str.startswith(sys_dir):
+                return True
+        return False
+
+    def _matches_pattern(self, file_path: Path) -> bool:
+        """
+        Check if file matches the configured pattern AND is safe to delete.
+
+        Multi-layer safety check:
+        1. Must NOT be in a system directory (hard-coded protection)
+        2. Must have allow_deletion=true in config (user control, default: true)
+        3. Must respect recursive setting (if recursive=false, skip subdirectories)
+        4. Must match the upload pattern (or no pattern configured)
+
+        Args:
+            file_path: Path to the file to check
+
+        Returns:
+            bool: True if file is safe to delete, False otherwise
+        """
+        # LAYER 1: System directory protection (cannot be overridden)
+        if self._is_system_directory(file_path):
+            logger.debug(f"Deletion blocked: {file_path.name} is in system directory")
+            return False
+
         # Find which monitored directory this file belongs to
         for log_dir in self.log_directories:
             try:
                 # Check if file is under this log directory
-                file_path.relative_to(log_dir)
+                relative_path = file_path.relative_to(log_dir)
 
-                # Found the parent directory, check pattern
+                # Found the parent directory
                 dir_str = str(log_dir.resolve())
                 config = self.directory_configs.get(dir_str, {})
-                pattern = config.get('pattern')
 
+                # LAYER 2: Check allow_deletion flag (default: true for backward compatibility)
+                allow_deletion = config.get('allow_deletion', True)
+                if not allow_deletion:
+                    logger.debug(f"Deletion blocked: {file_path.name} (allow_deletion=false)")
+                    return False
+
+                # LAYER 3: Check recursive setting (default: true for backward compatibility)
+                recursive = config.get('recursive', True)
+                if not recursive:
+                    # If recursive=false, only allow top-level files (not in subdirectories)
+                    # relative_path.parts will have length > 1 if file is in subdirectory
+                    if len(relative_path.parts) > 1:
+                        logger.debug(f"Deletion blocked: {file_path.name} is in subdirectory (recursive=false)")
+                        return False
+
+                # LAYER 4: Pattern matching
+                pattern = config.get('pattern')
                 if pattern is None:
                     # No pattern configured - accept all files
                     logger.debug(f"Deletion pattern check: {file_path.name} - no pattern, accepting")

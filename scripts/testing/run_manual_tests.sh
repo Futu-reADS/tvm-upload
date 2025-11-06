@@ -1,6 +1,6 @@
 #!/bin/bash
 # Master Test Runner for TVM Upload Manual Tests
-# Runs all 12 manual test scenarios and generates comprehensive report
+# Runs all 17 manual test scenarios and generates comprehensive report
 # Usage: ./scripts/run_manual_tests.sh [config_file] [test_numbers]
 # Examples:
 #   ./scripts/run_manual_tests.sh                    # Run all tests
@@ -318,6 +318,7 @@ declare -A TEST_NAMES=(
     [14]="Recursive Monitoring"
     [15]="Basic File Upload"
     [16]="Emergency Cleanup Thresholds"
+    [17]="Deletion Safety System"
 )
 
 declare -A TEST_DURATIONS=(
@@ -337,11 +338,12 @@ declare -A TEST_DURATIONS=(
     [14]="5 min"
     [15]="10 min"
     [16]="10 min"
+    [17]="5 min"
 )
 
 # Determine which tests to run
 if [ "$TESTS_TO_RUN" = "all" ]; then
-    TESTS=(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16)
+    TESTS=(1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17)
 else
     TESTS=($TESTS_TO_RUN)
 fi
