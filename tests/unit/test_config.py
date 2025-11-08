@@ -352,31 +352,6 @@ def test_invalid_s3_lifecycle_retention():
         Path(temp_path).unlink()
 
 
-def test_invalid_metrics_publish_interval():
-    """Test validation fails with zero metrics_publish_interval"""
-    config = {
-        'vehicle_id': 'test',
-        'log_directories': ['/tmp'],
-        's3': {'bucket': 'test', 'region': 'cn-north-1', 'credentials_path': '/tmp'},
-        'upload': {'schedule': '15:00'},
-        'disk': {'reserved_gb': 70},
-        'monitoring': {
-            'cloudwatch_enabled': True,
-            'metrics_publish_interval': 0  # Must be > 0
-        }
-    }
-    
-    with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
-        yaml.dump(config, f)
-        temp_path = f.name
-    
-    try:
-        with pytest.raises(ConfigValidationError, match="must be > 0"):
-            ConfigManager(temp_path)
-    finally:
-        Path(temp_path).unlink()
-
-
 def test_deletion_config_optional():
     """Test that deletion config is optional (system works without it)"""
     config = {

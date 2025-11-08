@@ -602,13 +602,6 @@ class ConfigManager:
                 raise ConfigValidationError(
                     "monitoring.cloudwatch_enabled must be boolean"
                 )
-        
-        if 'metrics_publish_interval' in monitoring_config:
-            interval = monitoring_config['metrics_publish_interval']
-            if not isinstance(interval, (int, float)) or interval <= 0:
-                raise ConfigValidationError(
-                    "monitoring.metrics_publish_interval must be > 0"
-                )
     
     def _is_valid_time_format(self, time_str: str) -> bool:
         """

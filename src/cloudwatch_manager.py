@@ -48,6 +48,8 @@ class CloudWatchManager:
         self.bytes_uploaded = 0
         self.files_uploaded = 0
         self.files_failed = 0
+        self.last_publish_time = None  # Track last successful publish
+        self.first_data_timestamp = None  # Track when data started accumulating
 
         if self.enabled:
             try:
@@ -131,12 +133,16 @@ class CloudWatchManager:
 
     def record_upload_success(self, file_size: int):
         """Record successful file upload."""
+        if self.first_data_timestamp is None:
+            self.first_data_timestamp = datetime.utcnow()
         self.bytes_uploaded += file_size
         self.files_uploaded += 1
         logger.debug(f"Recorded upload: {file_size} bytes")
 
     def record_upload_failure(self):
         """Record failed file upload."""
+        if self.first_data_timestamp is None:
+            self.first_data_timestamp = datetime.utcnow()
         self.files_failed += 1
         logger.debug("Recorded upload failure")
 
@@ -191,17 +197,53 @@ class CloudWatchManager:
                 })
 
             if metrics:
+                # Calculate accumulation period for logging
+                days_accumulated = self._calculate_days_accumulated()
+
+                # Log warning if metrics represent multiple days
+                if days_accumulated > 1:
+                    logger.warning("="*60)
+                    logger.warning(f"⚠️  ACCUMULATED METRICS: Publishing data for {days_accumulated} days")
+                    logger.warning(f"    (Network was unavailable on previous days)")
+                    logger.warning(f"    BytesUploaded: {self.bytes_uploaded / (1024*1024):.2f} MB")
+                    logger.warning(f"    FileCount: {self.files_uploaded}")
+                    logger.warning(f"    FailureCount: {self.files_failed}")
+                    if disk_usage_percent is not None:
+                        logger.warning(f"    DiskUsage: {disk_usage_percent:.1f}%")
+                    logger.warning("="*60)
+
                 self.cw_client.put_metric_data(
                     Namespace=CLOUDWATCH_NAMESPACE,
                     MetricData=metrics
                 )
                 logger.info(f"Published {len(metrics)} metrics to CloudWatch")
+
+                # Reset accumulators on successful publish
                 self.bytes_uploaded = 0
                 self.files_uploaded = 0
                 self.files_failed = 0
+                self.last_publish_time = datetime.utcnow()
+                self.first_data_timestamp = None
 
         except Exception as e:
             logger.error(f"Failed to publish CloudWatch metrics: {e}")
+            logger.error(f"Metrics will accumulate and retry on next publish attempt")
+
+    def _calculate_days_accumulated(self) -> int:
+        """Calculate how many days of data has accumulated since last publish."""
+        if self.first_data_timestamp is None:
+            return 0
+
+        now = datetime.utcnow()
+
+        if self.last_publish_time is None:
+            # First publish ever - calculate from when data started accumulating
+            delta = now - self.first_data_timestamp
+            return max(1, delta.days + 1)
+        else:
+            # Subsequent publishes - calculate from last successful publish
+            delta = now - self.last_publish_time
+            return max(1, delta.days)
 
     def create_low_upload_alarm(self, threshold_mb: int = 100):
         """Create CloudWatch alarm for low upload volume (triggers if <threshold_mb for 3 consecutive days)."""

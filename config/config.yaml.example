@@ -466,19 +466,8 @@ disk:
 monitoring:
   # Enable CloudWatch metrics publishing
   # Set to false for testing (but enable for production)
+  # Metrics are published once daily during age-based deletion cleanup
   cloudwatch_enabled: false
-  
-  # How often to publish metrics (seconds)
-  # RECOMMENDED: 3600 (every 1 hour)
-  publish_interval_seconds: 3600
-  
-  # Alert threshold for low upload volume (MB)
-  # CloudWatch alarm triggers if daily upload < this value
-  low_upload_threshold_mb: 100
-  
-  # Number of consecutive periods before alarm
-  # Alarm triggers after this many consecutive low-upload periods
-  alarm_evaluation_periods: 3
 
 # ============================================
 # S3 LIFECYCLE MANAGEMENT
