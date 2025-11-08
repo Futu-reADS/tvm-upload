@@ -1,0 +1,77 @@
+PROPRIETARY SOFTWARE LICENSE
+
+Copyright (c) 2025 Futu-reADS Co., Ltd.
+All Rights Reserved.
+
+================================================================================
+
+NOTICE TO USER: PLEASE READ THIS LICENSE AGREEMENT CAREFULLY.
+
+This software and associated documentation files (the "Software") are
+proprietary to Futu-reADS Co., Ltd. and are protected by copyright law
+and international copyright treaties, as well as other intellectual
+property laws and treaties.
+
+GRANT OF LICENSE
+
+This Software is licensed, not sold. Futu-reADS Co., Ltd. grants you
+the following rights provided you comply with all terms and conditions
+of this License Agreement:
+
+1. INTERNAL USE ONLY
+   You may install and use the Software solely for internal business
+   purposes within Futu-reADS Co., Ltd. and its authorized subsidiaries.
+
+2. RESTRICTIONS
+   You may NOT:
+   - Distribute, sublicense, rent, lease, or lend the Software
+   - Reverse engineer, decompile, or disassemble the Software
+   - Remove or alter any copyright, trademark, or other proprietary notices
+   - Use the Software for any purpose outside of Futu-reADS operations
+   - Transfer the Software to any third party without written permission
+   - Create derivative works based on the Software without authorization
+
+3. CONFIDENTIALITY
+   The Software contains trade secrets and proprietary information of
+   Futu-reADS Co., Ltd. You agree to maintain the confidentiality of
+   the Software and not disclose it to any third party.
+
+4. OWNERSHIP
+   Futu-reADS Co., Ltd. retains all right, title, and interest in and
+   to the Software, including all intellectual property rights therein.
+
+5. TERMINATION
+   This license is effective until terminated. Your rights under this
+   license will terminate automatically without notice if you fail to
+   comply with any term of this license.
+
+6. NO WARRANTY
+   THE SOFTWARE IS PROVIDED "AS IS" WITHOUT WARRANTY OF ANY KIND,
+   EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+   MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
+
+7. LIMITATION OF LIABILITY
+   IN NO EVENT SHALL FUTU-READS CO., LTD. BE LIABLE FOR ANY SPECIAL,
+   INCIDENTAL, INDIRECT, OR CONSEQUENTIAL DAMAGES WHATSOEVER ARISING
+   OUT OF THE USE OF OR INABILITY TO USE THE SOFTWARE.
+
+================================================================================
+
+For licensing inquiries or permissions, please contact:
+
+Futu-reADS Co., Ltd.
+Email: info@futu-re.co.jp
+Website: https://www.futu-re.co.jp
+
+================================================================================
+
+TVM LOG UPLOAD SYSTEM v2.1.0
+Automated log upload daemon for Autoware vehicles
+
+This software is designed for use with AWS China region (cn-north-1)
+and is optimized for vehicle log management and upload operations.
+
+Project Repository: https://github.com/Futu-reADS/tvm-upload
+Documentation: https://github.com/Futu-reADS/tvm-upload/tree/main/docs
+
+================================================================================

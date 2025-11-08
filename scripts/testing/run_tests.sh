@@ -34,11 +34,11 @@ setup_venv() {
 # Build pytest command with optional coverage
 build_pytest_cmd() {
     local cmd="pytest $1 -v --tb=short $VERBOSE_FLAG"  # ← Add $VERBOSE_FLAG
-    
+
     if [ "$COVERAGE" = "true" ]; then
         cmd="$cmd --cov=src --cov-report=term --cov-report=html"
     fi
-    
+
     echo "$cmd"
 }
 
@@ -146,24 +146,24 @@ main() {
                 ;;
         esac
     done
-    
+
     # Default to 'all' if no command specified
     COMMAND="${COMMAND:-all}"
-    
+
     setup_venv
-    
+
     echo -e "${CYAN}╔════════════════════════════════════════════════════════╗${NC}"
     echo -e "${CYAN}║       TVM Upload System - Test Suite                  ║${NC}"
     echo -e "${CYAN}╚════════════════════════════════════════════════════════╝${NC}"
     echo ""
-    
+
     if [ "$COVERAGE" = "true" ]; then
         echo -e "${YELLOW}📊 Coverage reporting enabled${NC}"
         echo ""
     fi
-    
+
     START_TIME=$(date +%s)
-    
+
     case "$COMMAND" in
         unit)
             test_unit
@@ -182,16 +182,16 @@ main() {
             test_integration
             ;;
     esac
-    
+
     END_TIME=$(date +%s)
     DURATION=$((END_TIME - START_TIME))
-    
+
     echo ""
     echo -e "${GREEN}╔════════════════════════════════════════════════════════╗${NC}"
     echo -e "${GREEN}║  ✅ Tests completed successfully!                     ║${NC}"
     echo -e "${GREEN}║  ⏱️  Duration: ${DURATION}s                                    ║${NC}"
     echo -e "${GREEN}╚════════════════════════════════════════════════════════╝${NC}"
-    
+
     if [ "$COVERAGE" = "true" ]; then
         echo ""
         echo -e "${CYAN}📊 Coverage report generated: ${YELLOW}htmlcov/index.html${NC}"

@@ -4,38 +4,39 @@ File Monitor for TVM Log Upload System
 Watches directories and detects completed log files
 """
 
-import json
-import time
-import threading
-import logging
-from pathlib import Path
-from typing import Callable, Dict, Tuple, List
-from datetime import datetime
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler, FileCreatedEvent, FileModifiedEvent
 import fnmatch
+import json
+import logging
+import threading
+import time
+from datetime import datetime
+from pathlib import Path
+from typing import Callable, Dict, List, Tuple
+
+from watchdog.events import FileCreatedEvent, FileModifiedEvent, FileSystemEventHandler
+from watchdog.observers import Observer
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_REGISTRY_PATH = '/var/lib/tvm-upload/processed_files.json'
+DEFAULT_REGISTRY_PATH = "/var/lib/tvm-upload/processed_files.json"
 DEFAULT_RETENTION_DAYS = 30
-FILE_IDENTITY_SEPARATOR = '::'
+FILE_IDENTITY_SEPARATOR = "::"
 
 
 class FileMonitor:
     """
     Monitors directories for completed log files using watchdog.
-    
+
     A file is considered "complete" when its size hasn't changed for
     the configured stability period (default: 60 seconds). This ensures
     files are fully written before processing.
-    
+
     Architecture:
     - Watchdog Observer: Detects filesystem events (create/modify)
     - File Tracker: Tracks file sizes and last modification time
     - Stability Checker: Background thread that checks for stable files
     - Startup Scanner: Scans for existing files on initialization (NEW v2.0)
-    
+
     Example:
         >>> def on_complete(filepath):
         ...     print(f"File ready: {filepath}")
@@ -43,7 +44,7 @@ class FileMonitor:
         >>> monitor.start()
         >>> # ... monitor runs in background ...
         >>> monitor.stop()
-    
+
     Attributes:
         directories (List[Path]): Directories being monitored
         callback (Callable): Function called when file is stable
@@ -51,30 +52,32 @@ class FileMonitor:
         file_tracker (dict): Maps filepath to (size, timestamp)
         config (dict): Configuration dictionary for startup scan
     """
-    
-    def __init__(self, 
-         directories: List[str], 
-         callback: Callable[[str], None],
-         stability_seconds: int = 60,
-            config: dict = None):
+
+    def __init__(
+        self,
+        directories: List[str],
+        callback: Callable[[str], None],
+        stability_seconds: int = 60,
+        config: dict = None,
+    ):
         """
         Initialize file monitor.
-        
+
         Args:
             directories: List of directory paths to monitor
             callback: Function to call when file is ready (receives file path)
             stability_seconds: Seconds file must be unchanged to be "complete"
             config: Configuration dict for startup scan settings (NEW v2.0)
-            
+
         Raises:
             PermissionError: If registry file cannot be written
-            
+
         Note:
             Directories will be created if they don't exist
         """
         # Parse directory configurations (path + pattern + recursive)
         self.directory_configs = []
-        log_directories = config.get('log_directories', []) if config else []
+        log_directories = config.get("log_directories", []) if config else []
 
         for dir_path in directories:
             # Find matching config for this directory
@@ -83,22 +86,24 @@ class FileMonitor:
                 # Handle both legacy string format and new dict format
                 if isinstance(log_dir, dict):
                     # New format: {"path": "/path", "source": "app", "pattern": "*.log"}
-                    if log_dir.get('path') == dir_path:
+                    if log_dir.get("path") == dir_path:
                         dir_config = log_dir
                         break
                 elif isinstance(log_dir, str):
                     # Legacy format: "/path"
                     if log_dir == dir_path:
                         # Convert to dict format for consistency
-                        dir_config = {'path': log_dir}
+                        dir_config = {"path": log_dir}
                         break
 
             # Store directory with pattern and recursive setting (default: True)
-            self.directory_configs.append({
-                'path': Path(dir_path),
-                'pattern': dir_config.get('pattern') if dir_config else None,
-                'recursive': dir_config.get('recursive', True) if dir_config else True
-            })
+            self.directory_configs.append(
+                {
+                    "path": Path(dir_path),
+                    "pattern": dir_config.get("pattern") if dir_config else None,
+                    "recursive": dir_config.get("recursive", True) if dir_config else True,
+                }
+            )
 
         self.directories = [Path(d) for d in directories]  # Keep for backward compatibility
         self.callback = callback
@@ -106,12 +111,9 @@ class FileMonitor:
         self.config = config or {}
         self.file_tracker: Dict[Path, Tuple[int, float]] = {}
 
-        registry_config = self.config.get('upload', {}).get('processed_files_registry', {})
-        self.registry_file = Path(registry_config.get(
-            'registry_file',
-            DEFAULT_REGISTRY_PATH
-        ))
-        self.registry_retention_days = registry_config.get('retention_days', DEFAULT_RETENTION_DAYS)
+        registry_config = self.config.get("upload", {}).get("processed_files_registry", {})
+        self.registry_file = Path(registry_config.get("registry_file", DEFAULT_REGISTRY_PATH))
+        self.registry_retention_days = registry_config.get("retention_days", DEFAULT_RETENTION_DAYS)
         self.processed_files: Dict[str, dict] = self._load_processed_registry()
 
         logger.info(f"Validating registry writability: {self.registry_file}")
@@ -125,7 +127,7 @@ class FileMonitor:
 
         except (PermissionError, OSError) as e:
             logger.error(f"✗ Registry file is NOT writable: {e}")
-            logger.error("="*60)
+            logger.error("=" * 60)
             logger.error("FATAL: Cannot write to registry file")
             logger.error(f"Path: {self.registry_file}")
             logger.error("Registry persistence is REQUIRED for production operation")
@@ -134,20 +136,20 @@ class FileMonitor:
             logger.error("Action required:")
             logger.error("  1. Fix permissions: sudo chmod 666 {registry_file}")
             logger.error("  2. Or change registry_file path in config.yaml")
-            logger.error("="*60)
+            logger.error("=" * 60)
             raise
 
         self.observer = Observer()
         self.handler = LogFileHandler(self._on_file_event)
         self._running = False
         self._checker_thread = None
-        
+
         logger.info(f"Initialized monitoring {len(directories)} directories")
         logger.info(f"Stability period: {stability_seconds} seconds")
         logger.info(f"Processed files registry: {self.registry_file}")
         logger.info(f"Registry retention: {self.registry_retention_days} days")
         logger.info(f"Registry loaded: {len(self.processed_files)} entries")
-    
+
     def _get_file_identity(self, file_path: Path) -> str:
         """Generate unique file identity key using path + size + mtime."""
         try:
@@ -171,13 +173,13 @@ class FileMonitor:
         """
         # Find the directory config for this file
         for dir_config in self.directory_configs:
-            dir_path = dir_config['path']
+            dir_path = dir_config["path"]
 
             # Check if file is in this directory
             try:
                 file_path.relative_to(dir_path)
                 # File is in this directory
-                pattern = dir_config.get('pattern')
+                pattern = dir_config.get("pattern")
 
                 if pattern is None:
                     # No pattern configured - accept all files
@@ -186,7 +188,9 @@ class FileMonitor:
                 else:
                     # Check if filename matches pattern
                     match_result = fnmatch.fnmatch(file_path.name, pattern)
-                    logger.debug(f"Pattern check: {file_path.name} vs '{pattern}' => {match_result}")
+                    logger.debug(
+                        f"Pattern check: {file_path.name} vs '{pattern}' => {match_result}"
+                    )
                     return match_result
 
             except ValueError:
@@ -194,9 +198,10 @@ class FileMonitor:
                 continue
 
         # File not in any configured directory - accept by default
-        logger.warning(f"Pattern check: {file_path} not in any configured directory, accepting by default")
+        logger.warning(
+            f"Pattern check: {file_path} not in any configured directory, accepting by default"
+        )
         return True
-
 
     def start(self):
         """Start monitoring directories (creates directories if needed, scans existing files)."""
@@ -210,12 +215,11 @@ class FileMonitor:
                 logger.info(f"Creating directory: {directory}")
                 directory.mkdir(parents=True, exist_ok=True)
 
-        scan_config = self.config.get('upload', {}).get('scan_existing_files', {})
+        scan_config = self.config.get("upload", {}).get("scan_existing_files", {})
 
-        if scan_config.get('enabled', True):
-            max_age_days = scan_config.get('max_age_days', 3)
+        if scan_config.get("enabled", True):
+            max_age_days = scan_config.get("max_age_days", 3)
             logger.info(f"Scanning for existing files (max age: {max_age_days} days)...")
-
 
             cutoff_time = time.time() - (max_age_days * 24 * 3600)
             existing_count = 0
@@ -224,8 +228,8 @@ class FileMonitor:
             skipped_old = 0
 
             for dir_config in self.directory_configs:
-                directory = dir_config['path']
-                recursive = dir_config['recursive']
+                directory = dir_config["path"]
+                recursive = dir_config["recursive"]
 
                 if not directory.exists():
                     continue
@@ -233,13 +237,13 @@ class FileMonitor:
                 # Scan files based on recursive setting
                 if recursive:
                     logger.debug(f"Scanning {directory} recursively...")
-                    file_paths = directory.rglob('*')  # Recursive glob
+                    file_paths = directory.rglob("*")  # Recursive glob
                 else:
                     logger.debug(f"Scanning {directory} (top-level only)...")
                     file_paths = directory.iterdir()  # Non-recursive
 
                 for file_path in file_paths:
-                    if not file_path.is_file() or file_path.name.startswith('.'):
+                    if not file_path.is_file() or file_path.name.startswith("."):
                         continue
 
                     # Check if file matches pattern
@@ -265,7 +269,9 @@ class FileMonitor:
                             # to avoid uploading incomplete files that are still being written
                             file_age_seconds = time.time() - mtime
                             if file_age_seconds < 120:  # Less than 2 minutes old
-                                logger.debug(f"Found recent file (using stability check): {file_path.name}")
+                                logger.debug(
+                                    f"Found recent file (using stability check): {file_path.name}"
+                                )
                                 self._on_file_event(str(file_path))  # Use stability check
                             else:
                                 # For older files, call callback directly (already stable)
@@ -295,8 +301,8 @@ class FileMonitor:
             logger.info("Startup scan disabled - will only upload new files created after startup")
 
         for dir_config in self.directory_configs:
-            directory = dir_config['path']
-            recursive = dir_config['recursive']
+            directory = dir_config["path"]
+            recursive = dir_config["recursive"]
             self.observer.schedule(self.handler, str(directory), recursive=recursive)
             logger.info(f"Watching {directory} (recursive={recursive})")
 
@@ -305,8 +311,6 @@ class FileMonitor:
         self._checker_thread = threading.Thread(target=self._stability_checker, daemon=True)
         self._checker_thread.start()
         logger.info("Started monitoring")
-    
-
 
     def stop(self):
         """Stop monitoring directories gracefully."""
@@ -321,19 +325,19 @@ class FileMonitor:
             self._checker_thread.join(timeout=2)
 
         logger.info("Stopped monitoring")
-    
+
     def _load_processed_registry(self) -> dict:
         """Load processed files registry from disk with automatic cleanup."""
         if not self.registry_file.exists():
             logger.info("No existing processed files registry, starting fresh")
             return {}
-        
+
         try:
-            with open(self.registry_file, 'r') as f:
+            with open(self.registry_file, "r") as f:
                 data = json.load(f)
 
-            if '_metadata' in data:
-                files_data = data.get('files', {})
+            if "_metadata" in data:
+                files_data = data.get("files", {})
             else:
                 files_data = data
 
@@ -343,7 +347,7 @@ class FileMonitor:
             cleaned = {
                 key: meta
                 for key, meta in files_data.items()
-                if meta.get('processed_at', 0) > cutoff_time
+                if meta.get("processed_at", 0) > cutoff_time
             }
 
             removed = original_count - len(cleaned)
@@ -352,7 +356,6 @@ class FileMonitor:
                     f"Registry cleanup: removed {removed}/{original_count} old entries "
                     f"(retention: {self.registry_retention_days} days)"
                 )
-
 
             logger.info(f"Loaded {len(cleaned)} processed files from registry")
             return cleaned
@@ -364,7 +367,6 @@ class FileMonitor:
         except Exception as e:
             logger.error(f"Failed to load processed registry: {e}")
             return {}
-
 
     def _save_processed_registry(self):
         """Save processed files registry to disk with metadata."""
@@ -379,130 +381,130 @@ class FileMonitor:
                     logger.error(f"Permission denied: {e}")
                     logger.error("Registry persistence is REQUIRED for production operation")
                     raise  # Fail fast - this is critical
-            
+
             # Build registry data with metadata
             registry_data = {
-                '_metadata': {
-                    'last_updated': datetime.now().isoformat(),
-                    'total_entries': len(self.processed_files),
-                    'retention_days': self.registry_retention_days
+                "_metadata": {
+                    "last_updated": datetime.now().isoformat(),
+                    "total_entries": len(self.processed_files),
+                    "retention_days": self.registry_retention_days,
                 },
-                'files': self.processed_files
+                "files": self.processed_files,
             }
-            
+
             # Atomic write pattern: write to temp file, then rename
             # Prevents corruption if process crashes mid-write:
             # - Crash during write to .tmp → original .json intact
             # - Crash before rename → original .json intact
             # - Only rename operation is OS-level atomic (extremely fast/safe)
-            temp_file = self.registry_file.with_suffix('.json.tmp')
-            with open(temp_file, 'w') as f:
+            temp_file = self.registry_file.with_suffix(".json.tmp")
+            with open(temp_file, "w") as f:
                 json.dump(registry_data, f, indent=2)
 
             temp_file.replace(self.registry_file)
-            
+
             logger.debug(f"Saved {len(self.processed_files)} entries to registry")
-            
+
         except PermissionError as e:
             logger.error(f"CRITICAL: Permission denied writing registry: {e}")
             logger.error(f"Registry file: {self.registry_file}")
-            logger.error("="*60)
+            logger.error("=" * 60)
             logger.error("SYSTEM CANNOT CONTINUE WITHOUT PERSISTENT REGISTRY")
             logger.error("Registry persistence is REQUIRED to prevent duplicate uploads")
             logger.error("Action required: Fix permissions or change registry_file path in config")
-            logger.error("="*60)
+            logger.error("=" * 60)
             raise  # Fail fast - don't continue without registry
-            
+
         except OSError as e:
             logger.error(f"CRITICAL: Disk I/O error writing registry: {e}")
             logger.error(f"Registry file: {self.registry_file}")
-            logger.error("="*60)
+            logger.error("=" * 60)
             logger.error("SYSTEM CANNOT CONTINUE - DISK I/O FAILURE")
             logger.error("Action required: Check disk space and filesystem health")
-            logger.error("="*60)
+            logger.error("=" * 60)
             raise  # Fail fast - disk issues are critical
-            
+
         except Exception as e:
             logger.error(f"CRITICAL: Unexpected error saving registry: {e}")
             logger.error(f"Registry file: {self.registry_file}")
             import traceback
+
             logger.error(traceback.format_exc())
             raise  # Fail fast for any unexpected errors
 
     def _is_file_processed(self, file_path: Path) -> bool:
         """
         Check if file has already been processed (uploaded).
-        
+
         Uses file identity (path + size + mtime) to detect:
         - Same file rescanned: SKIP (already processed)
         - Same filename, different day: PROCESS (new file)
-        
+
         Args:
             file_path: Path to check
-            
+
         Returns:
             bool: True if already processed, False if new
         """
         file_identity = self._get_file_identity(file_path)
-        
+
         if file_identity is None:
             return False
-        
+
         is_processed = file_identity in self.processed_files
-        
+
         if is_processed:
             meta = self.processed_files[file_identity]
-            processed_time = datetime.fromtimestamp(meta['processed_at']).isoformat()
+            processed_time = datetime.fromtimestamp(meta["processed_at"]).isoformat()
             logger.debug(
                 f"File already processed: {file_path.name} "
                 f"(processed at {processed_time}, size: {meta['size']} bytes)"
             )
-        
-        return is_processed
 
+        return is_processed
 
     def _mark_file_processed(self, file_path: Path, save_immediately: bool = True):
         """
         Mark file as processed with metadata.
-        
+
         Stores:
         - File identity (path::size::mtime)
         - Processing timestamp
         - File size and mtime
         - Filepath and filename for debugging
-        
+
         Args:
             file_path: Path to mark as processed
             save_immediately: If True, save registry to disk immediately.
                             If False, only update in-memory dict (caller must save).
                             Use False for batch operations, then call save_registry().
-        
+
         Example:
             # Single file (immediate save)
             monitor._mark_file_processed(file_path)
-            
+
             # Batch operation (deferred save)
             for file_path in batch:
                 monitor._mark_file_processed(file_path, save_immediately=False)
             monitor.save_registry()  # Single save for entire batch
         """
         file_identity = self._get_file_identity(file_path)
-        
+
         if file_identity is None:
             logger.warning(f"Cannot mark file as processed (stat failed): {file_path}")
             return
-        
+
         try:
             stat = file_path.stat()
-            
+
             self.processed_files[file_identity] = {
-                'processed_at': time.time(),
-                'size': stat.st_size,
-                'mtime': stat.st_mtime,
-                'filepath': str(file_path.resolve()),
-                'filename': file_path.name
+                "processed_at": time.time(),
+                "size": stat.st_size,
+                "mtime": stat.st_mtime,
+                "filepath": str(file_path.resolve()),
+                "filename": file_path.name,
             }
-            
+
             # Only save if requested (allows batching)
             if save_immediately:
                 self._save_processed_registry()
@@ -515,31 +517,31 @@ class FileMonitor:
                     f"Marked as processed (deferred save): {file_path.name} "
                     f"(size: {stat.st_size / (1024**2):.2f} MB)"
                 )
-                
+
         except Exception as e:
             logger.error(f"Failed to mark file as processed: {e}")
 
     def _on_file_event(self, file_path: str):
         """
         Called when watchdog detects a file create or modify event.
-        
+
         Updates the file tracker with current file size and timestamp.
         Ignores hidden files (starting with '.') and directories.
-        
+
         Args:
             file_path: Path to the file that changed
-            
+
         Note:
             This runs in watchdog's event thread
         """
         path = Path(file_path)
-        
+
         # Only track regular files (not directories)
         if not path.is_file():
             return
-        
+
         # Skip hidden files and marker files
-        if path.name.startswith('.'):
+        if path.name.startswith("."):
             return
 
         # Check if file matches pattern
@@ -552,65 +554,65 @@ class FileMonitor:
         except (OSError, FileNotFoundError):
             # File might have been deleted
             return
-        
+
         # Update tracker
         current_time = time.time()
         self.file_tracker[path] = (size, current_time)
-        
+
         logger.debug(f"Tracking: {path.name} ({size} bytes)")
-    
+
     def _stability_checker(self):
         """
         Background thread that periodically checks file stability.
-        
+
         Checks all tracked files to see if they've been stable (unchanged)
         for the configured stability period. Checks immediately on start,
         then periodically based on stability_seconds (max 10 second intervals).
-        
+
         Note:
             Runs in daemon thread, automatically stops when main thread exits
         """
         logger.info("Stability checker started")
-        
+
         while self._running:
             self._check_stable_files()
-            
+
             # Sleep in small increments so we can stop quickly
             sleep_time = min(self.stability_seconds, 10)
             for _ in range(sleep_time):
                 if not self._running:
                     break
                 time.sleep(1)
-        
+
         logger.info("Stability checker stopped")
-    
+
     def _check_stable_files(self):
         """
         Check all tracked files for stability.
-        
+
         For each tracked file:
         1. Check if it still exists
         2. Get current size
         3. Compare with tracked size
         4. If unchanged for stability_seconds, mark as stable and call callback
-        
+
         v2.1: Prevents double-marking by checking registry before AND after callback.
         This handles batch uploads where files are marked inside _process_upload_queue().
-        
+
         Automatically removes deleted files from tracker.
         Resets timer if file size changes.
         """
         logger.debug(f"Checking {len(self.file_tracker)} tracked files")
         current_time = time.time()
         stable_files = []
-        
+
         for file_path, (tracked_size, last_check) in list(self.file_tracker.items()):
             # Check if file still exists
             if not file_path.exists():
                 del self.file_tracker[file_path]
                 logger.debug(f"File deleted, removed from tracker: {file_path.name}")
                 continue
-            
+
             # Get current size
             try:
                 current_size = file_path.stat().st_size
@@ -618,7 +620,7 @@ class FileMonitor:
                 del self.file_tracker[file_path]
                 logger.debug(f"File disappeared, removed from tracker: {file_path.name}")
                 continue
-            
+
             # Check if size changed
             if current_size != tracked_size:
                 self.file_tracker[file_path] = (current_size, current_time)
@@ -627,42 +629,43 @@ class FileMonitor:
                     f"({tracked_size} -> {current_size} bytes)"
                 )
                 continue
-            
+
             # Check if stable for required duration
             time_unchanged = current_time - last_check
             if time_unchanged >= self.stability_seconds:
                 stable_files.append(file_path)
-        
+
         # Process stable files
         for file_path in stable_files:
             logger.info(
                 f"File stable: {file_path.name} "
                 f"({self.file_tracker[file_path][0] / (1024**2):.2f} MB)"
             )
-            
+
             # Step 1: Remove from tracker (no longer monitoring)
             del self.file_tracker[file_path]
-            
+
             # Step 2: Check if already processed (safety check - prevents duplicate uploads)
             if self._is_file_processed(file_path):
                 logger.info(f"File already processed (skipping duplicate): {file_path.name}")
                 continue
-            
+
             # Step 3: Call callback (upload) and check result
             upload_success = False
             try:
                 upload_success = self.callback(str(file_path))
-                
+
                 if upload_success is None:
                     logger.warning(f"Callback returned None, assuming success: {file_path.name}")
                     upload_success = True
-                    
+
             except Exception as e:
                 logger.error(f"Callback failed for {file_path}: {e}")
                 import traceback
+
                 logger.debug(traceback.format_exc())
                 upload_success = False
-            
+
             # For batch uploads, file may have been marked inside _process_upload_queue()
             # If so, don't mark again (prevents double-marking + double disk write)
             if self._is_file_processed(file_path):
@@ -677,7 +680,7 @@ class FileMonitor:
                         f"(possible race condition or batch upload)"
                     )
                 continue  # ← Skip marking
-            
+
             # Step 5: Mark as processed ONLY if success AND not already marked
             if upload_success:
                 self._mark_file_processed(file_path)
@@ -687,50 +690,50 @@ class FileMonitor:
                     f"✗ Upload failed, NOT marking as processed: {file_path.name} "
                     f"(will retry on next restart if within scan age)"
                 )
-    
+
     def get_tracked_files(self) -> List[str]:
         """
         Get list of currently tracked files.
-        
+
         Returns:
             List of file paths being tracked (not yet stable)
-            
+
         Note:
             Useful for debugging and monitoring
         """
         return [str(p) for p in self.file_tracker.keys()]
-    
+
     def mark_file_as_processed_externally(self, filepath: str, save_immediately: bool = True):
         """
         Mark a file as processed externally (called by main.py).
-        
+
         Used when files are uploaded outside the normal callback flow:
         - Batch uploads (other files in the batch)
         - Scheduled uploads (files uploaded by schedule, not by stability trigger)
-        
+
         This prevents duplicate uploads on service restart.
-        
+
         Args:
             filepath: Path to file that was successfully uploaded
             save_immediately: If True, save registry to disk immediately.
                             If False, caller must call save_registry() manually.
                             Use False for batch operations to optimize disk I/O.
-                
+
         Example:
             # Single file upload
             >>> file_monitor.mark_file_as_processed_externally('/var/log/file.log')
-            
+
             # Batch upload (efficient)
             >>> for filepath in batch:
             ...     file_monitor.mark_file_as_processed_externally(filepath, save_immediately=False)
             >>> file_monitor.save_registry()  # Single save for entire batch
         """
         file_path = Path(filepath)
-        
+
         # Safety check: Only mark if not already processed
         if not self._is_file_processed(file_path):
             self._mark_file_processed(file_path, save_immediately=save_immediately)
-            
+
             if save_immediately:
                 logger.info(f"✓ Marked as processed (external): {file_path.name}")
             else:
@@ -738,37 +741,36 @@ class FileMonitor:
         else:
             logger.debug(f"Already marked as processed: {file_path.name}")
 
-
     def save_registry(self):
         """
         Manually save registry to disk.
-        
+
         Use after batch operations with save_immediately=False to write
         all accumulated changes with a single disk I/O operation.
-        
+
         Example:
             >>> # Batch operation
             >>> for filepath in batch:
             ...     monitor.mark_file_as_processed_externally(filepath, save_immediately=False)
             >>> monitor.save_registry()  # Single save for all files
-        
+
         Note:
             Includes retry logic for transient I/O errors.
         """
         max_retries = 3
         retry_delay = 1  # seconds
-        
+
         for attempt in range(1, max_retries + 1):
             try:
                 self._save_processed_registry()
-                
+
                 if attempt > 1:
                     logger.info(f"Registry saved successfully (after {attempt} attempts)")
                 else:
                     logger.debug("Registry saved successfully")
-                
+
                 return True
-                
+
             except OSError as e:
                 if attempt < max_retries:
                     logger.warning(
@@ -777,54 +779,54 @@ class FileMonitor:
                     )
                     time.sleep(retry_delay)
                 else:
-                    logger.error(
-                        f"Registry save failed after {max_retries} attempts: {e}"
-                    )
+                    logger.error(f"Registry save failed after {max_retries} attempts: {e}")
                     logger.error(
                         "IN-MEMORY MARKS WILL BE LOST ON RESTART! "
                         "Check disk space and permissions."
                     )
                     return False
-            
+
             except Exception as e:
                 logger.error(f"Unexpected error saving registry: {e}")
                 import traceback
+
                 logger.debug(traceback.format_exc())
                 return False
-        
+
         return False
+
 
 class LogFileHandler(FileSystemEventHandler):
     """
     Watchdog event handler for log files.
-    
+
     Forwards file create and modify events to a callback function.
     Ignores directory events.
     """
-    
+
     def __init__(self, callback: Callable[[str], None]):
         """
         Initialize handler with callback.
-        
+
         Args:
             callback: Function to call when file event occurs (receives file path)
         """
         self.callback = callback
-    
+
     def on_created(self, event):
         """
         Called when a file is created.
-        
+
         Args:
             event: FileSystemEvent with event details
         """
         if not event.is_directory:
             self.callback(event.src_path)
-    
+
     def on_modified(self, event):
         """
         Called when a file is modified.
-        
+
         Args:
             event: FileSystemEvent with event details
         """
@@ -832,41 +834,34 @@ class LogFileHandler(FileSystemEventHandler):
             self.callback(event.src_path)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import sys
-    
+
     logging.basicConfig(
         level=logging.DEBUG,
-        format='%(asctime)s [%(levelname)s] %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
     )
-    
+
     if len(sys.argv) < 2:
         logger.error("Usage: python file_monitor.py <directory>")
         sys.exit(1)
-    
+
     directory = sys.argv[1]
-    
+
     def on_file_ready(filepath):
         logger.info(f"*** FILE READY: {filepath} ***")
-    
+
     # Test with startup scan enabled
-    test_config = {
-        'upload': {
-            'scan_existing_files': {
-                'enabled': True,
-                'max_age_days': 3
-            }
-        }
-    }
-    
+    test_config = {"upload": {"scan_existing_files": {"enabled": True, "max_age_days": 3}}}
+
     monitor = FileMonitor([directory], on_file_ready, stability_seconds=10, config=test_config)
-    
+
     try:
         monitor.start()
         logger.info(f"Monitoring {directory}")
         logger.info("Create/modify files to test. Press Ctrl+C to stop.")
-        
+
         while True:
             time.sleep(1)
     except KeyboardInterrupt:

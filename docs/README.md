@@ -35,6 +35,12 @@ Welcome to the TVM Upload System documentation! This directory contains guides f
 |----------|---------|-----------------|
 | **[github_actions_oidc_setup.md](./github_actions_oidc_setup.md)** | AWS OIDC setup for GitHub Actions (no stored credentials) | DevOps, Security |
 
+### Developer Guides
+
+| Document | Purpose | Target Audience |
+|----------|---------|-----------------|
+| **[workflow_improvements.md](./workflow_improvements.md)** | Before/After comparison of development workflow improvements | Developers, New Contributors |
+
 ---
 
 ## 🎯 Quick Navigation
@@ -48,6 +54,7 @@ Welcome to the TVM Upload System documentation! This directory contains guides f
 | Troubleshoot upload errors | [error_handling_guide.md](./error_handling_guide.md) |
 | Look up configuration parameters | [configuration_reference.md](./configuration_reference.md) |
 | Understand S3 folder structure | [s3_organization_guide.md](./s3_organization_guide.md) |
+| See before/after workflow improvements | [workflow_improvements.md](./workflow_improvements.md) |
 | Run manual tests before production | [manual_testing_guide.md](./manual_testing_guide.md) |
 | Run automated tests locally | [autonomous_testing_guide.md](./autonomous_testing_guide.md) |
 | Set up CI/CD with GitHub Actions | [github_actions_oidc_setup.md](./github_actions_oidc_setup.md) |

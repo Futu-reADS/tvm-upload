@@ -4,13 +4,13 @@ Disk Manager for TVM Log Upload System
 Monitors disk space and manages file cleanup
 """
 
-import shutil
-import logging
-import time
 import fnmatch
-from pathlib import Path
-from typing import List, Tuple, Dict
+import logging
 import os
+import shutil
+import time
+from pathlib import Path
+from typing import Dict, List, Tuple
 
 logger = logging.getLogger(__name__)
 
@@ -20,13 +20,13 @@ IMMEDIATE_DELETION = 0
 
 # System directories where deletion is NEVER allowed
 # This is a hard-coded safety mechanism that cannot be overridden by config
-SYSTEM_DIRECTORIES = ['/var', '/etc', '/usr', '/opt', '/sys', '/proc', '/boot', '/dev']
+SYSTEM_DIRECTORIES = ["/var", "/etc", "/usr", "/opt", "/sys", "/proc", "/boot", "/dev"]
 
 
 class DiskManager:
     """
     Manages disk space by cleaning up uploaded files.
-    
+
     Features:
     - Monitor available disk space
     - Delete oldest uploaded files when space is low (emergency cleanup)
@@ -34,12 +34,12 @@ class DiskManager:
     - Deferred deletion (keep files for N days after upload) (NEW v2.0)
     - Never delete files that haven't been uploaded
     - Configurable warning and critical thresholds
-    
+
     Safety:
     - Only deletes files explicitly marked as uploaded
     - Deletes oldest files first (by modification time)
     - Respects minimum free space requirement
-    
+
     Example:
         >>> disk_mgr = DiskManager(
         ...     log_directories=['/var/log/autoware'],
@@ -49,7 +49,7 @@ class DiskManager:
         >>> disk_mgr.mark_uploaded('/var/log/autoware/file.log', keep_until_days=14)
         >>> if not disk_mgr.check_disk_space():
         ...     deleted = disk_mgr.cleanup_old_files()
-    
+
     Attributes:
         log_directories (List[Path]): Directories to monitor and clean
         reserved_bytes (int): Minimum free space in bytes
@@ -57,13 +57,15 @@ class DiskManager:
         critical_threshold (float): Disk usage % to force cleanup (0-1)
         uploaded_files (dict): Files safe to delete with deletion time (NEW v2.0)
     """
-    
-    def __init__(self,
-             log_directories: List[str],
-             reserved_gb: float = 70.0,
-             warning_threshold: float = 0.90,
-             critical_threshold: float = 0.95,
-             directory_configs: Dict[str, Dict] = None):
+
+    def __init__(
+        self,
+        log_directories: List[str],
+        reserved_gb: float = 70.0,
+        warning_threshold: float = 0.90,
+        critical_threshold: float = 0.95,
+        directory_configs: Dict[str, Dict] = None,
+    ):
         """
         Initialize disk manager.
 
@@ -103,7 +105,7 @@ class DiskManager:
         logger.info(f"Critical threshold: {critical_threshold * 100}%")
         if self.directory_configs:
             logger.info(f"Directory configs loaded for {len(self.directory_configs)} directories")
-    
+
     def mark_uploaded(self, filepath: str, keep_until_days: int = 0):
         """
         Mark file as uploaded (safe to delete after keep_until_days).
@@ -111,7 +113,7 @@ class DiskManager:
         """
         abs_path = str(Path(filepath).resolve())
         file_path = Path(filepath)
-        
+
         if keep_until_days == IMMEDIATE_DELETION:
             delete_after = 0
             logger.debug(f"Marked for immediate deletion: {file_path.name}")
@@ -128,7 +130,7 @@ class DiskManager:
                     f"Cannot stat file {file_path.name}, using current time fallback: {e}"
                 )
                 delete_after = time.time() + (keep_until_days * SECONDS_PER_DAY)
-        
+
         self.uploaded_files[abs_path] = delete_after
 
     def _is_system_directory(self, file_path: Path) -> bool:
@@ -182,30 +184,36 @@ class DiskManager:
                 config = self.directory_configs.get(dir_str, {})
 
                 # LAYER 2: Check allow_deletion flag (default: true for backward compatibility)
-                allow_deletion = config.get('allow_deletion', True)
+                allow_deletion = config.get("allow_deletion", True)
                 if not allow_deletion:
                     logger.debug(f"Deletion blocked: {file_path.name} (allow_deletion=false)")
                     return False
 
                 # LAYER 3: Check recursive setting (default: true for backward compatibility)
-                recursive = config.get('recursive', True)
+                recursive = config.get("recursive", True)
                 if not recursive:
                     # If recursive=false, only allow top-level files (not in subdirectories)
                     # relative_path.parts will have length > 1 if file is in subdirectory
                     if len(relative_path.parts) > 1:
-                        logger.debug(f"Deletion blocked: {file_path.name} is in subdirectory (recursive=false)")
+                        logger.debug(
+                            f"Deletion blocked: {file_path.name} is in subdirectory (recursive=false)"
+                        )
                         return False
 
                 # LAYER 4: Pattern matching
-                pattern = config.get('pattern')
+                pattern = config.get("pattern")
                 if pattern is None:
                     # No pattern configured - accept all files
-                    logger.debug(f"Deletion pattern check: {file_path.name} - no pattern, accepting")
+                    logger.debug(
+                        f"Deletion pattern check: {file_path.name} - no pattern, accepting"
+                    )
                     return True
                 else:
                     # Check if filename matches pattern
                     match_result = fnmatch.fnmatch(file_path.name, pattern)
-                    logger.debug(f"Deletion pattern check: {file_path.name} vs '{pattern}' => {match_result}")
+                    logger.debug(
+                        f"Deletion pattern check: {file_path.name} vs '{pattern}' => {match_result}"
+                    )
                     return match_result
 
             except ValueError:
@@ -221,26 +229,26 @@ class DiskManager:
         stat = shutil.disk_usage(path)
         usage_percent = stat.used / stat.total
         return (usage_percent, stat.used, stat.free)
-    
+
     def check_disk_space(self, path: str = "/") -> bool:
         """Check if disk has enough free space (checks reserved bytes and thresholds)."""
         usage_percent, used, free = self.get_disk_usage(path)
-        
+
         if free < self.reserved_bytes:
             logger.warning("Low disk space")
             logger.warning(f"Free: {free / (1024**3):.2f} GB")
             logger.warning(f"Reserved: {self.reserved_bytes / (1024**3):.2f} GB")
             return False
-        
+
         if usage_percent >= self.critical_threshold:
             logger.error(f"CRITICAL: Disk usage at {usage_percent * 100:.1f}%")
             return False
-        
+
         if usage_percent >= self.warning_threshold:
             logger.warning(f"Disk usage at {usage_percent * 100:.1f}%")
-        
+
         return True
-    
+
     def cleanup_deferred_deletions(self) -> int:
         """
         Delete files whose retention period has expired.
@@ -253,7 +261,7 @@ class DiskManager:
         current_time = time.time()
         deleted_count = 0
         freed_bytes = 0
-        
+
         for filepath_str, delete_after in list(self.uploaded_files.items()):
             filepath = Path(filepath_str)
             should_delete = False
@@ -293,8 +301,10 @@ class DiskManager:
                         filepath.unlink()
                         freed_bytes += size
                         deleted_count += 1
-                        logger.info(f"Deleted deferred file: {filepath.name} "
-                                f"({size / (1024**2):.2f} MB)")
+                        logger.info(
+                            f"Deleted deferred file: {filepath.name} "
+                            f"({size / (1024**2):.2f} MB)"
+                        )
 
                         if self._on_file_deleted_callback:
                             self._on_file_deleted_callback(filepath_str)
@@ -302,31 +312,33 @@ class DiskManager:
                         logger.error(f"Error deleting {filepath}: {e}")
 
                 del self.uploaded_files[filepath_str]
-        
+
         if deleted_count > 0:
-            logger.info(f"Deferred deletion: {deleted_count} files, "
-                    f"{freed_bytes / (1024**3):.2f} GB freed")
-        
+            logger.info(
+                f"Deferred deletion: {deleted_count} files, "
+                f"{freed_bytes / (1024**3):.2f} GB freed"
+            )
+
         return deleted_count
-    
+
     def cleanup_by_age(self, max_age_days: int) -> int:
         """Delete ALL files older  than max_age_days (regardless of upload status)."""
         if max_age_days <= 0:
             logger.debug("Age-based cleanup disabled (max_age_days = 0)")
             return 0
-        
+
         logger.info(f"Running age-based cleanup (max age: {max_age_days} days)")
 
         cutoff_time = time.time() - (max_age_days * SECONDS_PER_DAY)
         deleted_count = 0
         freed_bytes = 0
-        
+
         for directory in self.log_directories:
             if not directory.exists():
                 continue
-            
-            for file_path in directory.rglob('*'):
-                if file_path.is_file() and not file_path.name.startswith('.'):
+
+            for file_path in directory.rglob("*"):
+                if file_path.is_file() and not file_path.name.startswith("."):
                     # NEW: Check if file matches the upload pattern before deletion
                     if not self._matches_pattern(file_path):
                         logger.debug(f"Skipping {file_path.name} - doesn't match upload pattern")
@@ -339,13 +351,14 @@ class DiskManager:
                             size = file_path.stat().st_size
                             age_days = (time.time() - mtime) / 86400
 
-                            logger.info(f"Deleting old file: {file_path.name} "
-                                    f"({age_days:.1f} days old, {size / (1024**2):.1f} MB)")
+                            logger.info(
+                                f"Deleting old file: {file_path.name} "
+                                f"({age_days:.1f} days old, {size / (1024**2):.1f} MB)"
+                            )
 
                             file_path.unlink()
                             deleted_count += 1
                             freed_bytes += size
-
 
                             filepath_str = str(file_path.resolve())
                             self.uploaded_files.pop(filepath_str, None)
@@ -355,22 +368,23 @@ class DiskManager:
 
                     except Exception as e:
                         logger.error(f"Error deleting {file_path}: {e}")
-        
+
         if deleted_count > 0:
-            logger.info(f"Age-based cleanup: {deleted_count} files deleted, "
-                    f"{freed_bytes / (1024**3):.2f} GB freed")
+            logger.info(
+                f"Age-based cleanup: {deleted_count} files deleted, "
+                f"{freed_bytes / (1024**3):.2f} GB freed"
+            )
         else:
             logger.info(f"Age-based cleanup: no files older than {max_age_days} days found")
-        
+
         return deleted_count
-    
+
     def cleanup_old_files(self, target_free_gb: float = None) -> int:
         """EMERGENCY cleanup: Delete oldest uploaded files to free space."""
         if target_free_gb is None:
             target_free_bytes = self.reserved_bytes
         else:
             target_free_bytes = int(target_free_gb * 1024 * 1024 * 1024)
-
 
         logger.info(f"Starting EMERGENCY cleanup to free {target_free_bytes / (1024**3):.2f} GB")
         _, _, free_bytes = self.get_disk_usage()
@@ -389,9 +403,8 @@ class DiskManager:
                     uploaded_file_list.append((mtime, size, filepath))
                 except (OSError, FileNotFoundError):
                     pass
-        
-        uploaded_file_list.sort()
 
+        uploaded_file_list.sort()
 
         deleted_count = 0
         freed_bytes = 0
@@ -406,7 +419,6 @@ class DiskManager:
                 freed_bytes += size
                 deleted_count += 1
 
-
                 filepath_str = str(filepath.resolve())
                 self.uploaded_files.pop(filepath_str, None)
 
@@ -415,19 +427,20 @@ class DiskManager:
 
             except Exception as e:
                 logger.error(f"Error deleting {filepath}: {e}")
-        
-        logger.info(f"EMERGENCY cleanup complete: {deleted_count} files, "
-                f"{freed_bytes / (1024**3):.2f} GB freed")
-        
+
+        logger.info(
+            f"EMERGENCY cleanup complete: {deleted_count} files, "
+            f"{freed_bytes / (1024**3):.2f} GB freed"
+        )
+
         return deleted_count
-    
+
     def emergency_cleanup_all_files(self, target_free_gb: float = None) -> int:
         """EMERGENCY ONLY: Delete ANY files (uploaded or not) when disk >95% full."""
         if target_free_gb is None:
             target_free_bytes = self.reserved_bytes
         else:
             target_free_bytes = int(target_free_gb * 1024 * 1024 * 1024)
-
 
         logger.warning("🚨 EMERGENCY CLEANUP: Deleting ALL old files (uploaded or not)")
         _, _, free_bytes = self.get_disk_usage()
@@ -440,12 +453,14 @@ class DiskManager:
         for directory in self.log_directories:
             if not directory.exists():
                 continue
-            
-            for file_path in directory.rglob('*'):
-                if file_path.is_file() and not file_path.name.startswith('.'):
+
+            for file_path in directory.rglob("*"):
+                if file_path.is_file() and not file_path.name.startswith("."):
                     # NEW: Check if file matches the upload pattern before deletion
                     if not self._matches_pattern(file_path):
-                        logger.debug(f"EMERGENCY: Skipping {file_path.name} - doesn't match upload pattern")
+                        logger.debug(
+                            f"EMERGENCY: Skipping {file_path.name} - doesn't match upload pattern"
+                        )
                         continue
 
                     try:
@@ -465,9 +480,11 @@ class DiskManager:
 
             try:
                 age_days = (time.time() - mtime) / 86400
-                logger.warning(f"🚨 EMERGENCY: Deleting {filepath.name} "
-                            f"({size / (1024**2):.2f} MB, {age_days:.1f} days old)")
-                
+                logger.warning(
+                    f"🚨 EMERGENCY: Deleting {filepath.name} "
+                    f"({size / (1024**2):.2f} MB, {age_days:.1f} days old)"
+                )
+
                 filepath.unlink()
                 freed_bytes += size
                 deleted_count += 1
@@ -480,68 +497,71 @@ class DiskManager:
 
             except Exception as e:
                 logger.error(f"Error deleting {filepath}: {e}")
-        
-        logger.warning(f"🚨 EMERGENCY CLEANUP: {deleted_count} files deleted, "
-                    f"{freed_bytes / (1024**3):.2f} GB freed")
-        
+
+        logger.warning(
+            f"🚨 EMERGENCY CLEANUP: {deleted_count} files deleted, "
+            f"{freed_bytes / (1024**3):.2f} GB freed"
+        )
+
         return deleted_count
-    
+
     def get_directory_size(self, directory: str) -> int:
         """Calculate total directory size recursively in bytes."""
         total = 0
         dir_path = Path(directory)
-        
+
         if not dir_path.exists():
             return 0
-        
-        for item in dir_path.rglob('*'):
+
+        for item in dir_path.rglob("*"):
             if item.is_file():
                 try:
                     total += item.stat().st_size
                 except (OSError, PermissionError):
                     pass
-        
+
         return total
-    
+
     def get_uploaded_files_count(self) -> int:
         """Get count of files marked as uploaded."""
         return len(self.uploaded_files)
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import tempfile
-    
+
     logging.basicConfig(
         level=logging.INFO,
-        format='%(asctime)s [%(levelname)s] %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
     )
-    
+
     # Create temp directory
     temp_dir = tempfile.mkdtemp()
     logger.info(f"Test directory: {temp_dir}")
-    
+
     # Create disk manager
     dm = DiskManager([temp_dir], reserved_gb=1.0)
-    
+
     # Test deferred deletion
     test_file = Path(temp_dir) / "test.log"
     test_file.write_text("test content")
-    
+
     # Mark for deletion after 1 second
     dm.mark_uploaded(str(test_file), keep_until_days=0)
     logger.info(f"File will be deleted in deferred cleanup")
-    
+
     time.sleep(1)
-    
+
     deleted = dm.cleanup_deferred_deletions()
     logger.info(f"Deferred cleanup deleted: {deleted} files")
-    
+
     # Check disk space
     usage, used, free = dm.get_disk_usage()
     logger.info(f"Disk usage: {usage * 100:.1f}%")
     logger.info(f"Free space: {free / (1024**3):.2f} GB")
-    
+
     # Cleanup temp
     import shutil
+
     shutil.rmtree(temp_dir)

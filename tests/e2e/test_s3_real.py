@@ -4,25 +4,26 @@ Real S3 upload tests - Comprehensive coverage
 These tests make actual API calls to AWS S3
 """
 
-import pytest
+import os
 import tempfile
 import time
-import os
-from pathlib import Path
 from datetime import datetime, timedelta
-from botocore.exceptions import ClientError
+from pathlib import Path
 
+import pytest
+from botocore.exceptions import ClientError
 
 # ============================================================================
 # BASIC UPLOAD TESTS
 # ============================================================================
 
+
 @pytest.mark.e2e
 @pytest.mark.real_aws
 def test_upload_small_file_to_real_s3(real_upload_manager, real_s3_client, s3_cleanup, aws_config):
     """Test uploading small file to actual S3"""
-    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.log') as f:
-        f.write('Real S3 E2E test\n' * 100)
+    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".log") as f:
+        f.write("Real S3 E2E test\n" * 100)
         test_file = f.name
 
     try:
@@ -32,13 +33,10 @@ def test_upload_small_file_to_real_s3(real_upload_manager, real_s3_client, s3_cl
         s3_key = real_upload_manager._build_s3_key(Path(test_file))
         s3_cleanup(s3_key)
 
-        response = real_s3_client.head_object(
-            Bucket=aws_config['bucket'],
-            Key=s3_key
-        )
+        response = real_s3_client.head_object(Bucket=aws_config["bucket"], Key=s3_key)
 
-        assert response['ResponseMetadata']['HTTPStatusCode'] == 200
-        assert response['ContentLength'] > 0
+        assert response["ResponseMetadata"]["HTTPStatusCode"] == 200
+        assert response["ContentLength"] > 0
 
         print(f"✓ Uploaded to s3://{aws_config['bucket']}/{s3_key}")
 
@@ -51,8 +49,8 @@ def test_upload_small_file_to_real_s3(real_upload_manager, real_s3_client, s3_cl
 @pytest.mark.slow
 def test_upload_large_file_multipart(real_upload_manager, real_s3_client, s3_cleanup, aws_config):
     """Test multipart upload with 10MB file"""
-    with tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix='.mcap') as f:
-        f.write(b'0' * (10 * 1024 * 1024))
+    with tempfile.NamedTemporaryFile(mode="wb", delete=False, suffix=".mcap") as f:
+        f.write(b"0" * (10 * 1024 * 1024))
         test_file = f.name
 
     try:
@@ -65,18 +63,15 @@ def test_upload_large_file_multipart(real_upload_manager, real_s3_client, s3_cle
         s3_key = real_upload_manager._build_s3_key(Path(test_file))
         s3_cleanup(s3_key)
 
-        response = real_s3_client.head_object(
-            Bucket=aws_config['bucket'],
-            Key=s3_key
-        )
+        response = real_s3_client.head_object(Bucket=aws_config["bucket"], Key=s3_key)
 
-        assert response['ContentLength'] == 10 * 1024 * 1024
+        assert response["ContentLength"] == 10 * 1024 * 1024
 
         print(f"✓ Multipart upload: {s3_key}")
         print(f"✓ Upload time: {upload_time:.2f}s ({(10 / upload_time):.2f} MB/s)")
 
-        etag = response.get('ETag', '').strip('"')
-        if '-' in etag:
+        etag = response.get("ETag", "").strip('"')
+        if "-" in etag:
             print(f"✓ Confirmed multipart ETag: {etag}")
 
     finally:
@@ -87,7 +82,7 @@ def test_upload_large_file_multipart(real_upload_manager, real_s3_client, s3_cle
 @pytest.mark.real_aws
 def test_upload_empty_file(real_upload_manager, real_s3_client, s3_cleanup, aws_config):
     """Test uploading zero-byte file"""
-    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.log') as f:
+    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".log") as f:
         test_file = f.name
 
     try:
@@ -99,12 +94,9 @@ def test_upload_empty_file(real_upload_manager, real_s3_client, s3_cleanup, aws_
         s3_key = real_upload_manager._build_s3_key(Path(test_file))
         s3_cleanup(s3_key)
 
-        response = real_s3_client.head_object(
-            Bucket=aws_config['bucket'],
-            Key=s3_key
-        )
+        response = real_s3_client.head_object(Bucket=aws_config["bucket"], Key=s3_key)
 
-        assert response['ContentLength'] == 0
+        assert response["ContentLength"] == 0
         print("✓ Empty file uploaded successfully")
 
     finally:
@@ -115,9 +107,9 @@ def test_upload_empty_file(real_upload_manager, real_s3_client, s3_cleanup, aws_
 @pytest.mark.real_aws
 def test_upload_binary_file(real_upload_manager, real_s3_client, s3_cleanup, aws_config):
     """Test uploading binary file (MCAP/BAG format)"""
-    with tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix='.mcap') as f:
+    with tempfile.NamedTemporaryFile(mode="wb", delete=False, suffix=".mcap") as f:
         # Write binary data
-        f.write(b'\x89MCAP\x00\x01\x02\x03')
+        f.write(b"\x89MCAP\x00\x01\x02\x03")
         f.write(os.urandom(1024 * 100))  # 100KB random binary
         test_file = f.name
 
@@ -130,12 +122,9 @@ def test_upload_binary_file(real_upload_manager, real_s3_client, s3_cleanup, aws
         s3_key = real_upload_manager._build_s3_key(Path(test_file))
         s3_cleanup(s3_key)
 
-        response = real_s3_client.head_object(
-            Bucket=aws_config['bucket'],
-            Key=s3_key
-        )
+        response = real_s3_client.head_object(Bucket=aws_config["bucket"], Key=s3_key)
 
-        assert response['ContentLength'] == file_size
+        assert response["ContentLength"] == file_size
         print(f"✓ Binary file uploaded: {file_size} bytes")
 
     finally:
@@ -148,9 +137,9 @@ def test_upload_compressed_file(real_upload_manager, real_s3_client, s3_cleanup,
     """Test uploading compressed file (gz)"""
     import gzip
 
-    with tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix='.log.gz') as f:
-        with gzip.open(f, 'wb') as gz:
-            gz.write(b'Compressed log data\n' * 1000)
+    with tempfile.NamedTemporaryFile(mode="wb", delete=False, suffix=".log.gz") as f:
+        with gzip.open(f, "wb") as gz:
+            gz.write(b"Compressed log data\n" * 1000)
         test_file = f.name
 
     try:
@@ -160,12 +149,9 @@ def test_upload_compressed_file(real_upload_manager, real_s3_client, s3_cleanup,
         s3_key = real_upload_manager._build_s3_key(Path(test_file))
         s3_cleanup(s3_key)
 
-        response = real_s3_client.head_object(
-            Bucket=aws_config['bucket'],
-            Key=s3_key
-        )
+        response = real_s3_client.head_object(Bucket=aws_config["bucket"], Key=s3_key)
 
-        assert response['ContentLength'] > 0
+        assert response["ContentLength"] > 0
         print(f"✓ Compressed file uploaded: {Path(test_file).name}")
 
     finally:
@@ -176,19 +162,22 @@ def test_upload_compressed_file(real_upload_manager, real_s3_client, s3_cleanup,
 # S3 PATH STRUCTURE TESTS
 # ============================================================================
 
+
 @pytest.mark.e2e
 @pytest.mark.real_aws
-def test_source_based_s3_paths(real_upload_manager, real_s3_client, s3_cleanup, aws_config, verify_s3_key_structure):
+def test_source_based_s3_paths(
+    real_upload_manager, real_s3_client, s3_cleanup, aws_config, verify_s3_key_structure
+):
     """Test v2.1 source-based S3 path organization"""
     test_cases = [
-        ('terminal_session.log', None),
-        ('ros_launch.bag', None),
-        ('system.log', None),
+        ("terminal_session.log", None),
+        ("ros_launch.bag", None),
+        ("system.log", None),
     ]
 
     for filename, expected_source in test_cases:
-        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix=filename) as f:
-            f.write(f'Test data for {filename}\n' * 50)
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=filename) as f:
+            f.write(f"Test data for {filename}\n" * 50)
             test_file = f.name
 
         try:
@@ -199,16 +188,15 @@ def test_source_based_s3_paths(real_upload_manager, real_s3_client, s3_cleanup, 
             s3_cleanup(s3_key)
 
             # Verify structure using helper
-            parsed = verify_s3_key_structure(s3_key, aws_config['vehicle_id'], expected_source)
+            parsed = verify_s3_key_structure(s3_key, aws_config["vehicle_id"], expected_source)
 
             print(f"✓ Source-based path: {s3_key}")
-            print(f"  Vehicle: {parsed['vehicle_id']}, Date: {parsed['date']}, Source: {parsed['source']}")
-
-            response = real_s3_client.head_object(
-                Bucket=aws_config['bucket'],
-                Key=s3_key
+            print(
+                f"  Vehicle: {parsed['vehicle_id']}, Date: {parsed['date']}, Source: {parsed['source']}"
             )
-            assert response['ResponseMetadata']['HTTPStatusCode'] == 200
+
+            response = real_s3_client.head_object(Bucket=aws_config["bucket"], Key=s3_key)
+            assert response["ResponseMetadata"]["HTTPStatusCode"] == 200
 
         finally:
             Path(test_file).unlink(missing_ok=True)
@@ -218,9 +206,8 @@ def test_source_based_s3_paths(real_upload_manager, real_s3_client, s3_cleanup, 
 @pytest.mark.real_aws
 def test_syslog_uses_upload_date(real_upload_manager, real_s3_client, s3_cleanup, aws_config):
     """Test that syslog files use upload date, not file mtime"""
-    with tempfile.NamedTemporaryFile(mode='w', delete=False,
-                                     prefix='syslog', suffix='') as f:
-        f.write('Test syslog data\n' * 100)
+    with tempfile.NamedTemporaryFile(mode="w", delete=False, prefix="syslog", suffix="") as f:
+        f.write("Test syslog data\n" * 100)
         test_file = f.name
 
     # Set mtime to 3 days ago
@@ -234,20 +221,18 @@ def test_syslog_uses_upload_date(real_upload_manager, real_s3_client, s3_cleanup
         s3_key = real_upload_manager._build_s3_key(Path(test_file))
         s3_cleanup(s3_key)
 
-        parts = s3_key.split('/')
+        parts = s3_key.split("/")
         date_in_key = parts[1]
-        today = datetime.now().strftime('%Y-%m-%d')
+        today = datetime.now().strftime("%Y-%m-%d")
 
-        if '/var/log' in test_file or 'syslog' in parts[2]:
-            assert date_in_key == today, \
-                f"Syslog should use upload date ({today}), got {date_in_key}"
+        if "/var/log" in test_file or "syslog" in parts[2]:
+            assert (
+                date_in_key == today
+            ), f"Syslog should use upload date ({today}), got {date_in_key}"
             print(f"✓ Syslog correctly uses upload date: {today}")
 
-        response = real_s3_client.head_object(
-            Bucket=aws_config['bucket'],
-            Key=s3_key
-        )
-        assert response['ResponseMetadata']['HTTPStatusCode'] == 200
+        response = real_s3_client.head_object(Bucket=aws_config["bucket"], Key=s3_key)
+        assert response["ResponseMetadata"]["HTTPStatusCode"] == 200
 
     finally:
         Path(test_file).unlink(missing_ok=True)
@@ -255,17 +240,19 @@ def test_syslog_uses_upload_date(real_upload_manager, real_s3_client, s3_cleanup
 
 @pytest.mark.e2e
 @pytest.mark.real_aws
-def test_upload_preserves_file_date_in_path(real_upload_manager, real_s3_client, s3_cleanup, aws_config):
+def test_upload_preserves_file_date_in_path(
+    real_upload_manager, real_s3_client, s3_cleanup, aws_config
+):
     """Test that S3 path uses file mtime for non-syslog files"""
-    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.log') as f:
-        f.write('Old file test\n' * 100)
+    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".log") as f:
+        f.write("Old file test\n" * 100)
         test_file = f.name
 
     # Set mtime to 5 days ago
     old_time = time.time() - (5 * 24 * 3600)
     os.utime(test_file, (old_time, old_time))
 
-    expected_date = datetime.fromtimestamp(old_time).strftime('%Y-%m-%d')
+    expected_date = datetime.fromtimestamp(old_time).strftime("%Y-%m-%d")
 
     try:
         result = real_upload_manager.upload_file(test_file)
@@ -274,21 +261,19 @@ def test_upload_preserves_file_date_in_path(real_upload_manager, real_s3_client,
         s3_key = real_upload_manager._build_s3_key(Path(test_file))
         s3_cleanup(s3_key)
 
-        key_parts = s3_key.split('/')
+        key_parts = s3_key.split("/")
         date_in_key = key_parts[1]
-        today = datetime.now().strftime('%Y-%m-%d')
+        today = datetime.now().strftime("%Y-%m-%d")
 
         # For non-syslog files, should use file mtime
-        if 'syslog' not in s3_key:
-            assert date_in_key == expected_date, \
-                f"S3 key should use file mtime ({expected_date}), not upload date ({today})"
+        if "syslog" not in s3_key:
+            assert (
+                date_in_key == expected_date
+            ), f"S3 key should use file mtime ({expected_date}), not upload date ({today})"
             print(f"✓ Correctly used file mtime: {expected_date}")
 
-        response = real_s3_client.head_object(
-            Bucket=aws_config['bucket'],
-            Key=s3_key
-        )
-        assert response['ResponseMetadata']['HTTPStatusCode'] == 200
+        response = real_s3_client.head_object(Bucket=aws_config["bucket"], Key=s3_key)
+        assert response["ResponseMetadata"]["HTTPStatusCode"] == 200
 
     finally:
         Path(test_file).unlink(missing_ok=True)
@@ -298,12 +283,13 @@ def test_upload_preserves_file_date_in_path(real_upload_manager, real_s3_client,
 # METADATA AND VERIFICATION TESTS
 # ============================================================================
 
+
 @pytest.mark.e2e
 @pytest.mark.real_aws
 def test_verify_upload(real_upload_manager, real_s3_client, s3_cleanup, aws_config):
     """Test upload verification"""
-    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.log') as f:
-        f.write('verification test')
+    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".log") as f:
+        f.write("verification test")
         test_file = f.name
 
     try:
@@ -324,12 +310,14 @@ def test_verify_upload(real_upload_manager, real_s3_client, s3_cleanup, aws_conf
 
 @pytest.mark.e2e
 @pytest.mark.real_aws
-def test_upload_preserves_file_metadata(real_upload_manager, real_s3_client, s3_cleanup, aws_config):
+def test_upload_preserves_file_metadata(
+    real_upload_manager, real_s3_client, s3_cleanup, aws_config
+):
     """Test that uploaded files maintain correct size and basic metadata"""
-    test_content = b'Metadata test content\n' * 1000
+    test_content = b"Metadata test content\n" * 1000
     expected_size = len(test_content)
 
-    with tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix='.log') as f:
+    with tempfile.NamedTemporaryFile(mode="wb", delete=False, suffix=".log") as f:
         f.write(test_content)
         test_file = f.name
 
@@ -340,15 +328,12 @@ def test_upload_preserves_file_metadata(real_upload_manager, real_s3_client, s3_
         s3_key = real_upload_manager._build_s3_key(Path(test_file))
         s3_cleanup(s3_key)
 
-        response = real_s3_client.head_object(
-            Bucket=aws_config['bucket'],
-            Key=s3_key
-        )
+        response = real_s3_client.head_object(Bucket=aws_config["bucket"], Key=s3_key)
 
-        assert response['ContentLength'] == expected_size
-        assert 'LastModified' in response
-        assert 'ETag' in response
-        assert 'ContentType' in response
+        assert response["ContentLength"] == expected_size
+        assert "LastModified" in response
+        assert "ETag" in response
+        assert "ContentType" in response
 
         print(f"✓ Metadata preserved - Size: {expected_size} bytes")
         print(f"  ContentType: {response.get('ContentType')}")
@@ -361,9 +346,9 @@ def test_upload_preserves_file_metadata(real_upload_manager, real_s3_client, s3_
 @pytest.mark.real_aws
 def test_s3_content_integrity(real_upload_manager, real_s3_client, s3_cleanup, aws_config):
     """Test that uploaded content matches original (download and compare)"""
-    test_content = 'Content integrity test\n' * 500
+    test_content = "Content integrity test\n" * 500
 
-    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.log') as f:
+    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".log") as f:
         f.write(test_content)
         test_file = f.name
 
@@ -375,12 +360,9 @@ def test_s3_content_integrity(real_upload_manager, real_s3_client, s3_cleanup, a
         s3_cleanup(s3_key)
 
         # Download from S3
-        download_response = real_s3_client.get_object(
-            Bucket=aws_config['bucket'],
-            Key=s3_key
-        )
+        download_response = real_s3_client.get_object(Bucket=aws_config["bucket"], Key=s3_key)
 
-        downloaded_data = download_response['Body'].read().decode('utf-8')
+        downloaded_data = download_response["Body"].read().decode("utf-8")
 
         # Verify exact match
         assert downloaded_data == test_content, "Content mismatch!"
@@ -396,12 +378,13 @@ def test_s3_content_integrity(real_upload_manager, real_s3_client, s3_cleanup, a
 # ERROR HANDLING AND RETRY TESTS
 # ============================================================================
 
+
 @pytest.mark.e2e
 @pytest.mark.real_aws
 def test_upload_retry_mechanism(real_upload_manager, real_s3_client, s3_cleanup, aws_config):
     """Test that upload retries are configured correctly"""
-    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.log') as f:
-        f.write('Retry test\n' * 100)
+    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".log") as f:
+        f.write("Retry test\n" * 100)
         test_file = f.name
 
     try:
@@ -414,11 +397,8 @@ def test_upload_retry_mechanism(real_upload_manager, real_s3_client, s3_cleanup,
         s3_key = real_upload_manager._build_s3_key(Path(test_file))
         s3_cleanup(s3_key)
 
-        response = real_s3_client.head_object(
-            Bucket=aws_config['bucket'],
-            Key=s3_key
-        )
-        assert response['ResponseMetadata']['HTTPStatusCode'] == 200
+        response = real_s3_client.head_object(Bucket=aws_config["bucket"], Key=s3_key)
+        assert response["ResponseMetadata"]["HTTPStatusCode"] == 200
 
         print(f"✓ Upload with retry mechanism verified")
 
@@ -449,12 +429,13 @@ def test_upload_nonexistent_file_error(real_upload_manager):
 # SPECIAL FILE TESTS
 # ============================================================================
 
+
 @pytest.mark.e2e
 @pytest.mark.real_aws
 def test_upload_file_with_unicode_name(real_upload_manager, real_s3_client, s3_cleanup, aws_config):
     """Test uploading file with unicode characters in name"""
-    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='_测试.log') as f:
-        f.write('Unicode filename test\n' * 100)
+    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix="_测试.log") as f:
+        f.write("Unicode filename test\n" * 100)
         test_file = f.name
 
     try:
@@ -464,11 +445,8 @@ def test_upload_file_with_unicode_name(real_upload_manager, real_s3_client, s3_c
         s3_key = real_upload_manager._build_s3_key(Path(test_file))
         s3_cleanup(s3_key)
 
-        response = real_s3_client.head_object(
-            Bucket=aws_config['bucket'],
-            Key=s3_key
-        )
-        assert response['ResponseMetadata']['HTTPStatusCode'] == 200
+        response = real_s3_client.head_object(Bucket=aws_config["bucket"], Key=s3_key)
+        assert response["ResponseMetadata"]["HTTPStatusCode"] == 200
 
         print(f"✓ Unicode filename uploaded: {Path(test_file).name}")
 
@@ -478,13 +456,15 @@ def test_upload_file_with_unicode_name(real_upload_manager, real_s3_client, s3_c
 
 @pytest.mark.e2e
 @pytest.mark.real_aws
-def test_upload_various_file_types(real_upload_manager, real_s3_client, s3_batch_cleanup, aws_config):
+def test_upload_various_file_types(
+    real_upload_manager, real_s3_client, s3_batch_cleanup, aws_config
+):
     """Test uploading files with various extensions"""
-    file_types = ['.log', '.txt', '.csv', '.json', '.xml', '.mcap', '.bag', '.db3']
+    file_types = [".log", ".txt", ".csv", ".json", ".xml", ".mcap", ".bag", ".db3"]
 
     for ext in file_types:
-        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix=ext) as f:
-            f.write(f'Test data for {ext}\n' * 50)
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=ext) as f:
+            f.write(f"Test data for {ext}\n" * 50)
             test_file = f.name
 
         try:
@@ -494,11 +474,8 @@ def test_upload_various_file_types(real_upload_manager, real_s3_client, s3_batch
             s3_key = real_upload_manager._build_s3_key(Path(test_file))
             s3_batch_cleanup(s3_key)
 
-            response = real_s3_client.head_object(
-                Bucket=aws_config['bucket'],
-                Key=s3_key
-            )
-            assert response['ResponseMetadata']['HTTPStatusCode'] == 200
+            response = real_s3_client.head_object(Bucket=aws_config["bucket"], Key=s3_key)
+            assert response["ResponseMetadata"]["HTTPStatusCode"] == 200
 
             print(f"✓ Uploaded {ext} file")
 
@@ -510,19 +487,17 @@ def test_upload_various_file_types(real_upload_manager, real_s3_client, s3_batch
 # BUCKET OPERATIONS
 # ============================================================================
 
+
 @pytest.mark.e2e
 @pytest.mark.real_aws
 def test_list_bucket(real_s3_client, aws_config):
     """Test listing real bucket contents"""
-    response = real_s3_client.list_objects_v2(
-        Bucket=aws_config['bucket'],
-        MaxKeys=10
-    )
+    response = real_s3_client.list_objects_v2(Bucket=aws_config["bucket"], MaxKeys=10)
 
-    assert 'ResponseMetadata' in response
-    assert response['ResponseMetadata']['HTTPStatusCode'] == 200
+    assert "ResponseMetadata" in response
+    assert response["ResponseMetadata"]["HTTPStatusCode"] == 200
 
-    if 'Contents' in response:
+    if "Contents" in response:
         print(f"✓ Bucket {aws_config['bucket']} contains {len(response['Contents'])} objects")
     else:
         print(f"✓ Bucket {aws_config['bucket']} is empty")
@@ -532,8 +507,8 @@ def test_list_bucket(real_s3_client, aws_config):
 @pytest.mark.real_aws
 def test_s3_duplicate_detection(real_upload_manager, real_s3_client, s3_cleanup, aws_config):
     """Test that duplicate file in S3 is detected"""
-    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.log') as f:
-        f.write('Duplicate test\n' * 100)
+    with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=".log") as f:
+        f.write("Duplicate test\n" * 100)
         test_file = f.name
 
     try:
@@ -544,18 +519,12 @@ def test_s3_duplicate_detection(real_upload_manager, real_s3_client, s3_cleanup,
         s3_key = real_upload_manager._build_s3_key(Path(test_file))
         s3_cleanup(s3_key)
 
-        etag1 = real_s3_client.head_object(
-            Bucket=aws_config['bucket'],
-            Key=s3_key
-        ).get('ETag')
+        etag1 = real_s3_client.head_object(Bucket=aws_config["bucket"], Key=s3_key).get("ETag")
 
         # Second upload of same file
         result2 = real_upload_manager.upload_file(test_file)
 
-        etag2 = real_s3_client.head_object(
-            Bucket=aws_config['bucket'],
-            Key=s3_key
-        ).get('ETag')
+        etag2 = real_s3_client.head_object(Bucket=aws_config["bucket"], Key=s3_key).get("ETag")
 
         # ETags should match (duplicate detection worked)
         assert etag1 == etag2
@@ -569,14 +538,15 @@ def test_s3_duplicate_detection(real_upload_manager, real_s3_client, s3_cleanup,
 # PERFORMANCE AND STRESS TESTS
 # ============================================================================
 
+
 @pytest.mark.e2e
 @pytest.mark.real_aws
 @pytest.mark.slow
 def test_upload_very_large_file(real_upload_manager, real_s3_client, s3_cleanup, aws_config):
     """Test uploading 50MB file (stress test)"""
-    with tempfile.NamedTemporaryFile(mode='wb', delete=False, suffix='.mcap') as f:
+    with tempfile.NamedTemporaryFile(mode="wb", delete=False, suffix=".mcap") as f:
         # Write 50MB
-        f.write(b'X' * (50 * 1024 * 1024))
+        f.write(b"X" * (50 * 1024 * 1024))
         test_file = f.name
 
     try:
@@ -589,12 +559,9 @@ def test_upload_very_large_file(real_upload_manager, real_s3_client, s3_cleanup,
         s3_key = real_upload_manager._build_s3_key(Path(test_file))
         s3_cleanup(s3_key)
 
-        response = real_s3_client.head_object(
-            Bucket=aws_config['bucket'],
-            Key=s3_key
-        )
+        response = real_s3_client.head_object(Bucket=aws_config["bucket"], Key=s3_key)
 
-        assert response['ContentLength'] == 50 * 1024 * 1024
+        assert response["ContentLength"] == 50 * 1024 * 1024
 
         print(f"✓ 50MB file uploaded in {upload_time:.2f}s ({(50 / upload_time):.2f} MB/s)")
 
@@ -605,15 +572,17 @@ def test_upload_very_large_file(real_upload_manager, real_s3_client, s3_cleanup,
 @pytest.mark.e2e
 @pytest.mark.real_aws
 @pytest.mark.slow
-def test_concurrent_uploads_sequential(real_upload_manager, real_s3_client, s3_batch_cleanup, aws_config):
+def test_concurrent_uploads_sequential(
+    real_upload_manager, real_s3_client, s3_batch_cleanup, aws_config
+):
     """Test uploading multiple files in sequence (simulating concurrent workflow)"""
     num_files = 10
     test_files = []
 
     # Create files
     for i in range(num_files):
-        with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix=f'_{i}.log') as f:
-            f.write(f'Concurrent test file {i}\n' * 100)
+        with tempfile.NamedTemporaryFile(mode="w", delete=False, suffix=f"_{i}.log") as f:
+            f.write(f"Concurrent test file {i}\n" * 100)
             test_files.append(f.name)
 
     uploaded_keys = []
@@ -634,13 +603,12 @@ def test_concurrent_uploads_sequential(real_upload_manager, real_s3_client, s3_b
 
         # Verify all in S3
         for s3_key in uploaded_keys:
-            response = real_s3_client.head_object(
-                Bucket=aws_config['bucket'],
-                Key=s3_key
-            )
-            assert response['ResponseMetadata']['HTTPStatusCode'] == 200
+            response = real_s3_client.head_object(Bucket=aws_config["bucket"], Key=s3_key)
+            assert response["ResponseMetadata"]["HTTPStatusCode"] == 200
 
-        print(f"✓ {num_files} files uploaded in {total_time:.2f}s ({total_time/num_files:.2f}s per file)")
+        print(
+            f"✓ {num_files} files uploaded in {total_time:.2f}s ({total_time/num_files:.2f}s per file)"
+        )
 
     finally:
         for test_file in test_files:

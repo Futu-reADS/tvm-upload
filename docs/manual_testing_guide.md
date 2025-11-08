@@ -48,7 +48,7 @@ echo "Syslog data" > ~/test-logs/syslog/messages_$(date +%Y%m%d).log
 cd ~/tvm-upload
 python3 -m venv venv
 source venv/bin/activate
-pip install -r requirements.txt
+pip install -e ".[test]"
 ```
 
 ### Step 2: Configure Application
@@ -742,9 +742,11 @@ After completing all tests, fill out this report:
 
 1. **Run Complete Automated Test Suite:**
    ```bash
-   # Complete manual test suite (16 tests, ~24 minutes)
-   cd scripts/testing
-   ./run_manual_tests.sh
+   # Using Makefile (recommended)
+   make test-manual                # Complete manual test suite (~24 min)
+
+   # Or run script directly
+   ./scripts/testing/run_manual_tests.sh
 
    # Or run specific tests
    cd manual-tests
@@ -755,7 +757,12 @@ After completing all tests, fill out this report:
 
 2. **Run Unit/Integration/E2E Tests:**
    ```bash
-   # Unit tests (159 tests)
+   # Using Makefile (recommended)
+   make test-fast              # Unit tests (~5 sec)
+   make test                   # Unit + integration tests
+   make test-e2e               # E2E tests (requires AWS)
+
+   # Or using pytest directly
    pytest tests/unit/ -v
 
    # Integration tests (42 tests)

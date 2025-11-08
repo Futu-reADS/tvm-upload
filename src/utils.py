@@ -27,7 +27,7 @@ def format_bytes(bytes_value: int, precision: int = 2) -> str:
         return f"{bytes_value / 1024**4:.{precision}f} TB"
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     print(f"1 MB = {format_bytes(1024**2)}")
     print(f"100 MB = {format_bytes(100 * 1024**2)}")
     print(f"1.5 GB = {format_bytes(int(1.5 * 1024**3))}")

@@ -131,7 +131,49 @@ Before installation, prepare:
 
 ---
 
-## 🚗 Per-Vehicle Deployment
+## ⚡ Quick Deployment (Commands Only)
+
+**Complete deployment in 7 steps - just copy and run:**
+
+```bash
+# Step 1: Clone repository
+cd ~ && git clone git@github.com:Futu-reADS/tvm-upload.git && cd tvm-upload
+
+# Step 2: Install dependencies
+make install
+# OR: pip3 install -e .
+
+# Step 3: Configure AWS credentials
+aws configure --profile china
+# Enter: Access Key ID, Secret Key, region: cn-north-1, output: json
+aws configure set s3.endpoint_url https://s3.cn-north-1.amazonaws.com.cn --profile china
+aws configure set s3.signature_version s3v4 --profile china
+aws configure set s3.addressing_style path --profile china
+
+# Step 4: Configure system
+cp config/config.yaml.example config/config.yaml
+nano config/config.yaml  # Edit vehicle_id and verify settings
+
+# Step 5: Verify deployment prerequisites
+make deploy-verify
+# OR: ./scripts/deployment/verify_deployment.sh
+
+# Step 6: Install to production
+make deploy-install
+# OR: sudo ./scripts/deployment/install.sh
+
+# Step 7: Verify installation
+make deploy-health
+# OR: sudo ./scripts/deployment/health_check.sh
+```
+
+**Done! System is running as systemd service.**
+
+Check status: `sudo systemctl status tvm-upload`
+
+---
+
+## 🚗 Per-Vehicle Deployment (Detailed)
 
 **Deployment Overview:**
 
@@ -189,8 +231,8 @@ git pull origin main
 ```bash
 cd ~/tvm-upload
 
-# Install dependencies
-pip3 install -r requirements.txt
+# Install dependencies (reads from pyproject.toml)
+pip3 install -e .
 
 # Verify installation
 python3 -c "import boto3, yaml, watchdog; print('✓ Dependencies installed')"
@@ -216,8 +258,8 @@ python3 -m venv venv
 # Activate virtual environment
 source venv/bin/activate
 
-# Install dependencies
-pip install -r requirements.txt
+# Install dependencies (reads from pyproject.toml)
+pip install -e .
 
 # Verify installation
 python3 -c "import boto3, yaml, watchdog; print('✓ Dependencies installed')"

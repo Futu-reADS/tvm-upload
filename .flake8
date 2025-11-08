@@ -1,0 +1,53 @@
+[flake8]
+# Flake8 configuration for TVM Upload System
+max-line-length = 100
+exclude =
+    .git,
+    __pycache__,
+    venv,
+    env,
+    build,
+    dist,
+    *.egg-info,
+    .pytest_cache,
+    htmlcov
+
+# Ignore specific rules
+ignore =
+    # E203: whitespace before ':' (conflicts with black)
+    E203,
+    # E402: module level import not at top of file (main.py has intentional structure)
+    E402,
+    # E501: line too long (allow some flexibility for error messages)
+    E501,
+    # W503: line break before binary operator (conflicts with black)
+    W503,
+    # W293: blank line contains whitespace (auto-formatter handles this)
+    W293,
+    # W291: trailing whitespace (auto-formatter handles this)
+    W291,
+    # F401: imported but unused (many false positives with type hints)
+    F401,
+    # F541: f-string without placeholders (sometimes used for consistency)
+    F541,
+    # F601: dictionary key repeated (intentional in tests)
+    F601,
+    # F811: redefinition of unused (intentional reimports)
+    F811,
+    # F841: local variable assigned but never used (often intentional in tests)
+    F841,
+    # E401: multiple imports on one line (handled by isort)
+    E401
+
+# Per-file ignores
+per-file-ignores =
+    # Test files can have unused imports and variables
+    tests/*:F401,F841,E722
+    # Main.py has imports after path setup
+    src/main.py:E402
+    # Disk emergency test has intentional structure
+    tests/unit/test_disk_emergency.py:E265,E402,F811
+
+# Show source code for each error
+show-source = True
+statistics = True

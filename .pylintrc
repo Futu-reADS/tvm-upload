@@ -1,0 +1,105 @@
+[MASTER]
+# Use multiple processes for faster linting
+jobs=0
+
+# Pickle collected data for later comparisons
+persistent=yes
+
+[MESSAGES CONTROL]
+# Disable specific warnings that are handled by other tools or are too strict
+disable=
+    # Code style (handled by black)
+    C0301,  # line-too-long (handled by black)
+    C0302,  # too-many-lines (main.py is complex)
+    C0325,  # superfluous-parens
+    C0412,  # ungrouped-imports (handled by isort)
+    C0413,  # wrong-import-position (main.py has sys.path setup)
+    C0201,  # consider-iterating-dictionary
+
+    # Docstrings (we use type hints instead for many cases)
+    C0114,  # missing-module-docstring
+    C0115,  # missing-class-docstring
+    C0116,  # missing-function-docstring
+
+    # Naming (sometimes short names are clearer)
+    C0103,  # invalid-name
+
+    # Design (sometimes more args/locals are necessary)
+    R0902,  # too-many-instance-attributes
+    R0911,  # too-many-return-statements
+    R0913,  # too-many-arguments
+    R0914,  # too-many-locals
+    R0915,  # too-many-statements
+    R0912,  # too-many-branches
+
+    # Refactoring (often false positives)
+    R1702,  # too-many-nested-blocks
+    R1705,  # no-else-return (sometimes elif is clearer)
+    R1720,  # no-else-raise
+
+    # Logging (f-strings are more readable)
+    W1201,  # logging-not-lazy
+    W1203,  # logging-fstring-interpolation
+    E1200,  # logging-unsupported-format
+    E1206,  # logging-too-few-args
+
+    # Exception handling
+    W0718,  # broad-exception-caught (sometimes necessary)
+
+    # File operations
+    W1514,  # unspecified-encoding (utf-8 is default in Python 3)
+
+    # Import order
+    C0411,  # wrong-import-order (handled by isort)
+    C0415,  # import-outside-toplevel (sometimes necessary)
+    E0401,  # import-error (pylint can't always resolve paths)
+    W0611,  # unused-import (handled by flake8)
+    W0404,  # reimported (sometimes necessary)
+    W0621,  # redefined-outer-name (sometimes necessary)
+
+    # Exception handling
+    W0707,  # raise-missing-from (sometimes not needed)
+
+    # F-strings
+    W1309,  # f-string-without-interpolation (consistency)
+
+    # Variable usage
+    W0212,  # protected-access (sometimes necessary for testing)
+    W0601,  # global-variable-undefined
+    W0612,  # unused-variable (handled by flake8)
+    W0613,  # unused-argument (signal handlers, callbacks)
+
+    # Arguments
+    R0917,  # too-many-positional-arguments
+
+    # Other
+    W0107,  # unnecessary-pass
+
+[FORMAT]
+# Maximum number of characters on a single line
+max-line-length=100
+
+# Maximum number of lines in a module
+max-module-lines=1000
+
+[BASIC]
+# Good variable names
+good-names=i,j,k,ex,e,f,_,logger,cm,dm,qm,um,fm
+
+[DESIGN]
+# Relaxed limits for production code
+max-args=7
+max-locals=20
+max-attributes=12
+max-public-methods=25
+
+[IMPORTS]
+# Allow wildcard imports in __init__.py
+allow-wildcard-with-all=yes
+
+[SIMILARITIES]
+# Minimum lines number of a similarity
+min-similarity-lines=10
+
+# Ignore imports when computing similarities
+ignore-imports=yes

@@ -6,29 +6,29 @@ Persists upload queue to disk
 
 import json
 import logging
-from pathlib import Path
-from typing import List, Dict, Any
 from datetime import datetime
+from pathlib import Path
+from typing import Any, Dict, List
 
 logger = logging.getLogger(__name__)
 
 # Queue Configuration
-DEFAULT_QUEUE_PATH = '/var/lib/tvm-upload/queue.json'
-QUEUE_FILE_SUFFIX = '.json'
-QUEUE_BACKUP_SUFFIX = '.json.bak'
-QUEUE_TEMP_SUFFIX = '.json.tmp'
+DEFAULT_QUEUE_PATH = "/var/lib/tvm-upload/queue.json"
+QUEUE_FILE_SUFFIX = ".json"
+QUEUE_BACKUP_SUFFIX = ".json.bak"
+QUEUE_TEMP_SUFFIX = ".json.tmp"
 
 
 class QueueManager:
     """
     Manages persistent upload queue.
-    
+
     Features:
     - Save queue to JSON file
     - Load queue on startup
     - Sort by priority (newest first)
     - Remove duplicates
-    
+
     Queue Entry Format:
     {
         "filepath": "/var/log/file.mcap",
@@ -37,38 +37,38 @@ class QueueManager:
         "attempts": 0
     }
     """
-    
+
     def __init__(self, queue_file: str = DEFAULT_QUEUE_PATH):
         """
         Initialize queue manager.
-        
+
         Args:
             queue_file: Path to queue JSON file
-            
+
         Raises:
             PermissionError: If queue directory is not writable (CRITICAL)
             OSError: If queue directory cannot be created
-            
+
         Note:
             Queue file MUST be in a persistent location (/var/lib or similar).
             /tmp is NOT acceptable as it's cleared on reboot, causing data loss.
         """
         self.queue_file = Path(queue_file)
         self.queue: List[Dict[str, Any]] = []
-        
+
         # Ensure directory exists and is writable
         try:
             # Try to create directory
             self.queue_file.parent.mkdir(parents=True, exist_ok=True)
-            
+
             # Verify directory is writable by attempting a test write
-            test_file = self.queue_file.parent / '.write_test'
+            test_file = self.queue_file.parent / ".write_test"
             try:
                 test_file.touch()
                 test_file.unlink()
                 logger.info(f"Queue directory verified writable: {self.queue_file.parent}")
             except (PermissionError, OSError) as write_error:
-                logger.error("="*60)
+                logger.error("=" * 60)
                 logger.error("CRITICAL: Queue directory is NOT writable")
                 logger.error(f"Path: {self.queue_file.parent}")
                 logger.error(f"Error: {write_error}")
@@ -82,21 +82,23 @@ class QueueManager:
                 logger.error("Action required:")
                 logger.error(f"  1. Fix permissions: sudo mkdir -p {self.queue_file.parent}")
                 logger.error(f"  2. Set ownership: sudo chown $(whoami) {self.queue_file.parent}")
-                logger.error(f"  3. Or change queue_file path in config.yaml to a writable location")
+                logger.error(
+                    f"  3. Or change queue_file path in config.yaml to a writable location"
+                )
                 logger.error("")
                 logger.error("REFUSING to use /tmp as fallback (queue would not persist)")
-                logger.error("="*60)
+                logger.error("=" * 60)
                 raise PermissionError(
                     f"Queue directory not writable: {self.queue_file.parent}. "
                     f"Fix permissions or change queue_file in config.yaml"
                 )
-                
+
         except PermissionError:
             # Re-raise permission errors (already logged above)
             raise
-            
+
         except OSError as e:
-            logger.error("="*60)
+            logger.error("=" * 60)
             logger.error("CRITICAL: Cannot create queue directory")
             logger.error(f"Path: {self.queue_file.parent}")
             logger.error(f"Error: {e}")
@@ -107,14 +109,14 @@ class QueueManager:
             logger.error("  - Disk is full")
             logger.error("")
             logger.error("Action required: Fix filesystem issue or change queue_file path")
-            logger.error("="*60)
+            logger.error("=" * 60)
             raise OSError(f"Cannot create queue directory: {self.queue_file.parent}: {e}")
-        
+
         # Load existing queue
         self.load_queue()
-        
+
         logger.info(f"Queue manager initialized with {len(self.queue)} pending files")
-    
+
     def add_file(self, filepath: str):
         """
         Add file to upload queue.
@@ -130,7 +132,7 @@ class QueueManager:
         file_path = Path(filepath)
 
         # Check if already in queue
-        if any(entry['filepath'] == filepath for entry in self.queue):
+        if any(entry["filepath"] == filepath for entry in self.queue):
             logger.debug(f"File already in queue: {file_path.name}")
             return
 
@@ -145,88 +147,83 @@ class QueueManager:
         except (OSError, FileNotFoundError):
             logger.warning(f"Cannot stat file: {filepath}")
             return
-        
+
         # Add to queue
         entry = {
-            'filepath': filepath,
-            'size': size,
-            'detected_at': datetime.now().isoformat(),
-            'attempts': 0
+            "filepath": filepath,
+            "size": size,
+            "detected_at": datetime.now().isoformat(),
+            "attempts": 0,
         }
-        
+
         self.queue.append(entry)
         logger.info(f"Added to queue: {file_path.name} ({size / (1024**2):.1f} MB)")
-        
+
         # Save queue
         self.save_queue()
-    
+
     def get_next_batch(self, max_files: int = 10) -> List[str]:
         """
         Get next batch of files to upload (newest first).
-        
+
         Args:
             max_files: Maximum files to return
-            
+
         Returns:
             List of file paths
         """
         # Sort by detected_at (newest first)
-        sorted_queue = sorted(
-            self.queue,
-            key=lambda x: x['detected_at'],
-            reverse=True
-        )
-        
+        sorted_queue = sorted(self.queue, key=lambda x: x["detected_at"], reverse=True)
+
         # Return filepaths only
-        batch = [entry['filepath'] for entry in sorted_queue[:max_files]]
-        
+        batch = [entry["filepath"] for entry in sorted_queue[:max_files]]
+
         logger.debug(f"Next batch: {len(batch)} files")
         return batch
-    
+
     def remove_from_queue(self, filepath: str):
         """
         Remove file from queue after successful upload.
-        
+
         Args:
             filepath: Path to uploaded file
         """
-        self.queue = [
-            entry for entry in self.queue
-            if entry['filepath'] != filepath
-        ]
-        
+        self.queue = [entry for entry in self.queue if entry["filepath"] != filepath]
+
         logger.info(f"Removed from queue: {Path(filepath).name}")
         self.save_queue()
-    
+
     def mark_failed(self, filepath: str):
         """
         Increment attempt counter for failed upload.
-        
+
         Args:
             filepath: Path to failed file
         """
         for entry in self.queue:
-            if entry['filepath'] == filepath:
-                entry['attempts'] += 1
-                logger.warning(f"Upload failed (attempt {entry['attempts']}): {Path(filepath).name}")
+            if entry["filepath"] == filepath:
+                entry["attempts"] += 1
+                logger.warning(
+                    f"Upload failed (attempt {entry['attempts']}): {Path(filepath).name}"
+                )
                 break
-        
+
         self.save_queue()
 
     def mark_permanent_failure(self, filepath: str, reason: str):
         """
         Remove file from queue after permanent failure.
-        
+
         Used when a file cannot be uploaded due to permanent errors that
         won't resolve by retrying (corrupted file, permission denied, etc.).
-        
+
         Unlike mark_failed(), this REMOVES the file from queue entirely
         instead of incrementing the attempt counter.
-        
+
         Args:
             filepath: Path to permanently failed file
             reason: Reason for permanent failure (for logging)
-            
+
         Example:
             >>> queue_manager.mark_permanent_failure(
             ...     '/var/log/corrupted.log',
@@ -234,15 +231,12 @@ class QueueManager:
             ... )
         """
         original_size = len(self.queue)
-        
+
         # Remove file from queue
-        self.queue = [
-            entry for entry in self.queue
-            if entry['filepath'] != filepath
-        ]
-        
+        self.queue = [entry for entry in self.queue if entry["filepath"] != filepath]
+
         removed = original_size - len(self.queue)
-        
+
         if removed > 0:
             logger.error(
                 f"PERMANENT FAILURE - removed from queue: {Path(filepath).name} "
@@ -255,15 +249,15 @@ class QueueManager:
             self.save_queue()
         else:
             logger.debug(f"File not in queue (already removed): {Path(filepath).name}")
-    
+
     def get_queue_size(self) -> int:
         """Get number of files in queue."""
         return len(self.queue)
-    
+
     def get_queue_bytes(self) -> int:
         """Get total bytes in queue."""
-        return sum(entry['size'] for entry in self.queue)
-    
+        return sum(entry["size"] for entry in self.queue)
+
     def save_queue(self):
         """
         Save queue to JSON file with backup.
@@ -285,24 +279,25 @@ class QueueManager:
                 backup_file = self.queue_file.with_suffix(QUEUE_BACKUP_SUFFIX)
                 try:
                     import shutil
+
                     shutil.copy2(self.queue_file, backup_file)
                     logger.debug(f"Queue backup created: {backup_file}")
                 except Exception as e:
                     logger.warning(f"Failed to create queue backup: {e}")
                     # Continue anyway - backup failure shouldn't block save
-            
+
             # Write to temporary file first (atomic write)
             temp_file = self.queue_file.with_suffix(QUEUE_TEMP_SUFFIX)
-            with open(temp_file, 'w') as f:
+            with open(temp_file, "w") as f:
                 json.dump(self.queue, f, indent=2)
-            
+
             # Atomic rename (overwrites existing file)
             temp_file.replace(self.queue_file)
-            
+
             logger.debug(f"Queue saved: {len(self.queue)} files")
-            
+
         except PermissionError as e:
-            logger.error("="*60)
+            logger.error("=" * 60)
             logger.error("CRITICAL: Cannot save queue file - permission denied")
             logger.error(f"Queue file: {self.queue_file}")
             logger.error(f"Error: {e}")
@@ -313,11 +308,11 @@ class QueueManager:
             logger.error("")
             logger.error("Action required: Fix permissions immediately")
             logger.error(f"  sudo chown $(whoami) {self.queue_file}")
-            logger.error("="*60)
+            logger.error("=" * 60)
             raise OSError(f"Cannot save queue - permission denied: {self.queue_file}")
-            
+
         except OSError as e:
-            logger.error("="*60)
+            logger.error("=" * 60)
             logger.error("CRITICAL: Cannot save queue file - disk I/O error")
             logger.error(f"Queue file: {self.queue_file}")
             logger.error(f"Error: {e}")
@@ -328,15 +323,16 @@ class QueueManager:
             logger.error("  - Directory deleted")
             logger.error("")
             logger.error("DANGER: Queue is NOT saved - data will be lost on restart")
-            logger.error("="*60)
+            logger.error("=" * 60)
             raise OSError(f"Cannot save queue - I/O error: {e}")
-            
+
         except Exception as e:
             logger.error(f"CRITICAL: Unexpected error saving queue: {e}")
             import traceback
+
             logger.error(traceback.format_exc())
             raise
-    
+
     def load_queue(self):
         """
         Load queue from JSON file with automatic recovery from backup.
@@ -347,37 +343,37 @@ class QueueManager:
         3. Remove files that no longer exist from loaded queue
         """
         backup_file = self.queue_file.with_suffix(QUEUE_BACKUP_SUFFIX)
-        
+
         # Try loading primary queue file
         if self.queue_file.exists():
             try:
-                with open(self.queue_file, 'r') as f:
+                with open(self.queue_file, "r") as f:
                     self.queue = json.load(f)
-                
+
                 logger.info(f"Loaded queue from primary file: {len(self.queue)} files")
                 self._cleanup_missing_files()
                 return
-                
+
             except json.JSONDecodeError as e:
                 logger.error(f"Primary queue file corrupted: {e}")
                 logger.warning("Attempting to recover from backup...")
-                
+
                 # Try loading from backup
                 if backup_file.exists():
                     try:
-                        with open(backup_file, 'r') as f:
+                        with open(backup_file, "r") as f:
                             self.queue = json.load(f)
-                        
+
                         logger.warning(
                             f"✓ Recovered queue from backup: {len(self.queue)} files "
                             f"(may have lost recent additions)"
                         )
-                        
+
                         # Save recovered queue as new primary
                         self.save_queue()
                         self._cleanup_missing_files()
                         return
-                        
+
                     except Exception as backup_error:
                         logger.error(f"Backup file also corrupted: {backup_error}")
                         logger.error("Cannot recover queue - starting fresh")
@@ -385,14 +381,14 @@ class QueueManager:
                 else:
                     logger.error("No backup file available - starting with empty queue")
                     self.queue = []
-            
+
             except Exception as e:
                 logger.error(f"Failed to load queue: {e}")
-                
+
                 # Try backup as last resort
                 if backup_file.exists():
                     try:
-                        with open(backup_file, 'r') as f:
+                        with open(backup_file, "r") as f:
                             self.queue = json.load(f)
                         logger.warning(f"Recovered from backup: {len(self.queue)} files")
                         self.save_queue()
@@ -400,15 +396,15 @@ class QueueManager:
                         return
                     except Exception:
                         pass
-                
+
                 logger.error("Starting with empty queue")
                 self.queue = []
-        
+
         elif backup_file.exists():
             # Primary doesn't exist but backup does - recover
             logger.warning("Primary queue missing but backup exists - recovering")
             try:
-                with open(backup_file, 'r') as f:
+                with open(backup_file, "r") as f:
                     self.queue = json.load(f)
                 logger.info(f"Recovered from backup: {len(self.queue)} files")
                 self.save_queue()  # Restore as primary
@@ -417,7 +413,7 @@ class QueueManager:
             except Exception as e:
                 logger.error(f"Failed to recover from backup: {e}")
                 self.queue = []
-        
+
         else:
             # Neither file exists - fresh start
             logger.info("No existing queue file, starting fresh")
@@ -426,26 +422,23 @@ class QueueManager:
     def _cleanup_missing_files(self):
         """
         Remove files that no longer exist from queue.
-        
+
         Called after loading queue to ensure all entries are valid.
         """
         original_count = len(self.queue)
-        self.queue = [
-            entry for entry in self.queue
-            if Path(entry['filepath']).exists()
-        ]
+        self.queue = [entry for entry in self.queue if Path(entry["filepath"]).exists()]
         removed = original_count - len(self.queue)
-        
+
         if removed > 0:
             logger.warning(f"Removed {removed} missing files from queue")
             self.save_queue()
-        
+
         if len(self.queue) > 0:
             logger.info(
                 f"Queue contains {len(self.queue)} files "
                 f"({self.get_queue_bytes() / (1024**3):.2f} GB)"
             )
-    
+
     def clear_queue(self):
         """Clear entire queue (for testing)."""
         self.queue = []
@@ -453,33 +446,33 @@ class QueueManager:
         logger.info("Queue cleared")
 
 
-if __name__ == '__main__':
+if __name__ == "__main__":
     import tempfile
-    
+
     logging.basicConfig(
         level=logging.INFO,
-        format='%(asctime)s [%(levelname)s] %(message)s',
-        datefmt='%Y-%m-%d %H:%M:%S'
+        format="%(asctime)s [%(levelname)s] %(message)s",
+        datefmt="%Y-%m-%d %H:%M:%S",
     )
-    
+
     # Test with temporary queue file
-    with tempfile.NamedTemporaryFile(suffix='.json', delete=False) as f:
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
         queue_file = f.name
-    
+
     qm = QueueManager(queue_file)
-    
+
     # Add test files
-    qm.add_file('/tmp/test1.log')
-    qm.add_file('/tmp/test2.log')
-    
+    qm.add_file("/tmp/test1.log")
+    qm.add_file("/tmp/test2.log")
+
     # Get batch
     batch = qm.get_next_batch()
     logger.info(f"Batch: {batch}")
-    
+
     # Mark uploaded
-    qm.remove_from_queue('/tmp/test1.log')
-    
+    qm.remove_from_queue("/tmp/test1.log")
+
     logger.info(f"Queue size: {qm.get_queue_size()}")
-    
+
     # Cleanup
     Path(queue_file).unlink()

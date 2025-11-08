@@ -677,7 +677,7 @@ Safety Check Layers:     3 (empty ID, production, TEST pattern) ✅
    ```bash
    # Add to CI/CD pipeline
    - bandit -r src/
-   - safety check -r requirements.txt
+   - safety check --json
    - trufflehog --regex --entropy=False .
    ```
 

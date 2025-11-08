@@ -4,22 +4,24 @@ Fixtures for integration tests (mocked AWS)
 These tests verify components work together with mocked external services
 """
 
-import pytest
 import tempfile
-import yaml
 from pathlib import Path
 from unittest.mock import Mock, patch
+
+import pytest
+import yaml
 
 
 @pytest.fixture
 def temp_log_dir():
     """Create temporary log directory"""
-    log_dir = Path('/tmp/tvm-test-logs')
+    log_dir = Path("/tmp/tvm-test-logs")
     log_dir.mkdir(exist_ok=True)
     yield log_dir
     # Cleanup
     if log_dir.exists():
         import shutil
+
         shutil.rmtree(log_dir)
 
 
@@ -27,7 +29,7 @@ def temp_log_dir():
 def temp_config_file(temp_log_dir):
     """Create temporary config file for system tests"""
     temp_log_dir.mkdir(exist_ok=True)
-    
+
     config_content = f"""
 vehicle_id: "test-vehicle"
 
@@ -70,12 +72,12 @@ deletion:
 monitoring:
   cloudwatch_enabled: false
 """
-    
-    config_file = Path('/tmp') / 'test-config-integration.yaml'
+
+    config_file = Path("/tmp") / "test-config-integration.yaml"
     config_file.write_text(config_content)
-    
+
     yield str(config_file)
-    
+
     config_file.unlink(missing_ok=True)
 
 
@@ -83,15 +85,13 @@ monitoring:
 def mock_s3_client():
     """Mock S3 client for integration tests"""
     from botocore.exceptions import ClientError
-    
+
     mock = Mock()
     mock.upload_file.return_value = None
-    
+
     # Simulate file NOT in S3 (new upload)
-    mock.head_object.side_effect = ClientError(
-        {'Error': {'Code': 'NotFound'}}, 'head_object'
-    )
-    
+    mock.head_object.side_effect = ClientError({"Error": {"Code": "NotFound"}}, "head_object")
+
     mock.delete_object.return_value = {}
     return mock
 

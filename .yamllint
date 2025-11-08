@@ -1,0 +1,29 @@
+# yamllint configuration file
+# https://yamllint.readthedocs.io/
+
+extends: default
+
+rules:
+  # Allow longer lines for complex configurations
+  line-length:
+    max: 120
+    level: error
+
+  # Consistent indentation
+  indentation:
+    spaces: 2
+    indent-sequences: true
+
+  # Don't require document start marker (---)
+  document-start: disable
+
+  # Allow truthy values like 'on' in GitHub Actions
+  truthy:
+    check-keys: false
+
+  # Don't enforce comment indentation
+  comments-indentation: disable
+
+  # Allow flexible comma spacing
+  commas:
+    max-spaces-after: 1

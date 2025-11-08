@@ -3,10 +3,11 @@
 Tests for Disk Manager
 """
 
-import pytest
-import tempfile
 import shutil
+import tempfile
 from pathlib import Path
+
+import pytest
 
 from src.disk_manager import DiskManager
 
@@ -22,7 +23,7 @@ def temp_dir():
 def test_disk_manager_initialization(temp_dir):
     """Test disk manager can be initialized"""
     dm = DiskManager([temp_dir], reserved_gb=10.0)
-    
+
     assert dm.reserved_bytes == 10 * 1024 * 1024 * 1024
     assert dm.warning_threshold == 0.90
     assert dm.critical_threshold == 0.95
@@ -31,9 +32,9 @@ def test_disk_manager_initialization(temp_dir):
 def test_get_disk_usage():
     """Test getting disk usage statistics"""
     dm = DiskManager(["/tmp"])
-    
+
     usage, used, free = dm.get_disk_usage("/")
-    
+
     assert 0 <= usage <= 1
     assert used > 0
     assert free > 0
@@ -42,7 +43,7 @@ def test_get_disk_usage():
 def test_check_disk_space():
     """Test disk space checking"""
     dm = DiskManager(["/tmp"], reserved_gb=0.1)  # Only require 100MB
-    
+
     # Should have space with such low requirement
     has_space = dm.check_disk_space("/")
     assert has_space is True
@@ -51,14 +52,14 @@ def test_check_disk_space():
 def test_mark_uploaded(temp_dir):
     """Test marking files as uploaded"""
     dm = DiskManager([temp_dir])
-    
+
     # Create test file
     test_file = Path(temp_dir) / "test.log"
     test_file.write_text("data")
-    
+
     # Mark as uploaded
     dm.mark_uploaded(str(test_file))
-    
+
     assert len(dm.uploaded_files) == 1
     assert str(test_file.resolve()) in dm.uploaded_files
 
@@ -66,15 +67,15 @@ def test_mark_uploaded(temp_dir):
 def test_cleanup_with_no_uploaded_files(temp_dir):
     """Test cleanup when no files marked as uploaded"""
     dm = DiskManager([temp_dir])
-    
+
     # Create files but don't mark as uploaded
     for i in range(3):
         f = Path(temp_dir) / f"file{i}.log"
         f.write_text("data" * 100)
-    
+
     # Cleanup should delete nothing (no uploaded files)
     deleted = dm.cleanup_old_files(target_free_gb=1000)  # Impossible target
-    
+
     assert deleted == 0
     # Files still exist
     assert len(list(Path(temp_dir).glob("*.log"))) == 3
@@ -83,9 +84,9 @@ def test_cleanup_with_no_uploaded_files(temp_dir):
 def test_cleanup_deletes_oldest_first(temp_dir):
     """Test that cleanup deletes oldest files first"""
     dm = DiskManager([temp_dir])
-    
+
     import time
-    
+
     # Create files with different ages
     files = []
     for i in range(3):
@@ -94,10 +95,10 @@ def test_cleanup_deletes_oldest_first(temp_dir):
         dm.mark_uploaded(str(f))
         files.append(f)
         time.sleep(0.1)  # Ensure different mtimes
-    
+
     # Cleanup - should delete oldest (file0)
     deleted = dm.cleanup_old_files(target_free_gb=1000)  # Force cleanup
-    
+
     assert deleted >= 1
     # Oldest file should be gone
     assert not files[0].exists()
@@ -106,54 +107,56 @@ def test_cleanup_deletes_oldest_first(temp_dir):
 def test_get_directory_size(temp_dir):
     """Test calculating directory size"""
     dm = DiskManager([temp_dir])
-    
+
     # Create files
     (Path(temp_dir) / "file1.log").write_text("a" * 1000)
     (Path(temp_dir) / "file2.log").write_text("b" * 2000)
-    
+
     size = dm.get_directory_size(temp_dir)
-    
+
     assert size == 3000  # 1000 + 2000 bytes
 
 
 def test_get_uploaded_files_count(temp_dir):
     """Test getting count of uploaded files"""
     dm = DiskManager([temp_dir])
-    
+
     assert dm.get_uploaded_files_count() == 0
-    
+
     # Mark some files
     for i in range(3):
         f = Path(temp_dir) / f"file{i}.log"
         f.write_text("data")
         dm.mark_uploaded(str(f))
-    
+
     assert dm.get_uploaded_files_count() == 3
 
 
 def test_cleanup_stops_when_target_reached(temp_dir):
     """Test cleanup stops once target free space reached"""
     dm = DiskManager([temp_dir])
-    
+
     # Create multiple small files
     for i in range(10):
         f = Path(temp_dir) / f"file{i}.log"
         f.write_text("data" * 100)
         dm.mark_uploaded(str(f))
-    
+
     # Get initial state
     initial_count = dm.get_uploaded_files_count()
-    
+
     # Cleanup with reasonable target (not forcing all deletions)
     deleted = dm.cleanup_old_files(target_free_gb=0.001)  # 1MB
-    
+
     # Should delete some but not necessarily all
     assert deleted >= 0
     assert deleted <= initial_count
 
+
 # ============================================
 # NEW TESTS FOR v2.0 DEFERRED DELETION
 # ============================================
+
 
 def test_mark_uploaded_with_keep_days(temp_dir):
     """Test marking file for deferred deletion"""
@@ -172,23 +175,26 @@ def test_mark_uploaded_with_keep_days(temp_dir):
     # Check delete_after timestamp (stored as negative: -(mtime + keep_seconds))
     delete_after = dm.uploaded_files[filepath_key]
     import time
+
     assert delete_after < 0, "Delete time should be negative (mtime-based format)"
     # The actual deletion time is -delete_after, which should be in the future
     actual_deletion_time = -delete_after
     assert actual_deletion_time > time.time(), "Actual deletion time should be in future"
-    assert actual_deletion_time < time.time() + (15 * 24 * 3600), "Deletion time should be within 15 days"
+    assert actual_deletion_time < time.time() + (
+        15 * 24 * 3600
+    ), "Deletion time should be within 15 days"
 
 
 def test_mark_uploaded_immediate_deletion(temp_dir):
     """Test marking file for immediate deletion"""
     dm = DiskManager([temp_dir])
-    
+
     test_file = Path(temp_dir) / "test.log"
     test_file.write_text("data")
-    
+
     # Mark for immediate deletion
     dm.mark_uploaded(str(test_file), keep_until_days=0)
-    
+
     filepath_key = str(test_file.resolve())
     assert dm.uploaded_files[filepath_key] == 0, "Delete time should be 0 for immediate"
 
@@ -196,17 +202,17 @@ def test_mark_uploaded_immediate_deletion(temp_dir):
 def test_cleanup_deferred_deletions_immediate(temp_dir):
     """Test cleanup_deferred_deletions deletes immediate files"""
     dm = DiskManager([temp_dir])
-    
+
     # Create and mark file for immediate deletion
     test_file = Path(temp_dir) / "test.log"
     test_file.write_text("data" * 100)
     dm.mark_uploaded(str(test_file), keep_until_days=0)
-    
+
     assert test_file.exists(), "File should exist before cleanup"
-    
+
     # Run deferred deletion
     deleted = dm.cleanup_deferred_deletions()
-    
+
     assert deleted == 1, "Should delete 1 file"
     assert not test_file.exists(), "File should be deleted"
 
@@ -214,17 +220,17 @@ def test_cleanup_deferred_deletions_immediate(temp_dir):
 def test_cleanup_deferred_deletions_not_expired(temp_dir):
     """Test cleanup_deferred_deletions keeps non-expired files"""
     dm = DiskManager([temp_dir])
-    
+
     # Create and mark file for deletion in 14 days
     test_file = Path(temp_dir) / "test.log"
     test_file.write_text("data" * 100)
     dm.mark_uploaded(str(test_file), keep_until_days=14)
-    
+
     assert test_file.exists(), "File should exist before cleanup"
-    
+
     # Run deferred deletion (file not expired yet)
     deleted = dm.cleanup_deferred_deletions()
-    
+
     assert deleted == 0, "Should NOT delete file (not expired)"
     assert test_file.exists(), "File should still exist"
 
@@ -232,21 +238,22 @@ def test_cleanup_deferred_deletions_not_expired(temp_dir):
 def test_cleanup_deferred_deletions_expired(temp_dir):
     """Test cleanup_deferred_deletions deletes expired files"""
     dm = DiskManager([temp_dir])
-    
+
     # Create file
     test_file = Path(temp_dir) / "test.log"
     test_file.write_text("data" * 100)
-    
+
     # Manually set expired timestamp (in the past)
     import time
+
     filepath_key = str(test_file.resolve())
     dm.uploaded_files[filepath_key] = time.time() - 1  # 1 second ago
-    
+
     assert test_file.exists(), "File should exist before cleanup"
-    
+
     # Run deferred deletion
     deleted = dm.cleanup_deferred_deletions()
-    
+
     assert deleted == 1, "Should delete expired file"
     assert not test_file.exists(), "File should be deleted"
 
@@ -255,31 +262,32 @@ def test_cleanup_deferred_deletions_expired(temp_dir):
 # NEW TESTS FOR v2.0 AGE-BASED CLEANUP
 # ============================================
 
+
 def test_cleanup_by_age_deletes_old_files(temp_dir):
     """Test cleanup_by_age deletes files older than max_age_days"""
     dm = DiskManager([temp_dir])
-    
-    import time
+
     import os
-    
+    import time
+
     # Create old file (8 days old)
     old_file = Path(temp_dir) / "old.log"
     old_file.write_text("old data" * 100)
     old_mtime = time.time() - (8 * 24 * 3600)
     os.utime(str(old_file), (old_mtime, old_mtime))
-    
+
     # Create recent file (2 days old)
     recent_file = Path(temp_dir) / "recent.log"
     recent_file.write_text("recent data" * 100)
     recent_mtime = time.time() - (2 * 24 * 3600)
     os.utime(str(recent_file), (recent_mtime, recent_mtime))
-    
+
     assert old_file.exists()
     assert recent_file.exists()
-    
+
     # Run cleanup with 7-day threshold
     deleted = dm.cleanup_by_age(max_age_days=7)
-    
+
     assert deleted == 1, "Should delete 1 old file"
     assert not old_file.exists(), "Old file should be deleted"
     assert recent_file.exists(), "Recent file should remain"
@@ -288,27 +296,27 @@ def test_cleanup_by_age_deletes_old_files(temp_dir):
 def test_cleanup_by_age_respects_threshold(temp_dir):
     """Test cleanup_by_age only deletes files exceeding threshold"""
     dm = DiskManager([temp_dir])
-    
-    import time
+
     import os
-    
+    import time
+
     # Create files of various ages
     ages_days = [1, 5, 10, 15, 20]
     files = []
-    
+
     for age in ages_days:
         f = Path(temp_dir) / f"file_{age}days.log"
         f.write_text("data" * 100)
         mtime = time.time() - (age * 24 * 3600)
         os.utime(str(f), (mtime, mtime))
         files.append((f, age))
-    
+
     # Run cleanup with 14-day threshold
     deleted = dm.cleanup_by_age(max_age_days=14)
-    
+
     # Should delete files older than 14 days (15, 20)
     assert deleted == 2, f"Should delete 2 files (15d, 20d), got {deleted}"
-    
+
     # Check which files remain
     for f, age in files:
         if age <= 14:
@@ -320,53 +328,53 @@ def test_cleanup_by_age_respects_threshold(temp_dir):
 def test_cleanup_by_age_disabled(temp_dir):
     """Test cleanup_by_age does nothing when max_age_days=0"""
     dm = DiskManager([temp_dir])
-    
-    import time
+
     import os
-    
+    import time
+
     # Create very old file
     old_file = Path(temp_dir) / "ancient.log"
     old_file.write_text("data" * 100)
     old_mtime = time.time() - (100 * 24 * 3600)  # 100 days old
     os.utime(str(old_file), (old_mtime, old_mtime))
-    
+
     # Run cleanup with disabled threshold
     deleted = dm.cleanup_by_age(max_age_days=0)
-    
+
     assert deleted == 0, "Should not delete any files when disabled"
     assert old_file.exists(), "File should still exist"
 
 
 def test_cleanup_by_age_handles_nonexistent_directory():
     """Test cleanup_by_age handles missing directory gracefully"""
-    dm = DiskManager(['/tmp/nonexistent-tvm-test-dir'])
-    
+    dm = DiskManager(["/tmp/nonexistent-tvm-test-dir"])
+
     # Should not raise error
     deleted = dm.cleanup_by_age(max_age_days=7)
-    
+
     assert deleted == 0, "Should return 0 for nonexistent directory"
 
 
 def test_cleanup_by_age_removes_from_uploaded_tracking(temp_dir):
     """Test cleanup_by_age removes files from uploaded_files tracking"""
     dm = DiskManager([temp_dir])
-    
-    import time
+
     import os
-    
+    import time
+
     # Create old file
     old_file = Path(temp_dir) / "old.log"
     old_file.write_text("data" * 100)
     old_mtime = time.time() - (10 * 24 * 3600)
     os.utime(str(old_file), (old_mtime, old_mtime))
-    
+
     # Mark as uploaded
     dm.mark_uploaded(str(old_file), keep_until_days=14)
     assert dm.get_uploaded_files_count() == 1
-    
+
     # Run age-based cleanup (7 days)
     deleted = dm.cleanup_by_age(max_age_days=7)
-    
+
     assert deleted == 1
     assert dm.get_uploaded_files_count() == 0, "Should remove from tracking"
 
@@ -391,6 +399,7 @@ def test_emergency_cleanup_ignores_keep_until(temp_dir):
 # MULTI-DIRECTORY TESTS
 # ============================================
 
+
 def test_disk_usage_multiple_directories(temp_dir):
     """Test disk usage across multiple log directories"""
     dir1 = Path(temp_dir) / "logs1"
@@ -404,8 +413,8 @@ def test_disk_usage_multiple_directories(temp_dir):
     file1 = dir1 / "file1.log"
     file2 = dir2 / "file2.log"
 
-    file1.write_bytes(b'0' * 1024)  # 1KB
-    file2.write_bytes(b'0' * 2048)  # 2KB
+    file1.write_bytes(b"0" * 1024)  # 1KB
+    file2.write_bytes(b"0" * 2048)  # 2KB
 
     # Directory size should include both (must call separately for each dir)
     size1 = dm.get_directory_size(str(dir1))
@@ -424,6 +433,7 @@ def test_cleanup_across_multiple_directories(temp_dir):
 
     # Create old files in both directories
     import time
+
     old_time = time.time() - (10 * 24 * 3600)  # 10 days old
 
     file1 = dir1 / "old1.log"
@@ -443,8 +453,8 @@ def test_cleanup_across_multiple_directories(temp_dir):
 
 def test_cleanup_respects_directory_boundaries(temp_dir):
     """Test age-based cleanup respects directory boundaries"""
-    import time
     import os
+    import time
 
     monitored_dir = Path(temp_dir) / "monitored"
     external_dir = Path(temp_dir) / "external"
@@ -479,6 +489,7 @@ def test_cleanup_respects_directory_boundaries(temp_dir):
 # ============================================
 # RACE CONDITION TESTS
 # ============================================
+
 
 def test_file_deleted_during_cleanup(temp_dir):
     """Test cleanup handles file deleted externally during operation"""
@@ -563,6 +574,7 @@ def test_permission_denied_during_cleanup(temp_dir):
 # KEEP_UNTIL EDGE CASES
 # ============================================
 
+
 def test_keep_until_in_past(temp_dir):
     """Test files with keep_until already expired are deleted immediately"""
     dm = DiskManager([temp_dir])
@@ -573,6 +585,7 @@ def test_keep_until_in_past(temp_dir):
 
     # Mark with keep_until in the past
     import time
+
     past_time = time.time() - (10 * 24 * 3600)  # 10 days ago
 
     dm.uploaded_files[str(test_file)] = past_time
@@ -610,6 +623,7 @@ def test_keep_until_exact_boundary(temp_dir):
 
     # Mark with keep_until exactly now (within 1 second)
     import time
+
     boundary_time = time.time() + 1  # 1 second from now
 
     dm.uploaded_files[str(test_file)] = boundary_time
@@ -625,6 +639,7 @@ def test_keep_until_exact_boundary(temp_dir):
 # ============================================
 # UPLOADED FILES TRACKING TESTS
 # ============================================
+
 
 def test_uploaded_files_removal_from_tracking(temp_dir):
     """Test deleted files are removed from uploaded tracking"""
@@ -672,6 +687,7 @@ def test_get_uploaded_files_count(temp_dir):
 # LARGE-SCALE TESTS (1000+ FILES)
 # ============================================
 
+
 def test_cleanup_with_1000_files(temp_dir):
     """Test cleanup performance with 1000+ files"""
     dm = DiskManager([temp_dir])
@@ -704,8 +720,8 @@ def test_cleanup_with_1000_files(temp_dir):
 
 def test_age_based_cleanup_with_many_files(temp_dir):
     """Test age-based cleanup with many files"""
-    import time
     import os
+    import time
 
     dm = DiskManager([temp_dir])
 
@@ -763,6 +779,7 @@ def test_age_based_cleanup_with_many_files(temp_dir):
 # CALLBACK INTEGRATION TESTS
 # ============================================
 
+
 def test_on_file_deleted_callback(temp_dir):
     """Test callback is called when file is deleted"""
     deleted_files = []
@@ -817,6 +834,7 @@ def test_callback_with_multiple_deletions(temp_dir):
 # DISK SPACE CALCULATION TESTS
 # ============================================
 
+
 def test_check_disk_space_available(temp_dir):
     """Test disk space availability check"""
     dm = DiskManager([temp_dir], reserved_gb=0.001)  # 1MB reserved
@@ -850,8 +868,8 @@ def test_disk_usage_with_very_large_files(temp_dir):
 
     # Create large file (10MB)
     large_file = Path(temp_dir) / "large.log"
-    with open(large_file, 'wb') as f:
-        f.write(b'0' * (10 * 1024 * 1024))
+    with open(large_file, "wb") as f:
+        f.write(b"0" * (10 * 1024 * 1024))
 
     size = dm.get_directory_size(temp_dir)
     assert size >= 10 * 1024 * 1024
@@ -863,6 +881,7 @@ def test_disk_usage_with_very_large_files(temp_dir):
 # ============================================
 # System Directory Protection Tests
 # ============================================
+
 
 def test_system_directory_detection():
     """Test that system directories are correctly detected"""
@@ -890,16 +909,13 @@ def test_pattern_matching_blocks_system_directory(temp_dir):
     # Create config with pattern
     dir_configs = {
         "/var/log": {
-            'pattern': 'syslog.*',
-            'recursive': False,
-            'allow_deletion': True  # Even with allow_deletion=true...
+            "pattern": "syslog.*",
+            "recursive": False,
+            "allow_deletion": True,  # Even with allow_deletion=true...
         }
     }
 
-    dm = DiskManager(
-        log_directories=["/var/log"],
-        directory_configs=dir_configs
-    )
+    dm = DiskManager(log_directories=["/var/log"], directory_configs=dir_configs)
 
     # System directory files should be blocked (even if pattern matches)
     syslog_file = Path("/var/log/syslog.1")
@@ -917,16 +933,13 @@ def test_pattern_matching_respects_allow_deletion_false(temp_dir):
     # Config with allow_deletion=false
     dir_configs = {
         str(Path(temp_dir).resolve()): {
-            'pattern': '*.log',
-            'recursive': True,
-            'allow_deletion': False
+            "pattern": "*.log",
+            "recursive": True,
+            "allow_deletion": False,
         }
     }
 
-    dm = DiskManager(
-        log_directories=[temp_dir],
-        directory_configs=dir_configs
-    )
+    dm = DiskManager(log_directories=[temp_dir], directory_configs=dir_configs)
 
     # File matches pattern but allow_deletion=false
     result = dm._matches_pattern(test_file)
@@ -943,16 +956,13 @@ def test_pattern_matching_respects_allow_deletion_true(temp_dir):
     # Config with allow_deletion=true
     dir_configs = {
         str(Path(temp_dir).resolve()): {
-            'pattern': '*.log',
-            'recursive': True,
-            'allow_deletion': True
+            "pattern": "*.log",
+            "recursive": True,
+            "allow_deletion": True,
         }
     }
 
-    dm = DiskManager(
-        log_directories=[temp_dir],
-        directory_configs=dir_configs
-    )
+    dm = DiskManager(log_directories=[temp_dir], directory_configs=dir_configs)
 
     # File matches pattern and allow_deletion=true
     result = dm._matches_pattern(test_file)
@@ -969,16 +979,13 @@ def test_pattern_matching_default_allow_deletion(temp_dir):
     # Config WITHOUT allow_deletion specified (should default to true)
     dir_configs = {
         str(Path(temp_dir).resolve()): {
-            'pattern': '*.log',
-            'recursive': True
+            "pattern": "*.log",
+            "recursive": True,
             # allow_deletion not specified
         }
     }
 
-    dm = DiskManager(
-        log_directories=[temp_dir],
-        directory_configs=dir_configs
-    )
+    dm = DiskManager(log_directories=[temp_dir], directory_configs=dir_configs)
 
     # Should default to allow_deletion=true
     result = dm._matches_pattern(test_file)
@@ -993,16 +1000,13 @@ def test_age_cleanup_skips_system_directory():
 
     dir_configs = {
         "/var/log": {
-            'pattern': 'syslog.*',
-            'recursive': False,
-            'allow_deletion': True  # Even if mistakenly set to true
+            "pattern": "syslog.*",
+            "recursive": False,
+            "allow_deletion": True,  # Even if mistakenly set to true
         }
     }
 
-    dm = DiskManager(
-        log_directories=["/var/log"],
-        directory_configs=dir_configs
-    )
+    dm = DiskManager(log_directories=["/var/log"], directory_configs=dir_configs)
 
     # Mock file in /var/log
     fake_file = Path("/var/log/syslog.1")
@@ -1016,16 +1020,13 @@ def test_emergency_cleanup_skips_system_directory():
     """Test that emergency cleanup skips system directories"""
     dir_configs = {
         "/var/log": {
-            'pattern': '*',
-            'recursive': False,
-            'allow_deletion': True  # Even if mistakenly set to true
+            "pattern": "*",
+            "recursive": False,
+            "allow_deletion": True,  # Even if mistakenly set to true
         }
     }
 
-    dm = DiskManager(
-        log_directories=["/var/log"],
-        directory_configs=dir_configs
-    )
+    dm = DiskManager(log_directories=["/var/log"], directory_configs=dir_configs)
 
     # Mock file in /var/log
     fake_file = Path("/var/log/kern.log")
@@ -1054,16 +1055,13 @@ def test_recursive_false_blocks_subdirectory_files(temp_dir):
     # Config with recursive=false
     dir_configs = {
         str(Path(temp_dir).resolve()): {
-            'pattern': '*.log',
-            'recursive': False,  # Don't delete from subdirectories
-            'allow_deletion': True
+            "pattern": "*.log",
+            "recursive": False,  # Don't delete from subdirectories
+            "allow_deletion": True,
         }
     }
 
-    dm = DiskManager(
-        log_directories=[temp_dir],
-        directory_configs=dir_configs
-    )
+    dm = DiskManager(log_directories=[temp_dir], directory_configs=dir_configs)
 
     # Top-level file should be allowed
     result_top = dm._matches_pattern(top_file)
@@ -1085,16 +1083,13 @@ def test_recursive_true_allows_subdirectory_files(temp_dir):
     # Config with recursive=true
     dir_configs = {
         str(Path(temp_dir).resolve()): {
-            'pattern': '*.log',
-            'recursive': True,  # Allow deletion from subdirectories
-            'allow_deletion': True
+            "pattern": "*.log",
+            "recursive": True,  # Allow deletion from subdirectories
+            "allow_deletion": True,
         }
     }
 
-    dm = DiskManager(
-        log_directories=[temp_dir],
-        directory_configs=dir_configs
-    )
+    dm = DiskManager(log_directories=[temp_dir], directory_configs=dir_configs)
 
     # Subdirectory file should be allowed
     result = dm._matches_pattern(nested_file)
@@ -1112,16 +1107,13 @@ def test_recursive_default_true(temp_dir):
     # Config WITHOUT recursive specified
     dir_configs = {
         str(Path(temp_dir).resolve()): {
-            'pattern': '*.log',
-            'allow_deletion': True
+            "pattern": "*.log",
+            "allow_deletion": True,
             # recursive not specified
         }
     }
 
-    dm = DiskManager(
-        log_directories=[temp_dir],
-        directory_configs=dir_configs
-    )
+    dm = DiskManager(log_directories=[temp_dir], directory_configs=dir_configs)
 
     # Should default to recursive=true
     result = dm._matches_pattern(nested_file)

@@ -116,7 +116,7 @@ log_directories:
 s3:
   # S3 bucket name for log storage
   bucket: t01logs
-  
+
   # AWS China region
   # Options: cn-north-1 (Beijing), cn-northwest-1 (Ningxia)
   region: cn-north-1
@@ -125,7 +125,7 @@ s3:
   # Should contain credentials and config files
   # Uses ${HOME} for cross-environment compatibility
   credentials_path: ${HOME}/.aws
-  
+
   # AWS profile name to use
   # Profile must be configured in ~/.aws/credentials and ~/.aws/config
   profile: china
@@ -142,18 +142,18 @@ upload:
   # 2. Scheduled upload: Process entire queue at regular intervals
   #
   # Both mechanisms can trigger uploads independently
-  
+
   schedule:
     # Upload mode
     # Options:
     #   "daily" - Upload queue once per day at specific time
     #   "interval" - Upload queue every N hours/minutes
     mode: "interval"
-    
+
     # Daily mode settings (only used if mode="daily")
     # Time to upload queue once per day (HH:MM format, 24-hour)
     daily_time: "15:00"
-    
+
     # Interval mode settings (only used if mode="interval")
     # Upload queue every interval_hours + interval_minutes
     # Examples:
@@ -169,7 +169,7 @@ upload:
     # (Balances upload frequency with network availability)
     interval_hours: 2
     interval_minutes: 0
-  
+
   # ==========================================
   # FILE STABILITY CHECK
   # ==========================================
@@ -177,7 +177,7 @@ upload:
   # This ensures files are completely written before processing
   # RECOMMENDED: 60 seconds for most use cases
   file_stable_seconds: 60
-  
+
   # ==========================================
   # OPERATIONAL HOURS
   # ==========================================
@@ -194,13 +194,13 @@ upload:
     # Enable operational hours restriction
     # Set to false to allow immediate uploads 24/7
     enabled: true
-    
+
     # Start time for immediate uploads (HH:MM format, 24-hour)
     start: "09:00"
-    
+
     # End time for immediate uploads (HH:MM format, 24-hour)
     end: "18:00"
-  
+
   # ==========================================
   # BATCH UPLOAD SETTINGS
   # ==========================================
@@ -229,7 +229,7 @@ upload:
   # queue (including those 2 failed files), regardless of batch_upload setting.
   batch_upload:
     enabled: true
-  
+
   # ==========================================
   # UPLOAD ON SERVICE START
   # ==========================================
@@ -246,14 +246,14 @@ upload:
   # RECOMMENDED: true for mobile vehicles
   # (Ensures recent logs uploaded quickly after restart)
   upload_on_start: true
-  
+
   # ==========================================
   # QUEUE PERSISTENCE
   # ==========================================
   # Path to queue file (stores pending uploads across restarts)
   # Queue survives daemon restarts, system reboots, crashes
   queue_file: /var/lib/tvm-upload/queue.json
-  
+
   # ==========================================
   # STARTUP SCAN
   # ==========================================
@@ -275,12 +275,12 @@ upload:
   scan_existing_files:
     # Enable startup scan
     enabled: true
-    
+
     # Maximum age of files to upload (days)
     # Files older than this are ignored
     # RECOMMENDED: 3 days (balances coverage with upload volume)
     max_age_days: 3
-  
+
   # ==========================================
   # PROCESSED FILES REGISTRY
   # ==========================================
@@ -299,7 +299,7 @@ upload:
   processed_files_registry:
     # Path to registry file
     registry_file: /var/lib/tvm-upload/processed_files.json
-    
+
     # How long to keep registry entries (days)
     # Entries older than this are automatically removed
     # RECOMMENDED: 30 days (keeps registry size manageable)
@@ -350,11 +350,11 @@ deletion:
     # Maximum file age (days)
     # Files older than this are deleted
     max_age_days: 14
-    
+
     # Time to run daily cleanup (HH:MM format, 24-hour)
     # RECOMMENDED: 02:00 (low activity period)
     schedule_time: "02:00"
-  
+
   # ==========================================
   # EMERGENCY CLEANUP (CRITICAL!)
   # ==========================================
@@ -449,11 +449,11 @@ disk:
   # System tries to keep at least this much space free
   # RECOMMENDED: 70 GB for high-volume logging vehicles
   reserved_gb: 70
-  
+
   # Disk usage threshold for warnings (0-1)
   # At 90% usage, start cleaning uploaded files
   warning_threshold: 0.90
-  
+
   # Disk usage threshold for emergency cleanup (0-1)
   # At 95% usage, delete ANY old files (critical)
   critical_threshold: 0.95

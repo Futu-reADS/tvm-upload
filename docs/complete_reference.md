@@ -93,8 +93,8 @@ The install script automatically:
 **Manual Installation**
 
 ```bash
-# Install from requirements
-pip install -r requirements.txt
+# Install dependencies (from pyproject.toml)
+pip install -e .
 
 # Create required directories
 sudo mkdir -p /var/lib/tvm-upload /etc/tvm-upload /var/log/tvm-upload
@@ -829,11 +829,35 @@ tvm-upload/
 │   └── config.yaml.example     # Comprehensive config documentation
 ├── systemd/
 │   └── tvm-upload.service      # systemd service definition
-├── requirements.txt            # Python dependencies
-├── setup.py                    # Package setup
-├── pytest.ini                  # Test configuration
+├── pyproject.toml              # Modern Python project configuration
+├── .editorconfig               # Code style configuration
+├── .pre-commit-config.yaml     # Pre-commit hooks
+├── Makefile                    # Development automation
+├── CONTRIBUTING.md             # Contribution guidelines
+├── CHANGELOG.md                # Version history
+├── LICENSE                     # License information
 ├── CLAUDE.md                   # Claude Code guidance
-└── README.md                   # This file
+└── README.md                   # Project overview
+```
+
+### Development Workflow (Using Makefile)
+
+The project includes a Makefile to simplify common development tasks. Use `make help` to see all available commands.
+
+**Quick setup:**
+```bash
+make dev-setup              # Install dependencies + create config
+make install-dev-tools      # Install linters, formatters & pre-commit hooks
+make test-fast              # Run unit tests (~5 sec)
+```
+
+**Common commands:**
+```bash
+make test                   # Run unit + integration tests
+make test-manual            # Run manual test scenarios (~24 min)
+make lint                   # Run flake8 and pylint
+make format                 # Format code with black
+make run                    # Run the application
 ```
 
 ### Adding New Features
@@ -843,8 +867,9 @@ tvm-upload/
 3. **Integration test** in `tests/integration/` if component interaction needed
 4. **Update config schema** in `config_manager.py` if adding config options
 5. **Update config.yaml.example** with documentation
-6. **Run tests:** `pytest tests/ -v`
-7. **Check coverage:** `pytest --cov=src --cov-report=term-missing`
+6. **Run tests:** `make test` or `pytest tests/ -v`
+7. **Check coverage:** `make test-coverage`
+8. **Check code quality:** `make lint && make format`
 
 ### Code Style Guidelines
 
@@ -858,10 +883,24 @@ tvm-upload/
 
 ### Dependencies
 
+All dependencies are managed in `pyproject.toml`:
+
+**Production dependencies** (`pip install -e .`):
 - **watchdog** - File system monitoring
 - **boto3** - AWS S3 client
 - **pyyaml** - Configuration parsing
-- **pytest**, **pytest-cov**, **pytest-mock** - Testing framework
+
+**Testing dependencies** (`pip install -e ".[test]"`):
+- **pytest** - Test framework
+- **pytest-cov** - Coverage reports
+- **pytest-mock** - Mocking utilities
+
+**Development tools** (`pip install -e ".[dev]"`):
+- **black** - Code formatter
+- **flake8** - Linter
+- **pylint** - Static analyzer
+- **isort** - Import sorter
+- **pre-commit** - Git hooks
 
 ## AWS China Specifics
 

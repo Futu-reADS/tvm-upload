@@ -45,17 +45,29 @@ sudo ./scripts/deployment/health_check.sh
 ### Develop & Test (Local)
 
 ```bash
-# Setup
+# Quick setup with Makefile
+make dev-setup              # Install deps + create config
+make test-fast              # Run unit tests (~5s)
+make test                   # Run unit + integration (~30s)
+
+# Or traditional setup
 python3 -m venv venv && source venv/bin/activate
 pip install -e ".[test]"
-
-# Run tests
-./scripts/testing/run_tests.sh fast        # Unit + integration (~30s)
-./scripts/testing/run_tests.sh all         # All tests (~80s)
+./scripts/testing/run_tests.sh fast
 
 # Run locally
+make run                    # Using Makefile
+# OR
 python3 src/main.py --config config/config.yaml --log-level DEBUG
 ```
+
+**💡 Tip:** Use `make help` to see all available commands!
+
+**📦 Dependency Management:**
+All dependencies are defined in `pyproject.toml`:
+- **Production** (`pip install -e .`): watchdog, boto3, pyyaml
+- **Testing** (`pip install -e ".[test]"`): + pytest, pytest-cov, pytest-mock
+- **Development** (`pip install -e ".[dev]"`): + black, flake8, pylint, isort, pre-commit
 
 ---
 
@@ -371,20 +383,45 @@ tvm-upload/
 │   └── lib/                # Shared libraries
 ├── docs/                   # Documentation
 ├── config/                 # Configuration templates
-└── systemd/                # systemd service definition
+├── systemd/                # systemd service definition
+├── .github/                # GitHub templates
+│   ├── ISSUE_TEMPLATE/     # Bug report, feature request templates
+│   └── pull_request_template.md
+├── CHANGELOG.md            # Version history and release notes
+├── CONTRIBUTING.md         # Contribution guidelines
+├── LICENSE                 # Proprietary license
+├── Makefile                # Development automation (make help)
+├── pyproject.toml          # Modern Python project config
+├── .editorconfig           # Code style configuration
+├── .flake8                 # Flake8 linter configuration
+├── .pylintrc               # Pylint configuration
+└── .pre-commit-config.yaml # Pre-commit hooks for code quality
 ```
 
 ---
 
 ## 🤝 Contributing
 
-1. **Write tests first** (TDD approach)
-2. **Run tests locally**: `./scripts/testing/run_tests.sh fast`
-3. **Check coverage**: `./scripts/testing/run_tests.sh all --coverage`
-4. **Follow code style**: Type hints, docstrings, `pathlib.Path`
-5. **Update docs** if adding features
+We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
 
-See [Complete Reference](docs/complete_reference.md) for development guidelines.
+**Quick Start:**
+```bash
+make dev-setup          # Setup development environment
+make install-dev-tools  # Install linters, formatters & pre-commit hooks (optional)
+make test-fast          # Run tests
+make lint               # Check code quality
+```
+
+**Note:** `make lint` will skip tools that aren't installed. Run `make install-dev-tools` to install all linters and enable pre-commit hooks.
+
+**Before submitting a PR:**
+- ✅ Write tests (TDD approach)
+- ✅ Run `make test` - all tests must pass
+- ✅ Run `make lint` - no linting errors
+- ✅ Update documentation
+- ✅ Follow [commit message guidelines](CONTRIBUTING.md#commit-message-guidelines)
+
+See [CONTRIBUTING.md](CONTRIBUTING.md) for complete guidelines.
 
 ---
 

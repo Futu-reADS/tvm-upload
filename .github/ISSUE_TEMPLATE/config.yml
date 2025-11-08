@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: 📖 Documentation
+    url: https://github.com/Futu-reADS/tvm-upload/tree/main/docs
+    about: Check our comprehensive documentation for guides and references
+  - name: ❓ FAQ
+    url: https://github.com/Futu-reADS/tvm-upload/blob/main/docs/faq.md
+    about: Frequently asked questions and common solutions
+  - name: 🔧 Troubleshooting
+    url: https://github.com/Futu-reADS/tvm-upload/blob/main/docs/complete_reference.md#troubleshooting
+    about: Troubleshooting guide for common issues

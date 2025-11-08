@@ -4,18 +4,19 @@ Integration test - File Monitor -> Upload Manager -> Disk Manager
 Comprehensive coverage of component interactions
 """
 
-import pytest
-from pathlib import Path
+import os
+import shutil
 import tempfile
 import time
-import shutil
-import os
-from unittest.mock import patch, Mock
 from datetime import datetime, timedelta
+from pathlib import Path
+from unittest.mock import Mock, patch
 
+import pytest
+
+from src.disk_manager import DiskManager
 from src.file_monitor import FileMonitor
 from src.upload_manager import UploadManager
-from src.disk_manager import DiskManager
 
 
 class TestFileMonitorIntegration:
@@ -40,19 +41,16 @@ class TestFileMonitorIntegration:
             disk_manager.mark_uploaded(filepath)
 
         config = {
-            'upload': {
-                'processed_files_registry': {
-                    'registry_file': '/tmp/test_registry.json',
-                    'retention_days': 1
+            "upload": {
+                "processed_files_registry": {
+                    "registry_file": "/tmp/test_registry.json",
+                    "retention_days": 1,
                 }
             }
         }
 
         file_monitor = FileMonitor(
-            [temp_dir],
-            mock_upload_callback,
-            config=config,
-            stability_seconds=2
+            [temp_dir], mock_upload_callback, config=config, stability_seconds=2
         )
 
         try:
@@ -85,10 +83,10 @@ class TestFileMonitorIntegration:
 
         # Use isolated registry to avoid interference from other tests
         config = {
-            'upload': {
-                'processed_files_registry': {
-                    'registry_file': f'{temp_dir}/test_stability_registry.json',
-                    'retention_days': 1
+            "upload": {
+                "processed_files_registry": {
+                    "registry_file": f"{temp_dir}/test_stability_registry.json",
+                    "retention_days": 1,
                 }
             }
         }
@@ -96,12 +94,7 @@ class TestFileMonitorIntegration:
         def mock_callback(filepath):
             uploaded_files.append(filepath)
 
-        file_monitor = FileMonitor(
-            [temp_dir],
-            mock_callback,
-            stability_seconds=2,
-            config=config
-        )
+        file_monitor = FileMonitor([temp_dir], mock_callback, stability_seconds=2, config=config)
 
         try:
             file_monitor.start()
@@ -130,33 +123,22 @@ class TestFileMonitorIntegration:
             uploaded_files.append(filepath)
 
         config = {
-            'upload': {
-                'processed_files_registry': {
-                    'registry_file': '/tmp/test_registry.json',
-                    'retention_days': 1
+            "upload": {
+                "processed_files_registry": {
+                    "registry_file": "/tmp/test_registry.json",
+                    "retention_days": 1,
                 }
             }
         }
 
-        file_monitor = FileMonitor(
-            [temp_dir],
-            mock_callback,
-            config=config,
-            stability_seconds=1
-        )
+        file_monitor = FileMonitor([temp_dir], mock_callback, config=config, stability_seconds=1)
 
         try:
             file_monitor.start()
             time.sleep(0.5)
 
             # Create various file types
-            files = [
-                "test.log",
-                "data.txt",
-                "info.csv",
-                "metrics.json",
-                "debug.out"
-            ]
+            files = ["test.log", "data.txt", "info.csv", "metrics.json", "debug.out"]
 
             for filename in files:
                 (Path(temp_dir) / filename).write_text(f"content for {filename}")
@@ -180,10 +162,10 @@ class TestFileMonitorIntegration:
             uploaded_files.append(filepath)
 
         config = {
-            'upload': {
-                'processed_files_registry': {
-                    'registry_file': '/tmp/test_registry.json',
-                    'retention_days': 1
+            "upload": {
+                "processed_files_registry": {
+                    "registry_file": "/tmp/test_registry.json",
+                    "retention_days": 1,
                 }
             }
         }
@@ -199,7 +181,7 @@ class TestFileMonitorIntegration:
                 "empty.log": 0,
                 "small.log": 1024,  # 1 KB
                 "medium.log": 1024 * 1024,  # 1 MB
-                "large.log": 10 * 1024 * 1024  # 10 MB
+                "large.log": 10 * 1024 * 1024,  # 10 MB
             }
 
             for filename, size in sizes.items():
@@ -207,7 +189,7 @@ class TestFileMonitorIntegration:
                 if size == 0:
                     filepath.write_text("")
                 else:
-                    filepath.write_bytes(b'x' * size)
+                    filepath.write_bytes(b"x" * size)
 
             time.sleep(2.5)
 
@@ -224,10 +206,10 @@ class TestFileMonitorIntegration:
             uploaded_files.append(filepath)
 
         config = {
-            'upload': {
-                'processed_files_registry': {
-                    'registry_file': '/tmp/test_registry.json',
-                    'retention_days': 1
+            "upload": {
+                "processed_files_registry": {
+                    "registry_file": "/tmp/test_registry.json",
+                    "retention_days": 1,
                 }
             }
         }
@@ -244,7 +226,7 @@ class TestFileMonitorIntegration:
                 "test_file.log",
                 "test.file.log",
                 "test 2024.log",
-                "test(1).log"
+                "test(1).log",
             ]
 
             for filename in filenames:
@@ -263,10 +245,10 @@ class TestFileMonitorIntegration:
 
         # Use isolated registry
         config = {
-            'upload': {
-                'processed_files_registry': {
-                    'registry_file': f'{temp_dir}/test_concurrent_registry.json',
-                    'retention_days': 1
+            "upload": {
+                "processed_files_registry": {
+                    "registry_file": f"{temp_dir}/test_concurrent_registry.json",
+                    "retention_days": 1,
                 }
             }
         }
@@ -302,10 +284,10 @@ class TestFileMonitorIntegration:
             upload_timestamps.append(time.time())
 
         config = {
-            'upload': {
-                'processed_files_registry': {
-                    'registry_file': '/tmp/test_registry.json',
-                    'retention_days': 1
+            "upload": {
+                "processed_files_registry": {
+                    "registry_file": "/tmp/test_registry.json",
+                    "retention_days": 1,
                 }
             }
         }
@@ -345,10 +327,10 @@ class TestFileMonitorIntegration:
             disk_manager.mark_uploaded(filepath, keep_until_days=0)
 
         config = {
-            'upload': {
-                'processed_files_registry': {
-                    'registry_file': '/tmp/test_registry.json',
-                    'retention_days': 1
+            "upload": {
+                "processed_files_registry": {
+                    "registry_file": "/tmp/test_registry.json",
+                    "retention_days": 1,
                 }
             }
         }
@@ -363,7 +345,7 @@ class TestFileMonitorIntegration:
             files = []
             for i in range(5):
                 f = Path(temp_dir) / f"cleanup_test_{i}.log"
-                f.write_bytes(b'x' * 1024 * 1024)  # 1 MB each
+                f.write_bytes(b"x" * 1024 * 1024)  # 1 MB each
                 files.append(f)
 
             time.sleep(2.5)
@@ -413,11 +395,11 @@ class TestFileMonitorIntegration:
         # Create and mark files as uploaded
         for i in range(5):
             f = Path(temp_dir) / f"emergency_{i}.log"
-            f.write_bytes(b'x' * 1024 * 1024)
+            f.write_bytes(b"x" * 1024 * 1024)
             disk_manager.mark_uploaded(str(f), keep_until_days=30)
 
         # Mock low disk space
-        with patch.object(disk_manager, 'check_disk_space', return_value=False):
+        with patch.object(disk_manager, "check_disk_space", return_value=False):
             # Emergency cleanup should delete uploaded files
             deleted = disk_manager.cleanup_old_files()
             assert deleted >= 0, "Should attempt emergency cleanup"
@@ -428,13 +410,14 @@ class TestFileMonitorIntegration:
 
         # Put registry OUTSIDE monitored directory to avoid it being detected
         import tempfile
+
         registry_dir = tempfile.mkdtemp()
 
         config = {
-            'upload': {
-                'processed_files_registry': {
-                    'registry_file': f'{registry_dir}/registry.json',
-                    'retention_days': 30
+            "upload": {
+                "processed_files_registry": {
+                    "registry_file": f"{registry_dir}/registry.json",
+                    "retention_days": 30,
                 }
             }
         }
@@ -443,12 +426,7 @@ class TestFileMonitorIntegration:
             uploaded_files.append(filepath)
             return True
 
-        file_monitor = FileMonitor(
-            [temp_dir],
-            mock_callback,
-            stability_seconds=1,
-            config=config
-        )
+        file_monitor = FileMonitor([temp_dir], mock_callback, stability_seconds=1, config=config)
 
         try:
             file_monitor.start()
@@ -466,10 +444,7 @@ class TestFileMonitorIntegration:
 
             uploaded_files.clear()
             file_monitor2 = FileMonitor(
-                [temp_dir],
-                mock_callback,
-                stability_seconds=1,
-                config=config
+                [temp_dir], mock_callback, stability_seconds=1, config=config
             )
 
             file_monitor2.start()
@@ -498,19 +473,16 @@ class TestFileMonitorIntegration:
                 uploaded_files.append(filepath)
 
             config = {
-                'upload': {
-                    'processed_files_registry': {
-                        'registry_file': '/tmp/test_registry.json',
-                        'retention_days': 1
+                "upload": {
+                    "processed_files_registry": {
+                        "registry_file": "/tmp/test_registry.json",
+                        "retention_days": 1,
                     }
                 }
             }
 
             file_monitor = FileMonitor(
-                [temp_dir1, temp_dir2],
-                mock_callback,
-                config=config,
-                stability_seconds=1
+                [temp_dir1, temp_dir2], mock_callback, config=config, stability_seconds=1
             )
 
             file_monitor.start()
@@ -541,10 +513,10 @@ class TestFileMonitorIntegration:
             # Second call succeeds
 
         config = {
-            'upload': {
-                'processed_files_registry': {
-                    'registry_file': '/tmp/test_registry.json',
-                    'retention_days': 1
+            "upload": {
+                "processed_files_registry": {
+                    "registry_file": "/tmp/test_registry.json",
+                    "retention_days": 1,
                 }
             }
         }

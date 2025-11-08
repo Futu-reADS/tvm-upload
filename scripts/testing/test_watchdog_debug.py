@@ -1,12 +1,15 @@
+import tempfile
 import time
 from pathlib import Path
-import tempfile
-from watchdog.observers import Observer
+
 from watchdog.events import FileSystemEventHandler
+from watchdog.observers import Observer
+
 
 class DebugHandler(FileSystemEventHandler):
     def on_any_event(self, event):
         print(f"EVENT: {event.event_type} - {event.src_path}")
+
 
 # Create temp directory
 temp_dir = Path(tempfile.mkdtemp())
@@ -33,4 +36,5 @@ observer.join()
 
 # Cleanup
 import shutil
+
 shutil.rmtree(temp_dir)

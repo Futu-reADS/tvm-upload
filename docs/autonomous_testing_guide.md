@@ -193,23 +193,26 @@ tests/unit/
 
 ### Running Unit Tests
 
-**Run all unit tests:**
+**Using Makefile (recommended):**
 ```bash
+make test-fast              # Run unit tests only (~5 sec)
+make test-unit              # Run unit tests with verbose output
+make test                   # Run unit + integration tests
+make test-coverage          # Run tests with coverage report
+```
+
+**Using pytest directly:**
+```bash
+# Run all unit tests
 pytest tests/unit/ -v
-```
 
-**Run specific test file:**
-```bash
+# Run specific test file
 pytest tests/unit/test_upload_manager.py -v
-```
 
-**Run specific test:**
-```bash
+# Run specific test
 pytest tests/unit/test_upload_manager.py::test_build_s3_key -v
-```
 
-**With coverage:**
-```bash
+# With coverage
 pytest tests/unit/ --cov=src --cov-report=html
 ```
 
@@ -370,13 +373,18 @@ tests/integration/
 
 ### Running Integration Tests
 
-**Run all integration tests:**
+**Using Makefile (recommended):**
 ```bash
-pytest tests/integration/ -v
+make test-integration       # Run integration tests
+make test                   # Run unit + integration tests
 ```
 
-**With mocked AWS responses:**
+**Using pytest directly:**
 ```bash
+# Run all integration tests
+pytest tests/integration/ -v
+
+# With mocked AWS responses
 # Fixtures auto-load from conftest.py
 pytest tests/integration/ -v --tb=short
 ```
@@ -507,18 +515,21 @@ export TEST_BUCKET=t01logs
 
 ### Running E2E Tests
 
-**All E2E tests (requires AWS):**
+**Using Makefile (recommended):**
 ```bash
+make test-e2e               # Run E2E tests (requires AWS credentials)
+make test-all               # Run ALL tests including E2E
+```
+
+**Using pytest directly:**
+```bash
+# All E2E tests (requires AWS)
 pytest tests/e2e/ -v -m e2e
-```
 
-**Specific test file:**
-```bash
+# Specific test file
 pytest tests/e2e/test_s3_real.py -v -m e2e
-```
 
-**Skip slow tests:**
-```bash
+# Skip slow tests
 pytest tests/e2e/ -v -m "e2e and not slow"
 ```
 
@@ -670,8 +681,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -r requirements.txt
-          pip install -r requirements-dev.txt
+          pip install -e ".[test]"
 
       - name: Run Unit Tests
         run: |
@@ -697,8 +707,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -r requirements.txt
-          pip install -r requirements-dev.txt
+          pip install -e ".[test]"
 
       - name: Run Integration Tests
         run: |
@@ -729,8 +738,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -r requirements.txt
-          pip install -r requirements-dev.txt
+          pip install -e ".[test]"
 
       - name: Run E2E Tests
         env:

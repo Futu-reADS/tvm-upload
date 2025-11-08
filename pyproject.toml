@@ -1,0 +1,166 @@
+[build-system]
+requires = ["setuptools>=65.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "tvm-upload"
+version = "2.1.0"
+description = "TVM Log Upload System for Autoware Vehicles"
+authors = [
+    {name = "Avinash Singh", email = "avinash.singh@futu-re.co.jp"}
+]
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "Proprietary"}
+keywords = ["aws", "s3", "upload", "logging", "autoware", "china"]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Intended Audience :: Developers",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Operating System :: POSIX :: Linux",
+    "Topic :: System :: Monitoring",
+    "Topic :: System :: Logging",
+]
+
+dependencies = [
+    "watchdog>=3.0.0",
+    "boto3>=1.28.0",
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+test = [
+    "pytest>=7.4.0",
+    "pytest-cov>=4.1.0",
+    "pytest-mock>=3.11.0",
+]
+dev = [
+    "black>=23.0.0",
+    "flake8>=6.0.0",
+    "pylint>=2.17.0",
+    "isort>=5.12.0",
+    "pre-commit>=3.3.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/Futu-reADS/tvm-upload"
+Documentation = "https://github.com/Futu-reADS/tvm-upload/tree/main/docs"
+Repository = "https://github.com/Futu-reADS/tvm-upload"
+Issues = "https://github.com/Futu-reADS/tvm-upload/issues"
+Changelog = "https://github.com/Futu-reADS/tvm-upload/blob/main/CHANGELOG.md"
+
+[project.scripts]
+tvm-upload = "src.main:main"
+
+# ==================== Tool Configuration ====================
+
+[tool.black]
+line-length = 100
+target-version = ['py310', 'py311', 'py312']
+exclude = '''
+/(
+    \.git
+  | \.venv
+  | venv
+  | env
+  | build
+  | dist
+  | \.egg-info
+  | __pycache__
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 100
+skip_gitignore = true
+known_first_party = ["src"]
+sections = ["FUTURE", "STDLIB", "THIRDPARTY", "FIRSTPARTY", "LOCALFOLDER"]
+
+[tool.pylint.main]
+max-line-length = 100
+disable = [
+    "C0103",  # Invalid name (e.g., single letter variables)
+    "C0114",  # Missing module docstring
+    "R0913",  # Too many arguments
+    "R0914",  # Too many local variables
+]
+good-names = ["i", "j", "k", "ex", "f", "e", "_"]
+
+[tool.pylint.format]
+max-line-length = 100
+
+[tool.pylint.design]
+max-args = 7
+max-locals = 20
+max-attributes = 12
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = """
+    -v
+    --strict-markers
+    --tb=short
+    -m 'not e2e and not real_aws'
+"""
+markers = [
+    "unit: Unit tests (fast, always mocked, no AWS)",
+    "integration: Integration tests (mocked AWS, test interactions)",
+    "e2e: End-to-end tests (real AWS, runs in CI/CD)",
+    "real_aws: Tests requiring real AWS connection",
+    "slow: Slow-running tests (>5 seconds)",
+]
+console_output_style = "progress"
+log_cli = false
+log_cli_level = "INFO"
+log_cli_format = "%(asctime)s [%(levelname)8s] %(message)s"
+log_cli_date_format = "%H:%M:%S"
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "*/tests/*",
+    "*/test_*.py",
+    "*/__pycache__/*",
+    "*/venv/*",
+    "*/env/*",
+]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+]
+
+[tool.coverage.html]
+directory = "htmlcov"
+
+[tool.bandit]
+exclude_dirs = [
+    "tests/",
+    "venv/",
+    "env/",
+    "build/",
+    "dist/",
+]
+skips = [
+    "B101",  # assert_used - OK in tests
+    "B601",  # paramiko_calls - not used
+    "B108",  # hardcoded_tmp_directory - OK for tests
+    "B110",  # try_except_pass - sometimes necessary
+    "B324",  # hashlib - MD5 used for file integrity, not security
+]

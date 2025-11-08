@@ -3,7 +3,7 @@ name: E2E Tests (Real AWS - OIDC)
 
 on:
   push:
-    branches: [main,testing_tvm]
+    branches: [main, testing_tvm]
   workflow_dispatch:
   schedule:
     - cron: '0 2 * * *'  # 02:00 UTC (11:00 JST)
@@ -15,17 +15,17 @@ permissions:
 
 jobs:
   # ❌ REMOVED: precheck job - no longer needed with OIDC!
-  
+
   e2e-tests:
     name: E2E Tests (Real AWS - OIDC)
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    
+
     # ✅ SIMPLIFIED: No need to check for secrets with OIDC
     if: |
-      github.ref_name == 'main' || 
-      github.ref_name == 'testing_tvm' || 
-      github.event_name == 'workflow_dispatch' || 
+      github.ref_name == 'main' ||
+      github.ref_name == 'testing_tvm' ||
+      github.event_name == 'workflow_dispatch' ||
       github.event_name == 'schedule'
 
     steps:
@@ -44,7 +44,7 @@ jobs:
           pip install -r requirements.txt
           pip install pytest
 
-      - name: Install package  
+      - name: Install package
         run: pip install -e .
 
       # ✅ CHANGED: OIDC authentication (no secrets!)
