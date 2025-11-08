@@ -845,7 +845,7 @@ esac
 
 **Usage:**
 ```bash
-# Run all 16 manual tests
+# Run all 17 manual tests
 ./scripts/testing/run_manual_tests.sh all
 
 # Run specific test
@@ -912,11 +912,11 @@ esac
 ### 🎯 **What We've Achieved**
 
 1. **Comprehensive Test Coverage:**
-   - 16 manual tests for production validation (~24 min)
+   - 17 manual tests for production validation (~24 min)
    - 60 E2E tests covering all real AWS scenarios (~7.5 min)
-   - 42 integration tests for component interactions (~35 sec)
-   - 159 unit tests for individual functions (~5 sec)
-   - **Total: 277 tests (261 automated + 16 manual)**
+   - 90 integration tests for component interactions (~35 sec)
+   - 249 unit tests for individual functions (~5 sec)
+   - **Total: 416 tests (399 automated + 17 manual)**
 
 2. **Test Pyramid Implemented:**
    - Fast feedback from unit tests

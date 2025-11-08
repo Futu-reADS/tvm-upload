@@ -797,7 +797,7 @@ tvm-upload/
 │   ├── disk_manager.py         # Three-tier deletion policies
 │   ├── queue_manager.py        # Persistent JSON queue
 │   └── cloudwatch_manager.py   # CloudWatch metrics publishing
-├── tests/                      # Test suite (235+ tests)
+├── tests/                      # Test suite (400+ tests)
 │   ├── unit/                   # Fast unit tests (mocked)
 │   ├── integration/            # Integration tests (mocked AWS)
 │   └── e2e/                    # End-to-end tests (real AWS)
@@ -810,7 +810,7 @@ tvm-upload/
 │   ├── testing/                # Test execution
 │   │   ├── run_tests.sh        # Test runner with coverage
 │   │   ├── run_manual_tests.sh # Manual test orchestrator
-│   │   └── manual-tests/       # 16 manual test scenarios
+│   │   └── manual-tests/       # 17 manual test scenarios
 │   ├── diagnostics/            # Troubleshooting tools
 │   │   └── verify_aws_credentials.sh
 │   └── lib/                    # Shared libraries
