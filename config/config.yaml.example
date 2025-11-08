@@ -204,20 +204,29 @@ upload:
   # ==========================================
   # BATCH UPLOAD SETTINGS
   # ==========================================
-  # When enabled: New file trigger uploads entire queue
-  # When disabled: New file uploads only that file
+  # Controls behavior when an individual file becomes ready for upload.
+  #
+  # IMPORTANT: This setting ONLY applies to immediate uploads (when files become ready).
+  # Scheduled uploads and startup uploads ALWAYS process the entire queue,
+  # regardless of this setting.
+  #
+  # When enabled: New file becoming ready triggers upload of entire queue
+  # When disabled: New file becoming ready uploads only that single file
   #
   # RECOMMENDED: true (maximizes WiFi opportunities)
   #
   # Example with batch_upload enabled:
-  #   09:00 - Scheduled upload uploads 10 files, 2 fail
+  #   09:00 - Scheduled upload uploads 10 files, 2 fail (entire queue)
   #   10:05 - New file becomes ready
   #   10:05 - Uploads new file + 2 failed files (entire queue)
   #
   # Example with batch_upload disabled:
-  #   09:00 - Scheduled upload uploads 10 files, 2 fail
+  #   09:00 - Scheduled upload uploads 10 files, 2 fail (entire queue)
   #   10:05 - New file becomes ready
-  #   10:05 - Uploads only new file (2 failed files wait until 11:00)
+  #   10:05 - Uploads only new file (2 failed files wait until next scheduled upload)
+  #
+  # Note: Scheduled uploads at 11:00, 13:00, etc. will ALWAYS upload the entire
+  # queue (including those 2 failed files), regardless of batch_upload setting.
   batch_upload:
     enabled: true
   
@@ -312,17 +321,17 @@ deletion:
   #
   # Options:
   #   keep_days: 0  - Delete immediately after upload (saves space)
-  #   keep_days: 14 - Keep for 14 days after upload (for local debugging)
+  #   keep_days: 7  - Keep for 7 days after upload (for local debugging)
   #
   # If disabled, files are kept indefinitely (until age-based or emergency cleanup)
   after_upload:
     # Enable deletion after upload
     enabled: true
-    
+
     # Days to keep file after upload
-    # 0 = delete immediately, 14 = keep for 2 weeks
-    keep_days: 14
-  
+    # 0 = delete immediately, 7 = keep for 1 week
+    keep_days: 7
+
   # ==========================================
   # AGE-BASED CLEANUP (Safety Net)
   # ==========================================
@@ -332,15 +341,15 @@ deletion:
   # Use case: Prevent old files from accumulating
   # (e.g., files that failed to upload, orphaned files)
   #
-  # RECOMMENDED: max_age_days < keep_days
-  # (This ensures age-based cleanup doesn't delete files too early)
+  # RECOMMENDED: max_age_days > keep_days
+  # (This ensures age-based cleanup acts as safety net, not interfering with after_upload retention)
   age_based:
     # Enable age-based cleanup
     enabled: true
-    
+
     # Maximum file age (days)
     # Files older than this are deleted
-    max_age_days: 7
+    max_age_days: 14
     
     # Time to run daily cleanup (HH:MM format, 24-hour)
     # RECOMMENDED: 02:00 (low activity period)

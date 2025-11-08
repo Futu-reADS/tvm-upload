@@ -45,6 +45,9 @@ TEST_TERMINAL_DIR="$TEST_DIR/terminal"
 mkdir -p "$TEST_TERMINAL_DIR"
 log_success "Created test directory: $TEST_TERMINAL_DIR"
 
+# Check operational hours (critical for upload tests)
+check_operational_hours "$CONFIG_FILE"
+
 # Start service with test directory
 log_info "Starting TVM upload service..."
 if ! start_tvm_service "$CONFIG_FILE" "$SERVICE_LOG" "$TEST_DIR" "$TEST_VEHICLE_ID"; then

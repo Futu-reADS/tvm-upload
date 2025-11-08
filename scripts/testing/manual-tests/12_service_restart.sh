@@ -31,6 +31,9 @@ fi
 mkdir -p "$TEST_DIR/terminal"
 log_success "Created test directory"
 
+# Check operational hours (critical for upload tests)
+check_operational_hours "$CONFIG_FILE"
+
 # TEST 1: Normal shutdown and restart
 log_info "Test 1: Normal shutdown and restart..."
 

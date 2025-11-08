@@ -31,6 +31,9 @@ fi
 mkdir -p "$TEST_DIR/syslog"
 log_success "Created test directory"
 
+# Check operational hours (critical for upload tests)
+check_operational_hours "$CONFIG_FILE"
+
 # Create test config with pattern matching
 TEST_CONFIG="/tmp/tvm-test-config-pattern.yaml"
 cat > "$TEST_CONFIG" <<EOF

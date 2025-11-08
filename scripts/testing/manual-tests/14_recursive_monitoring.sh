@@ -34,6 +34,9 @@ mkdir -p "$TEST_DIR/syslog/subdir1"
 mkdir -p "$TEST_DIR/syslog/subdir2"
 log_success "Created test directories with subdirectories"
 
+# Check operational hours (critical for upload tests)
+check_operational_hours "$CONFIG_FILE"
+
 # Create test config with recursive settings
 TEST_CONFIG="/tmp/tvm-test-config-recursive.yaml"
 cat > "$TEST_CONFIG" <<EOF

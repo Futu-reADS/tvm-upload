@@ -44,6 +44,9 @@ echo "Old data from $DAYS_AGO days ago" > "$TEST_FILE"
 # Set modification time to DAYS_AGO (do this immediately after creation)
 set_file_mtime "$TEST_FILE" "$DAYS_AGO"
 
+# Check operational hours (critical for upload tests)
+check_operational_hours "$CONFIG_FILE"
+
 # Start service AFTER file is created with correct mtime
 # This way startup scan will detect it with the old date
 log_info "Starting TVM upload service..."

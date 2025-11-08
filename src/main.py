@@ -223,6 +223,10 @@ class TVMUploadSystem:
 
         self.file_monitor.start()
 
+        # STARTUP UPLOAD: Process entire queue on service start
+        # NOTE: Startup uploads ALWAYS process the entire queue, regardless of batch_upload setting
+        #       The batch_upload setting only controls immediate uploads (when files become ready)
+        #       Rationale: On startup, we want to clear any backlog from service downtime
         if self.upload_on_start and self.queue_manager.get_queue_size() > 0:
             queue_size = self.queue_manager.get_queue_size()
             logger.info(
@@ -542,6 +546,14 @@ class TVMUploadSystem:
     def _handle_scheduled_uploads(self, now, last_upload_date, last_upload_time):
         """
         Handle scheduled upload logic (daily or interval mode).
+
+        IMPORTANT: Scheduled uploads ALWAYS process the entire queue, regardless of
+        batch_upload setting. The batch_upload setting only controls immediate uploads
+        (when individual files become ready).
+
+        Rationale: The purpose of scheduled uploads is to periodically clear the queue
+        of all pending files. It doesn't make sense to upload only one file at a
+        scheduled time.
 
         Args:
             now: Current datetime

@@ -313,7 +313,7 @@ sudo systemctl restart tvm-upload
 
 5. **Configure appropriate retention**
    - Balance between disk space and upload reliability
-   - `deletion.after_upload.keep_days: 14` (recommended)
+   - `deletion.after_upload.keep_days: 7` (recommended)
    - Adjust based on WiFi reliability
 
 ---

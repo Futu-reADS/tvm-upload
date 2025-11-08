@@ -616,7 +616,9 @@ upload:
 **Type:** Object
 **Required:** No
 
-Controls whether entire queue uploads when one file is ready.
+Controls whether entire queue uploads when one file becomes ready for immediate upload.
+
+**IMPORTANT:** This setting **ONLY applies to immediate uploads** (when individual files become ready). Scheduled uploads and startup uploads **ALWAYS process the entire queue**, regardless of this setting.
 
 ---
 
@@ -626,11 +628,16 @@ Controls whether entire queue uploads when one file is ready.
 **Required:** No
 **Default:** `true`
 
-**Description:** When one file is ready, upload entire queue (within operational hours).
+**Description:** When one file becomes ready for immediate upload, upload entire queue (within operational hours).
 
 **Behavior:**
-- `true` - Upload all queued files when one file ready
-- `false` - Upload only the ready file
+- `true` - When a file becomes ready, upload all queued files (immediate upload only)
+- `false` - When a file becomes ready, upload only that single file (immediate upload only)
+
+**Important Notes:**
+- Scheduled uploads (interval/daily) **always** upload the entire queue
+- Startup uploads (`upload_on_start`) **always** upload the entire queue
+- This setting only affects behavior when files become ready during operational hours
 
 **Examples:**
 ```yaml
@@ -776,7 +783,7 @@ Delete files after successful upload.
 deletion:
   after_upload:
     enabled: true
-    keep_days: 14          # Default (recommended)
+    keep_days: 7           # Default (recommended)
     keep_days: 0           # Immediate deletion (saves space)
     keep_days: 30          # Extra safety margin
 ```
@@ -822,7 +829,7 @@ Delete old files regardless of upload status.
 deletion:
   age_based:
     enabled: true
-    max_age_days: 7
+    max_age_days: 14
     schedule_time: "02:00"  # 2:00 AM daily
 ```
 
@@ -1026,11 +1033,11 @@ upload:
 deletion:
   after_upload:
     enabled: true
-    keep_days: 14
+    keep_days: 7
 
   age_based:
     enabled: true
-    max_age_days: 7
+    max_age_days: 14
     schedule_time: "02:00"
 
   emergency:

@@ -40,6 +40,9 @@ fi
 mkdir -p "$TEST_DIR/terminal"
 log_success "Created test directory"
 
+# Check operational hours (critical for upload tests)
+check_operational_hours "$CONFIG_FILE"
+
 # Create test config with startup scan enabled
 TEST_CONFIG="/tmp/tvm-test-config-startup.yaml"
 cat > "$TEST_CONFIG" <<EOF

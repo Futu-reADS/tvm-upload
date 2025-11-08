@@ -325,7 +325,7 @@ Verify disk cleanup and management features.
        keep_days: 0  # Delete immediately after upload
      age_based:
        enabled: true
-       max_age_days: 7
+       max_age_days: 14
    ```
 
 2. **Upload a file and verify deletion:**

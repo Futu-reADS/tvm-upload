@@ -754,6 +754,56 @@ cleanup_all_test_folders() {
     return 0
 }
 
+# Check if current time is within operational hours and warn if not
+# This helps identify potential test failures due to operational hours restrictions
+check_operational_hours() {
+    local config_file=${1:-config/config.yaml}
+
+    # Parse operational hours from config (exclude comments with grep -v)
+    local op_hours_enabled=$(grep -A 10 "operational_hours:" "$config_file" | grep -v "^[[:space:]]*#" | grep "enabled:" | head -1 | awk '{print $2}' | tr -d '"')
+    local op_start=$(grep -A 10 "operational_hours:" "$config_file" | grep -v "^[[:space:]]*#" | grep "start:" | grep -v "upload_on_start" | head -1 | awk '{print $2}' | tr -d '"')
+    local op_end=$(grep -A 10 "operational_hours:" "$config_file" | grep -v "^[[:space:]]*#" | grep "end:" | head -1 | awk '{print $2}' | tr -d '"')
+
+    # If operational hours not enabled, no warning needed
+    if [ "$op_hours_enabled" != "true" ]; then
+        log_info "Operational hours: DISABLED (24/7 uploads enabled)"
+        return 0
+    fi
+
+    # Get current time in HH:MM format
+    local current_time=$(date +%H:%M)
+    local current_hour=$(date +%H | sed 's/^0//')
+    local current_minute=$(date +%M | sed 's/^0//')
+
+    # Parse start/end hours
+    local start_hour=$(echo "$op_start" | cut -d: -f1 | sed 's/^0//')
+    local start_minute=$(echo "$op_start" | cut -d: -f2 | sed 's/^0//')
+    local end_hour=$(echo "$op_end" | cut -d: -f1 | sed 's/^0//')
+    local end_minute=$(echo "$op_end" | cut -d: -f2 | sed 's/^0//')
+
+    # Convert to minutes since midnight for easier comparison
+    local current_minutes=$((current_hour * 60 + current_minute))
+    local start_minutes=$((start_hour * 60 + start_minute))
+    local end_minutes=$((end_hour * 60 + end_minute))
+
+    # Check if within operational hours
+    if [ $current_minutes -ge $start_minutes ] && [ $current_minutes -lt $end_minutes ]; then
+        log_info "Operational hours: WITHIN window ($op_start - $op_end, current: $current_time)"
+        return 0
+    else
+        # Outside operational hours - issue warning
+        echo ""
+        log_error "⚠️  WARNING: OUTSIDE OPERATIONAL HOURS ⚠️"
+        log_error "⚠️  Current time: $current_time"
+        log_error "⚠️  Operational hours: $op_start - $op_end (enabled: $op_hours_enabled)"
+        log_error "⚠️  FILES WILL BE QUEUED BUT NOT UPLOADED UNTIL $op_start"
+        log_error "⚠️  This test may FAIL if it expects immediate uploads"
+        log_error "⚠️  Solution: Run test during operational hours OR disable operational_hours in config"
+        echo ""
+        return 1
+    fi
+}
+
 # Export functions
 export -f log_info log_success log_error log_warning log_skip
 export -f print_test_header print_test_summary
@@ -761,4 +811,4 @@ export -f wait_with_progress create_test_dir generate_test_file set_file_mtime
 export -f cleanup_test_s3_data cleanup_complete_vehicle_folder generate_test_vehicle_id cleanup_all_test_folders
 export -f assert_file_exists assert_file_not_exists assert_equals assert_contains assert_greater_than
 export -f load_config start_tvm_service stop_tvm_service get_service_logs check_service_health
-export -f cleanup_test_env save_test_result
+export -f cleanup_test_env save_test_result check_operational_hours

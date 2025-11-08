@@ -157,7 +157,7 @@ upload:
     end: "16:00"
 
   batch_upload:
-    enabled: true             # Upload entire queue when file ready
+    enabled: true             # Upload entire queue when file ready (immediate uploads only)
 
   upload_on_start: true       # Upload immediately on service start
 
@@ -169,11 +169,11 @@ upload:
 deletion:
   after_upload:
     enabled: true
-    keep_days: 14             # Keep files 14 days after upload
+    keep_days: 7              # Keep files 7 days after upload
 
   age_based:
     enabled: true
-    max_age_days: 7           # Delete files older than 7 days
+    max_age_days: 14          # Delete files older than 14 days
     schedule_time: "02:00"
 
   emergency:
@@ -333,12 +333,12 @@ sudo journalctl -u tvm-upload | grep ERROR
 2. FILE BECOMES READY (after 60s stability)
    ├─ Check operational_hours
    ├─ WITHIN hours (09:00-16:00)
-   │  ├─ batch_upload=true → Upload entire queue
-   │  └─ batch_upload=false → Upload only this file
+   │  ├─ batch_upload=true → Upload entire queue (immediate upload)
+   │  └─ batch_upload=false → Upload only this file (immediate upload)
    └─ OUTSIDE hours → Queue for scheduled upload
 
 3. SCHEDULED UPLOAD (every 2 hours: 09:00, 11:00, 13:00...)
-   └─ Upload entire queue (includes failed files)
+   └─ Upload entire queue (ALWAYS, regardless of batch_upload setting)
 
 4. AFTER SUCCESSFUL UPLOAD
    ├─ Add to processed_files_registry
@@ -940,7 +940,7 @@ sudo kill -HUP $(pgrep -f 'src/main.py')
 
 **Reduce network usage:**
 - Use `mode: daily` instead of `mode: interval`
-- Disable `batch_upload` for on-demand uploads only
+- Disable `batch_upload` to upload files one-at-a-time as they become ready (note: scheduled uploads still upload entire queue)
 
 ## License
 
