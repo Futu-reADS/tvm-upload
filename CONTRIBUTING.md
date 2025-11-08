@@ -46,7 +46,7 @@ python3 -m venv venv
 source venv/bin/activate
 
 # Install in development mode with test dependencies
-pip3 install -e ".[test]"
+pip install -e ".[test]"
 
 # Verify installation
 pytest tests/unit/ -v

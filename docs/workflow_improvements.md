@@ -27,7 +27,7 @@ python3 -m venv venv
 source venv/bin/activate
 
 # Install dependencies (reads from pyproject.toml)
-pip3 install -e ".[test]"
+pip install -e ".[test]"
 
 # Create config file
 cp config/config.yaml.example config/config.yaml
@@ -39,7 +39,7 @@ nano config/config.yaml
 pytest tests/unit/ -v
 
 # Realize you need to install the package
-pip3 install -e .
+pip install -e .
 
 # Try again
 pytest tests/unit/ -v
@@ -727,7 +727,7 @@ git clone ...
 cd tvm-upload
 python3 -m venv venv
 source venv/bin/activate
-pip3 install -e ".[test]"
+pip install -e ".[test]"
 cp config/config.yaml.example config/config.yaml
 nano config/config.yaml
 
