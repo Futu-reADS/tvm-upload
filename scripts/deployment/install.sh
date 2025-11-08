@@ -109,7 +109,7 @@ if pip3 install -e . &> /tmp/tvm-install-pip.log; then
 else
     error "Failed to install Python dependencies"
     cat /tmp/tvm-install-pip.log
-    fatal_error "pip install failed"
+    fatal_error "pip3 install failed"
 fi
 
 # Step 3: Create system directories

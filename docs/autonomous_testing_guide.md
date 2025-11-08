@@ -681,7 +681,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -e ".[test]"
+          pip3 install -e ".[test]"
 
       - name: Run Unit Tests
         run: |
@@ -707,7 +707,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -e ".[test]"
+          pip3 install -e ".[test]"
 
       - name: Run Integration Tests
         run: |
@@ -738,7 +738,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -e ".[test]"
+          pip3 install -e ".[test]"
 
       - name: Run E2E Tests
         env:

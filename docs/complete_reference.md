@@ -28,7 +28,7 @@ git clone git@github.com:Futu-reADS/tvm-upload.git
 cd tvm-upload
 
 # Install dependencies
-pip install -e ".[test]"
+pip3 install -e ".[test]"
 
 # Configure
 cp config/config.yaml.example config/config.yaml
@@ -58,7 +58,7 @@ python3 -m venv venv
 source venv/bin/activate
 
 # Install in editable mode with test dependencies
-pip install -e ".[test]"
+pip3 install -e ".[test]"
 
 # Verify installation
 python -c "import src.config_manager; print('✓ Package installed')"
@@ -94,7 +94,7 @@ The install script automatically:
 
 ```bash
 # Install dependencies (from pyproject.toml)
-pip install -e .
+pip3 install -e .
 
 # Create required directories
 sudo mkdir -p /var/lib/tvm-upload /etc/tvm-upload /var/log/tvm-upload
@@ -885,17 +885,17 @@ make run                    # Run the application
 
 All dependencies are managed in `pyproject.toml`:
 
-**Production dependencies** (`pip install -e .`):
+**Production dependencies** (`pip3 install -e .`):
 - **watchdog** - File system monitoring
 - **boto3** - AWS S3 client
 - **pyyaml** - Configuration parsing
 
-**Testing dependencies** (`pip install -e ".[test]"`):
+**Testing dependencies** (`pip3 install -e ".[test]"`):
 - **pytest** - Test framework
 - **pytest-cov** - Coverage reports
 - **pytest-mock** - Mocking utilities
 
-**Development tools** (`pip install -e ".[dev]"`):
+**Development tools** (`pip3 install -e ".[dev]"`):
 - **black** - Code formatter
 - **flake8** - Linter
 - **pylint** - Static analyzer

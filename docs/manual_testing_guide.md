@@ -48,7 +48,7 @@ echo "Syslog data" > ~/test-logs/syslog/messages_$(date +%Y%m%d).log
 cd ~/tvm-upload
 python3 -m venv venv
 source venv/bin/activate
-pip install -e ".[test]"
+pip3 install -e ".[test]"
 ```
 
 ### Step 2: Configure Application

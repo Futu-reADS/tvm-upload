@@ -563,7 +563,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          pip install -e ".[test]"
+          pip3 install -e ".[test]"
 
       # ✅ NEW: OIDC authentication (no secrets!)
       - name: Configure AWS credentials (OIDC)

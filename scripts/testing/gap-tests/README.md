@@ -80,7 +80,7 @@ cd scripts/testing/gap-tests
 
 4. **Python Environment** with TVM upload system installed:
    ```bash
-   pip install -e ".[test]"
+   pip3 install -e ".[test]"
    ```
 
 5. **Test Helpers** library:

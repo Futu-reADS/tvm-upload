@@ -259,7 +259,7 @@ python3 -m venv venv
 source venv/bin/activate
 
 # Install dependencies (reads from pyproject.toml)
-pip install -e .
+pip3 install -e .
 
 # Verify installation
 python3 -c "import boto3, yaml, watchdog; print('✓ Dependencies installed')"

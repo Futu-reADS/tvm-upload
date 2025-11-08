@@ -303,7 +303,7 @@ else
 fi
 
 if [ -n "$MISSING_DEPS" ]; then
-    check_info "Run: pip install -e . (or make install)"
+    check_info "Run: pip3 install -e . (or make install)"
 fi
 
 # Check 9: Systemd

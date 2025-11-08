@@ -52,7 +52,7 @@ make test                   # Run unit + integration (~30s)
 
 # Or traditional setup
 python3 -m venv venv && source venv/bin/activate
-pip install -e ".[test]"
+pip3 install -e ".[test]"
 ./scripts/testing/run_tests.sh fast
 
 # Run locally
@@ -65,9 +65,9 @@ python3 src/main.py --config config/config.yaml --log-level DEBUG
 
 **📦 Dependency Management:**
 All dependencies are defined in `pyproject.toml`:
-- **Production** (`pip install -e .`): watchdog, boto3, pyyaml
-- **Testing** (`pip install -e ".[test]"`): + pytest, pytest-cov, pytest-mock
-- **Development** (`pip install -e ".[dev]"`): + black, flake8, pylint, isort, pre-commit
+- **Production** (`pip3 install -e .`): watchdog, boto3, pyyaml
+- **Testing** (`pip3 install -e ".[test]"`): + pytest, pytest-cov, pytest-mock
+- **Development** (`pip3 install -e ".[dev]"`): + black, flake8, pylint, isort, pre-commit
 
 ---
 
