@@ -13,7 +13,7 @@ long_description = readme_file.read_text() if readme_file.exists() else ''
 
 setup(
     name='tvm-upload',
-    version='1.0.0',
+    version='2.1.0',
     description='TVM Log Upload System for Autoware Vehicles',
     long_description=long_description,
     long_description_content_type='text/markdown',

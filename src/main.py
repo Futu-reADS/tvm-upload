@@ -982,7 +982,7 @@ def main():
     """
     import argparse
     
-    parser = argparse.ArgumentParser(description='TVM Log Upload System v2.0')
+    parser = argparse.ArgumentParser(description='TVM Log Upload System v2.1')
     parser.add_argument(
         '--config',
         default='/etc/tvm-upload/config.yaml',

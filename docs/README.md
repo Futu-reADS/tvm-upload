@@ -26,8 +26,8 @@ Welcome to the TVM Upload System documentation! This directory contains guides f
 | Document | Purpose | Target Audience |
 |----------|---------|-----------------|
 | **[testing_strategy_overview.md](./testing_strategy_overview.md)** | High-level testing strategy and philosophy | Tech Leads, Architects |
-| **[manual_testing_guide.md](./manual_testing_guide.md)** | 16 automated manual test scenarios with step-by-step procedures | QA Engineers |
-| **[autonomous_testing_guide.md](./autonomous_testing_guide.md)** | 277 automated tests (159 unit + 42 integration + 60 E2E + 16 manual) | Developers, DevOps |
+| **[manual_testing_guide.md](./manual_testing_guide.md)** | 17 automated manual test scenarios with step-by-step procedures | QA Engineers |
+| **[autonomous_testing_guide.md](./autonomous_testing_guide.md)** | 416 automated tests (249 unit + 90 integration + 60 E2E + 17 manual) | Developers, DevOps |
 
 ### CI/CD Documentation
 
@@ -59,11 +59,11 @@ Welcome to the TVM Upload System documentation! This directory contains guides f
 
 **Documentation:**
 - 10 comprehensive guides (3 new: error handling, configuration, S3 organization)
-- 277 total tests documented
+- 416 total tests documented
 
 **System Overview:**
-- Total automated tests: 277 (159 unit + 42 integration + 60 E2E + 16 manual, 90%+ code coverage)
-- Manual test scenarios: 16 comprehensive automated scenarios (~24 min runtime)
+- Total automated tests: 416 (249 unit + 90 integration + 60 E2E + 17 manual, 90%+ code coverage)
+- Manual test scenarios: 17 comprehensive automated scenarios (~24 min runtime)
 - Deployment time: ~5-10 minutes per vehicle
 - Supports: AWS China region (cn-north-1, cn-northwest-1)
 
@@ -89,7 +89,7 @@ Welcome to the TVM Upload System documentation! This directory contains guides f
 
 ### For QA Engineers
 1. Read [manual_testing_guide.md](./manual_testing_guide.md)
-2. Execute 16 automated test scenarios using `scripts/testing/run_manual_tests.sh`
+2. Execute 17 automated test scenarios using `scripts/testing/run_manual_tests.sh`
 3. Fill out test report template
 
 ---

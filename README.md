@@ -4,7 +4,7 @@
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![AWS China](https://img.shields.io/badge/AWS-China%20Region-orange.svg)](https://www.amazonaws.cn/)
-[![Tests](https://img.shields.io/badge/tests-235%2B%20passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-400%2B%20passing-brightgreen.svg)]()
 
 ---
 
@@ -80,7 +80,7 @@ python3 src/main.py --config config/config.yaml --log-level DEBUG
 |----------|-------------|----------|
 | **[Deployment Guide](docs/deployment_guide.md)** | **START HERE** - Complete vehicle deployment | Operators, DevOps |
 | **[Complete Reference](docs/complete_reference.md)** | All features, configuration, examples | All Users |
-| **[Testing Guide](docs/autonomous_testing_guide.md)** | Running 235+ automated tests | Developers |
+| **[Testing Guide](docs/autonomous_testing_guide.md)** | Running 400+ automated tests | Developers |
 | **[GitHub Actions OIDC](docs/github_actions_oidc_setup.md)** | CI/CD setup without stored credentials | DevOps |
 
 ---
@@ -240,7 +240,7 @@ See [Configuration Reference](./docs/configuration_reference.md#pattern) for det
 
 ## 🧪 Testing
 
-**235+ automated tests** covering all functionality:
+**400+ automated tests** covering all functionality:
 
 ```bash
 # Fast local tests (unit + integration)
@@ -252,15 +252,15 @@ See [Configuration Reference](./docs/configuration_reference.md#pattern) for det
 # E2E tests (requires AWS)
 AWS_PROFILE=china ./scripts/testing/run_tests.sh e2e
 
-# Manual test suite (16 scenarios, end-to-end validation)
+# Manual test suite (17 scenarios, end-to-end validation)
 ./scripts/testing/run_manual_tests.sh
 ```
 
 **Test Coverage:**
-- ✅ 100+ unit tests (fast, fully mocked)
-- ✅ 50+ integration tests (mocked AWS)
-- ✅ 85+ E2E tests (real AWS S3)
-- ✅ 16 manual test scenarios
+- ✅ 249 unit tests (fast, fully mocked)
+- ✅ 90 integration tests (mocked AWS)
+- ✅ 60 E2E tests (real AWS S3)
+- ✅ 17 manual test scenarios
 - ✅ 90%+ code coverage
 
 See [Testing Guide](docs/autonomous_testing_guide.md) for details.
@@ -360,7 +360,7 @@ tvm-upload/
 │   ├── disk_manager.py     # Disk management
 │   ├── queue_manager.py    # Queue persistence
 │   └── cloudwatch_manager.py
-├── tests/                  # Test suite (235+ tests)
+├── tests/                  # Test suite (400+ tests)
 │   ├── unit/               # Fast unit tests
 │   ├── integration/        # Integration tests
 │   └── e2e/                # End-to-end tests
@@ -399,7 +399,9 @@ See [Complete Reference](docs/complete_reference.md) for development guidelines.
 
 ## 📄 License
 
-*[Add your license here]*
+This project is proprietary software developed by Futu-reADS for internal use.
+
+**Copyright © 2025 Futu-reADS. All rights reserved.**
 
 ---
 
