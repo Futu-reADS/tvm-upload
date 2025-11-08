@@ -41,11 +41,7 @@ jobs:
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest
-
-      - name: Install package
-        run: pip install -e .
+          pip install -e ".[test]"
 
       # ✅ CHANGED: OIDC authentication (no secrets!)
       - name: Configure AWS credentials (OIDC)

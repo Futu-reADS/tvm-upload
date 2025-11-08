@@ -25,17 +25,12 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ~/.cache/pip
-          key: ${{ runner.os }}-pip-${{ hashFiles('requirements.txt') }}
+          key: ${{ runner.os }}-pip-${{ hashFiles('pyproject.toml') }}
 
       - name: Install dependencies
         run: |
           pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest
-
-      - name: Install package  # ← ADD THIS
-        run: |
-          pip install -e .
+          pip install -e ".[test]"
 
       - name: Run integration tests
         run: |
