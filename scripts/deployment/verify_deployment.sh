@@ -192,7 +192,7 @@ if command -v aws &> /dev/null; then
 
 else
     check_fail "AWS CLI not installed"
-    echo "       Install: pip install awscli"
+    echo "       Install: pip3 install awscli"
 fi
 
 # Check 4: System Requirements
