@@ -100,12 +100,12 @@ success "Environment validated"
 # Step 2: Install Python dependencies
 step "Installing Python dependencies"
 
-info "Installing from requirements.txt..."
+info "Installing from pyproject.toml..."
 
 cd "$PROJECT_ROOT"
 
-if pip3 install -r requirements.txt &> /tmp/tvm-install-pip.log; then
-    success "Python dependencies installed"
+if pip3 install -e . &> /tmp/tvm-install-pip.log; then
+    success "Python dependencies installed (production mode)"
 else
     error "Failed to install Python dependencies"
     cat /tmp/tvm-install-pip.log
@@ -160,7 +160,8 @@ info "Copying source code..."
 
 cp -r "$PROJECT_ROOT/src" "$INSTALL_ROOT/"
 cp -r "$PROJECT_ROOT/config" "$INSTALL_ROOT/"
-cp "$PROJECT_ROOT/requirements.txt" "$INSTALL_ROOT/"
+cp "$PROJECT_ROOT/pyproject.toml" "$INSTALL_ROOT/"
+cp "$PROJECT_ROOT/setup.py" "$INSTALL_ROOT/" 2>/dev/null || true  # Optional, for setuptools
 
 success "Application files copied"
 
