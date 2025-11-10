@@ -38,12 +38,12 @@ help:
 	@echo "  pre-commit hooks|    ❌    |      ❌      |        ✅"
 	@echo ""
 	@echo "$(GREEN)Testing:$(NC)"
-	@echo "  make test              Run unit + integration tests (default)"
+	@echo "  make test              Run unit + integration tests (default, no e2e)"
 	@echo "  make test-fast         Run unit tests only (fastest, ~5 sec)"
 	@echo "  make test-unit         Run unit tests with verbose output"
 	@echo "  make test-integration  Run integration tests"
-	@echo "  make test-e2e          Run E2E tests (requires AWS credentials)"
-	@echo "  make test-all          Run ALL tests including E2E"
+	@echo "  make test-e2e          Run E2E tests (AWS_PROFILE=china)"
+	@echo "  make test-all          Run ALL tests including E2E (AWS_PROFILE=china)"
 	@echo "  make test-coverage     Run tests with HTML coverage report"
 	@echo "  make test-manual       Run manual test scenarios (~24 min)"
 	@echo ""
@@ -69,8 +69,8 @@ help:
 	@echo ""
 	@echo "$(YELLOW)Examples:$(NC)"
 	@echo "  make install-dev && make test-fast"
-	@echo "  make test-coverage"
-	@echo "  AWS_PROFILE=china make test-e2e"
+	@echo "  make test-all          # Runs all tests with AWS_PROFILE=china"
+	@echo "  make test-e2e          # Runs E2E tests with AWS_PROFILE=china"
 	@echo "  make deploy-verify && make deploy-install"
 
 # ==================== Setup ====================
@@ -107,12 +107,12 @@ install-dev-tools:
 
 test:
 	@echo "$(BLUE)Running unit + integration tests...$(NC)"
-	pytest tests/unit tests/integration -v
+	pytest tests/unit tests/integration -v -m "not e2e"
 	@echo "$(GREEN)✓ Tests complete$(NC)"
 
 test-fast:
 	@echo "$(BLUE)Running unit tests (fast)...$(NC)"
-	pytest tests/unit -v
+	pytest tests/unit -v -m "not e2e"
 	@echo "$(GREEN)✓ Unit tests complete$(NC)"
 
 test-unit:
@@ -127,18 +127,19 @@ test-integration:
 
 test-e2e:
 	@echo "$(BLUE)Running E2E tests (requires AWS credentials)...$(NC)"
-	@echo "$(YELLOW)Ensure AWS_PROFILE is set or credentials are configured$(NC)"
-	pytest tests/e2e -m e2e -v
+	@echo "$(YELLOW)Using AWS_PROFILE=china (default for this project)$(NC)"
+	AWS_PROFILE=china pytest tests/e2e -m e2e -v
 	@echo "$(GREEN)✓ E2E tests complete$(NC)"
 
 test-all:
 	@echo "$(BLUE)Running ALL tests (unit + integration + E2E)...$(NC)"
-	pytest tests/ -v
+	@echo "$(YELLOW)Using AWS_PROFILE=china (default for this project)$(NC)"
+	AWS_PROFILE=china pytest tests/unit tests/integration tests/e2e -v
 	@echo "$(GREEN)✓ All tests complete$(NC)"
 
 test-coverage:
 	@echo "$(BLUE)Running tests with coverage report...$(NC)"
-	pytest tests/ --cov=src --cov-report=html --cov-report=term-missing --cov-report=term
+	pytest tests/unit tests/integration tests/e2e --cov=src --cov-report=html --cov-report=term-missing --cov-report=term
 	@echo "$(GREEN)✓ Coverage report generated$(NC)"
 	@echo "$(YELLOW)View HTML report: open htmlcov/index.html$(NC)"
 
