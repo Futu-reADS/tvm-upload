@@ -1,7 +1,7 @@
 # TVM Log Upload System - Deployment Guide
 
-**Version:** 2.6
-**Last Updated:** 2025-11-05
+**Version:** 2.7
+**Last Updated:** 2025-11-10
 **Target Audience:** Vehicle deployment technicians
 
 ---
@@ -133,7 +133,117 @@ Before installation, prepare:
 
 ## ⚡ Quick Deployment (Commands Only)
 
-**Complete deployment in 7 steps - just copy and run:**
+**Complete deployment in 8 steps - just copy and run:**
+
+### Step 0: Environment Setup & Verification (REQUIRED - Run First!)
+
+**This step prevents common deployment issues** including AWS CLI conflicts, Python version mismatches, and dependency problems.
+
+```bash
+# ============================================================
+# STEP 0: ENVIRONMENT SETUP & VERIFICATION
+# ============================================================
+# Run these commands FIRST before proceeding with installation
+# This prevents 90% of common deployment issues!
+# ============================================================
+
+# Check Python version (must be 3.10+)
+python3 --version
+# Expected: Python 3.10.x or higher
+
+# Check pip3 is installed
+pip3 --version
+# Expected: pip 22.x or higher
+
+# Check disk space (need at least 10GB free)
+df -h / | grep -E '^/|Avail'
+# Expected: At least 10GB available
+
+# Check network connectivity to AWS China
+ping -c 3 s3.cn-north-1.amazonaws.com.cn
+# Expected: Successful ping responses
+
+# ============================================================
+# CRITICAL: AWS CLI CONFLICT DETECTION & RESOLUTION
+# ============================================================
+# This is the MOST COMMON issue - version conflicts between
+# system AWS CLI and user-installed boto3/botocore packages
+# ============================================================
+
+# Step 0a: Check for AWS CLI version conflicts
+echo "Checking AWS CLI installation..."
+which -a aws 2>/dev/null || echo "AWS CLI not found (will be installed)"
+
+# Step 0b: Check for conflicting package installations
+echo ""
+echo "Checking for package conflicts..."
+pip3 list | grep -E "(awscli|boto)" 2>/dev/null || echo "No user boto packages found"
+dpkg -l 2>/dev/null | grep -E "awscli|python3-boto" || echo "No system AWS packages found"
+
+# Step 0c: RESOLVE CONFLICTS (if any were found above)
+# If you see BOTH system packages (dpkg) AND user packages (pip3 list),
+# you have a conflict that MUST be resolved:
+
+# Option 1: Remove system AWS CLI and use user installation (RECOMMENDED)
+# Uncomment these lines if you have sudo access:
+# sudo apt remove -y awscli python3-botocore
+# pip3 install --user --upgrade awscli
+
+# Option 2: Use local AWS CLI only (if no sudo access)
+# This upgrades your local installation to match boto3:
+pip3 install --user --upgrade awscli
+
+# Step 0d: Verify AWS CLI works after conflict resolution
+echo ""
+echo "Verifying AWS CLI installation..."
+aws --version
+# Expected: aws-cli/1.40+ with matching botocore version
+# Example: aws-cli/1.42.69 Python/3.10.12 Linux/6.8.0-87-generic botocore/1.40.69
+
+# Step 0e: Ensure local AWS CLI takes precedence
+echo ""
+echo "AWS CLI location:"
+which aws
+# Expected: /home/YOUR_USERNAME/.local/bin/aws (user installation)
+# If you see /usr/bin/aws, your PATH may need adjustment
+
+# ============================================================
+# VERIFICATION SUMMARY
+# ============================================================
+echo ""
+echo "Environment Setup Summary:"
+echo "-------------------------"
+echo "Python version: $(python3 --version)"
+echo "pip3 version: $(pip3 --version | cut -d' ' -f2)"
+echo "AWS CLI version: $(aws --version 2>&1 | cut -d' ' -f1)"
+echo "Disk space: $(df -h / | awk 'NR==2 {print $4}')"
+echo ""
+echo "If all checks above passed, proceed to Step 1!"
+echo "If any check failed, fix the issue before continuing."
+echo "-------------------------"
+```
+
+**Common Issues & Solutions:**
+
+| Issue | Symptom | Solution |
+|-------|---------|----------|
+| AWS CLI conflict | `KeyError: 'opsworkscm'` when running `aws configure` | Run Step 0c to upgrade local AWS CLI |
+| Old Python | `Python 3.8` or lower | Upgrade to Python 3.10+ or use different system |
+| Missing pip3 | `pip3: command not found` | Install: `sudo apt install python3-pip` |
+| Network issues | Cannot ping AWS China | Check WiFi/firewall settings |
+| Disk space low | Less than 10GB free | Clean up disk space or use different partition |
+
+**Why This Step Matters:**
+
+The most common deployment failure is the AWS CLI conflict you just experienced:
+- System package managers (apt) install older AWS CLI versions
+- Python pip installs newer boto3/botocore for your project
+- These versions clash, causing cryptic errors like `KeyError: 'opsworkscm'`
+- Step 0c resolves this by ensuring compatible versions
+
+**Expected Time:** 2-3 minutes
+
+---
 
 ```bash
 # Step 1: Clone repository
@@ -195,6 +305,155 @@ Check status: `sudo systemctl status tvm-upload`
 - `./scripts/deployment/install.sh` - Automated installation
 - `./scripts/deployment/health_check.sh` - Post-deployment health check
 - `./scripts/deployment/uninstall.sh` - Complete removal
+
+---
+
+### Step 0: Environment Setup & Verification (REQUIRED)
+
+**⚠️ CRITICAL: Run this step FIRST before any installation!**
+
+This step detects and resolves common environment issues that cause 90% of deployment failures, including the AWS CLI version conflict issue.
+
+#### 0.1 Basic System Verification
+
+```bash
+# Check Python version (must be 3.10+)
+python3 --version
+```
+**Expected:** `Python 3.10.x` or higher
+
+```bash
+# Check pip3 is installed
+pip3 --version
+```
+**Expected:** `pip 22.x` or higher
+
+```bash
+# Check disk space
+df -h /
+```
+**Expected:** At least 10GB available
+
+```bash
+# Check network connectivity to AWS China
+ping -c 3 s3.cn-north-1.amazonaws.com.cn
+```
+**Expected:** Successful ping responses
+
+**If any check fails:**
+- Python too old: Upgrade to Python 3.10+ or use different system
+- pip3 missing: Install with `sudo apt install python3-pip`
+- Disk space low: Clean up disk or use different partition
+- Network issues: Check WiFi/firewall settings
+
+---
+
+#### 0.2 AWS CLI Conflict Detection & Resolution
+
+**⚠️ MOST COMMON ISSUE:** This is the error you likely encountered - version conflicts between system AWS CLI and user boto3 packages.
+
+**Step 1: Check for conflicts**
+
+```bash
+# Check AWS CLI installations
+which -a aws
+```
+
+**Step 2: Check package versions**
+
+```bash
+# Check user-installed packages (pip3)
+pip3 list | grep -E "(awscli|boto)"
+
+# Check system-installed packages (apt)
+dpkg -l | grep -E "awscli|python3-boto"
+```
+
+**Step 3: Identify the conflict**
+
+**You have a conflict if:**
+- `which -a aws` shows multiple locations (e.g., `/usr/bin/aws` AND `/home/user/.local/bin/aws`)
+- `pip3 list` shows boto/awscli packages (e.g., `botocore 1.40.69`)
+- `dpkg -l` shows system AWS packages (e.g., `awscli 1.22.34`)
+
+**Example conflict output:**
+```
+# pip3 list shows:
+awscli       1.22.34
+boto3        1.40.69
+botocore     1.40.69
+
+# dpkg -l shows:
+ii  awscli           1.22.34-1
+ii  python3-botocore 1.23.34+repack-1
+```
+
+This mismatch causes errors like: `KeyError: 'opsworkscm'`
+
+**Step 4: Resolve the conflict**
+
+**Option A: Remove system packages (RECOMMENDED - requires sudo):**
+
+```bash
+sudo apt remove -y awscli python3-botocore
+pip3 install --user --upgrade awscli
+```
+
+**Option B: Upgrade local installation (no sudo required):**
+
+```bash
+pip3 install --user --upgrade awscli
+```
+
+This ensures your local AWS CLI matches your boto3 version.
+
+**Step 5: Verify the fix**
+
+```bash
+# Check AWS CLI version
+aws --version
+```
+**Expected:** `aws-cli/1.40+` with matching botocore
+**Example:** `aws-cli/1.42.69 Python/3.10.12 Linux/6.8.0-87-generic botocore/1.40.69`
+
+```bash
+# Check AWS CLI location
+which aws
+```
+**Expected:** `/home/YOUR_USERNAME/.local/bin/aws` (user installation)
+
+**Step 6: Test AWS CLI works**
+
+```bash
+aws help
+```
+**Expected:** No errors, shows help text
+
+**If you still see errors:**
+1. Restart your terminal session (to reload PATH)
+2. Run `hash -r` to clear bash command cache
+3. Verify PATH includes `~/.local/bin`: `echo $PATH`
+
+---
+
+#### 0.3 Environment Summary
+
+Run this to see a complete summary:
+
+```bash
+echo "Environment Setup Summary:"
+echo "-------------------------"
+echo "Python: $(python3 --version)"
+echo "pip3: $(pip3 --version | cut -d' ' -f2)"
+echo "AWS CLI: $(aws --version 2>&1)"
+echo "AWS location: $(which aws)"
+echo "Disk free: $(df -h / | awk 'NR==2 {print $4}')"
+echo "-------------------------"
+```
+
+**All checks passed?** ✅ Proceed to Step 1!
+
+**Any check failed?** ❌ Fix the issue before continuing - deployment will fail otherwise.
 
 ---
 
@@ -701,6 +960,53 @@ This will identify most common problems automatically.
 
 ---
 
+### Problem: AWS CLI errors (KeyError: 'opsworkscm' or similar)
+
+**Symptoms:**
+- `aws configure` command fails with `KeyError: 'opsworkscm'`
+- Traceback showing `/usr/bin/aws` and `/home/user/.local/lib/python3.10/site-packages/botocore`
+- Version mismatch between AWS CLI and botocore
+
+**Root cause:** Conflict between system-installed AWS CLI (old version) and user-installed botocore (new version).
+
+**Diagnose:**
+```bash
+# Check for multiple AWS CLI installations
+which -a aws
+
+# Check versions
+pip3 list | grep -E "(awscli|boto)"
+dpkg -l | grep -E "awscli|python3-boto"
+```
+
+**Solution:**
+```bash
+# Upgrade local AWS CLI to match boto3
+pip3 install --user --upgrade awscli
+
+# Verify fix
+aws --version
+which aws  # Should show ~/.local/bin/aws
+
+# Test it works
+aws help
+```
+
+**If still failing:**
+```bash
+# Restart terminal to reload PATH
+# Or clear bash command cache
+hash -r
+
+# If you have sudo access, remove system packages entirely:
+sudo apt remove -y awscli python3-botocore
+pip3 install --user --upgrade awscli
+```
+
+**Prevention:** Always run Step 0 (Environment Setup & Verification) before deployment!
+
+---
+
 ### Problem: Service won't start
 
 **Diagnose:**
@@ -905,6 +1211,8 @@ aws cloudwatch get-metric-statistics \
 
 Use this checklist when deploying to a vehicle:
 
+- [ ] **Step 0: Environment verified** (Python 3.10+, pip3, disk space, network)
+- [ ] **Step 0: AWS CLI conflicts resolved** (no version mismatches)
 - [ ] AWS credentials configured (`~/.aws/credentials` + `~/.aws/config`)
 - [ ] AWS credentials verified (`./scripts/diagnostics/verify_aws_credentials.sh`)
 - [ ] Repository cloned and dependencies installed
@@ -967,10 +1275,11 @@ ls -lh /var/log/syslog*
 
 ---
 
-**Version:** 2.6
-**Last Updated:** 2025-11-05
+**Version:** 2.7
+**Last Updated:** 2025-11-10
 
 ### Changelog
+- **v2.7** (2025-11-10): **CRITICAL UPDATE** - Added comprehensive Step 0: Environment Setup & Verification to prevent AWS CLI conflicts (KeyError: 'opsworkscm'), Python version issues, and dependency conflicts. Added detailed troubleshooting for AWS CLI version mismatches. Updated deployment checklist and quick deployment guide.
 - **v2.6** (2025-11-05): Clarified Steps 7 & 8 as optional verification (not mandatory setup), moved immediate logrotate command to Appendix A (testing only), improved deployment overview
 - **v2.5** (2025-11-05): Improved formatting - alternate methods now use collapsible sections for clearer main vs. alternative paths
 - **v2.4** (2025-11-05): Added detailed system prerequisites (Python 3.10+, pip3, Ubuntu 22.04+, WiFi), moved vehicle info to prerequisites, renumbered all steps

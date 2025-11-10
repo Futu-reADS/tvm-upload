@@ -188,26 +188,32 @@ fi
 print_section "S3 Connectivity"
 
 if command -v aws &> /dev/null; then
-    # Detect if running with sudo and use actual user's AWS credentials
+    # Build AWS command - run as actual user if running with sudo
     if [ -n "$SUDO_USER" ] && [ "$SUDO_USER" != "root" ]; then
-        # Running with sudo - use actual user's home for credentials
-        REAL_HOME=$(eval echo ~$SUDO_USER)
-        export AWS_SHARED_CREDENTIALS_FILE="$REAL_HOME/.aws/credentials"
-        export AWS_CONFIG_FILE="$REAL_HOME/.aws/config"
+        # Running with sudo - run AWS commands as the actual user
+        USER_PREFIX="sudo -u $SUDO_USER -H"
+    else
+        # Not running with sudo
+        USER_PREFIX=""
     fi
 
     if [ -n "$AWS_PROFILE" ]; then
-        AWS_CMD="aws --profile $AWS_PROFILE --region $AWS_REGION"
+        AWS_CMD="$USER_PREFIX aws --profile $AWS_PROFILE --region $AWS_REGION"
     else
-        AWS_CMD="aws --region $AWS_REGION"
+        AWS_CMD="$USER_PREFIX aws --region $AWS_REGION"
+    fi
+
+    # Check if using AWS China region (requires STS endpoint)
+    STS_ENDPOINT=""
+    if [[ "$AWS_REGION" == cn-* ]]; then
+        STS_ENDPOINT="--endpoint-url https://sts.$AWS_REGION.amazonaws.com.cn"
     fi
 
     # Check recent uploads
     info "Checking recent uploads..."
 
     # Test AWS credentials first
-    AWS_TEST_OUTPUT=$($AWS_CMD sts get-caller-identity 2>&1)
-    if [ $? -ne 0 ]; then
+    if ! AWS_TEST_OUTPUT=$($AWS_CMD sts get-caller-identity $STS_ENDPOINT 2>&1); then
         check_warn "Cannot access AWS (credentials issue)"
         info "Error: $(echo "$AWS_TEST_OUTPUT" | head -1)"
         info "Make sure AWS credentials are configured for profile: $AWS_PROFILE"
@@ -229,9 +235,9 @@ if command -v aws &> /dev/null; then
 
                 # Convert size to human readable
                 if [ "$FILE_SIZE" -gt 1048576 ]; then
-                    FILE_SIZE_H="$(echo "scale=1; $FILE_SIZE / 1048576" | bc) MB"
+                    FILE_SIZE_H="$(awk "BEGIN {printf \"%.1f\", $FILE_SIZE / 1048576}") MB"
                 elif [ "$FILE_SIZE" -gt 1024 ]; then
-                    FILE_SIZE_H="$(echo "scale=1; $FILE_SIZE / 1024" | bc) KB"
+                    FILE_SIZE_H="$(awk "BEGIN {printf \"%.1f\", $FILE_SIZE / 1024}") KB"
                 else
                     FILE_SIZE_H="${FILE_SIZE} B"
                 fi
