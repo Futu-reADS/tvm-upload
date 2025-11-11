@@ -67,7 +67,7 @@ upload:
   schedule:
     mode: interval
     interval_hours: 0
-    interval_minutes: 1
+    interval_minutes: 5
   file_stable_seconds: 10
   operational_hours:
     enabled: false
@@ -306,7 +306,7 @@ upload:
   schedule:
     mode: interval
     interval_hours: 0
-    interval_minutes: 1
+    interval_minutes: 5
   file_stable_seconds: 10
   operational_hours:
     enabled: false
@@ -404,7 +404,7 @@ upload:
   schedule:
     mode: interval
     interval_hours: 0
-    interval_minutes: 1
+    interval_minutes: 5
   file_stable_seconds: 5
   operational_hours:
     enabled: false

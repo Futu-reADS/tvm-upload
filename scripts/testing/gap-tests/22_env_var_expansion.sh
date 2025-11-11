@@ -1,5 +1,5 @@
 #!/bin/bash
-# TEST 17: Environment Variable Path Expansion
+# TEST 22: Environment Variable Path Expansion
 # Purpose: Verify that environment variables in paths are expanded correctly
 # Duration: ~5 minutes
 
@@ -12,10 +12,10 @@ source "${SCRIPT_DIR}/../../lib/test_helpers.sh"
 # Configuration
 CONFIG_FILE="${1:-config/config.yaml}"
 TEST_VEHICLE_ID="${2}"  # Test vehicle ID passed from run script
-TEST_DIR="/tmp/tvm-gap-test-17"
-SERVICE_LOG="/tmp/tvm-service-gap17.log"
+TEST_DIR="/tmp/tvm-gap-test-22"
+SERVICE_LOG="/tmp/tvm-service-gap22.log"
 
-print_test_header "Environment Variable Path Expansion" "17"
+print_test_header "Environment Variable Path Expansion" "22"
 
 # Parse configuration for AWS settings
 log_info "Loading base configuration..."
@@ -24,9 +24,9 @@ load_config "$CONFIG_FILE"
 # Create unique test vehicle ID with timestamp
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 if [ -n "$TEST_VEHICLE_ID" ]; then
-    VEHICLE_ID="${TEST_VEHICLE_ID}-TEST17-${TIMESTAMP}"
+    VEHICLE_ID="${TEST_VEHICLE_ID}-TEST22-${TIMESTAMP}"
 else
-    VEHICLE_ID="vehicle-TEST17-${TIMESTAMP}"
+    VEHICLE_ID="vehicle-TEST22-${TIMESTAMP}"
 fi
 log_info "Using test vehicle ID: $VEHICLE_ID"
 log_info "This creates isolated S3 folder: ${VEHICLE_ID}/"
@@ -75,12 +75,12 @@ upload:
   batch_upload:
     enabled: true
   upload_on_start: true
-  queue_file: /tmp/queue-gap17.json
+  queue_file: /tmp/queue-gap22.json
   scan_existing_files:
     enabled: true
     max_age_days: 3
   processed_files_registry:
-    registry_file: /tmp/registry-gap17.json
+    registry_file: /tmp/registry-gap22.json
     retention_days: 30
 
 deletion:
@@ -231,8 +231,8 @@ rm -rf "${HOME}/tvm-test-envvar"
 rm -rf "/tmp/tvm-user-${USER}"
 rm -rf "$TEST_DIR"
 rm -f "$TEST_CONFIG"
-rm -f /tmp/queue-gap17.json
-rm -f /tmp/registry-gap17.json
+rm -f /tmp/queue-gap22.json
+rm -f /tmp/registry-gap22.json
 
 # Clean S3 test data
 log_info "Cleaning complete vehicle folder from S3..."
@@ -243,9 +243,9 @@ print_test_summary
 
 # Test result
 if [ $TESTS_FAILED -eq 0 ]; then
-    log_success "TEST 17: PASSED - Environment variable path expansion working correctly"
+    log_success "TEST 22: PASSED - Environment variable path expansion working correctly"
     exit 0
 else
-    log_error "TEST 17: FAILED - See errors above"
+    log_error "TEST 22: FAILED - See errors above"
     exit 1
 fi

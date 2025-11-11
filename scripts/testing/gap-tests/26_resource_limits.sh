@@ -106,7 +106,7 @@ upload:
   schedule:
     mode: interval
     interval_hours: 0
-    interval_minutes: 1  # Upload every minute
+    interval_minutes: 5  # Minimum 5 minutes required by validation
   file_stable_seconds: 5  # Short stability for testing
   operational_hours:
     enabled: false
