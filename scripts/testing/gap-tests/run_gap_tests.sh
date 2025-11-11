@@ -21,11 +21,11 @@ TEST_VEHICLE_ID="${2:-vehicle-CN-GAP}"
 # Results tracking
 TESTS_PASSED=0
 TESTS_FAILED=0
-TESTS_TOTAL=5
+TESTS_TOTAL=11
 
 # Print header
 echo -e "${BLUE}╔════════════════════════════════════════════════════════════════╗${NC}"
-echo -e "${BLUE}║         TVM Upload System - Gap Coverage Test Suite           ║${NC}"
+echo -e "${BLUE}║    TVM Upload System - Gap & Advanced Test Suite              ║${NC}"
 echo -e "${BLUE}╚════════════════════════════════════════════════════════════════╝${NC}"
 echo ""
 echo -e "${YELLOW}Configuration:${NC} $CONFIG_FILE"
@@ -95,13 +95,19 @@ else
     echo ""
 fi
 
-# Test list
+# Test list (Gap tests 18-22, Advanced tests 23,25-29)
 TESTS=(
-    "17_env_var_expansion.sh|Environment Variable Path Expansion"
     "18_all_sources_complete.sh|All 4 Log Sources Simultaneously"
     "19_deferred_deletion.sh|Deferred Deletion (keep_days > 0)"
     "20_queue_crash_recovery.sh|Queue Recovery After Crash"
     "21_registry_cleanup.sh|Registry Cleanup After Retention Days"
+    "22_env_var_expansion.sh|Environment Variable Path Expansion"
+    "23_config_validation.sh|Configuration Validation"
+    "25_concurrent_operations.sh|Concurrent Operations & Race Conditions"
+    "26_resource_limits.sh|Resource Limits & Stress Testing"
+    "27_security_scenarios.sh|Security Scenarios & Attack Vectors"
+    "28_performance_benchmarks.sh|Performance Benchmarks"
+    "29_full_system_integration.sh|Full System Integration"
 )
 
 # Run each test
@@ -148,12 +154,12 @@ echo -e "${YELLOW}Success Rate:${NC} $SUCCESS_RATE%"
 echo ""
 if [ $TESTS_FAILED -eq 0 ]; then
     echo -e "${GREEN}╔════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${GREEN}║          ALL GAP COVERAGE TESTS PASSED! ✓                      ║${NC}"
+    echo -e "${GREEN}║      ALL GAP & ADVANCED TESTS PASSED! ✓                       ║${NC}"
     echo -e "${GREEN}╚════════════════════════════════════════════════════════════════╝${NC}"
     exit 0
 else
     echo -e "${RED}╔════════════════════════════════════════════════════════════════╗${NC}"
-    echo -e "${RED}║            SOME GAP COVERAGE TESTS FAILED ✗                    ║${NC}"
+    echo -e "${RED}║         SOME GAP/ADVANCED TESTS FAILED ✗                       ║${NC}"
     echo -e "${RED}╚════════════════════════════════════════════════════════════════╝${NC}"
     exit 1
 fi

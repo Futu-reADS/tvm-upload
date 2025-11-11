@@ -1,7 +1,7 @@
 # Makefile for TVM Upload System
 # Simplifies common development tasks
 
-.PHONY: help install install-dev install-dev-tools test test-fast test-unit test-integration test-e2e test-all test-coverage test-manual clean clean-test clean-all lint format check run run-test-config deploy-install deploy-uninstall deploy-verify deploy-health
+.PHONY: help install install-dev install-dev-tools test test-fast test-unit test-integration test-e2e test-all test-coverage test-manual test-gap test-all-manual clean clean-test clean-all lint format check run run-test-config deploy-install deploy-uninstall deploy-verify deploy-health
 
 # Default target
 .DEFAULT_GOAL := help
@@ -45,7 +45,9 @@ help:
 	@echo "  make test-e2e          Run E2E tests (AWS_PROFILE=china)"
 	@echo "  make test-all          Run ALL tests including E2E (AWS_PROFILE=china)"
 	@echo "  make test-coverage     Run tests with HTML coverage report"
-	@echo "  make test-manual       Run manual test scenarios (~24 min)"
+	@echo "  make test-manual       Run 17 core manual test scenarios (~2.5 hours)"
+	@echo "  make test-gap          Run 11 gap + advanced test scenarios (~3 hours)"
+	@echo "  make test-all-manual   Run ALL manual tests (core + gap + advanced, ~5.5 hours)"
 	@echo ""
 	@echo "$(GREEN)Code Quality:$(NC)"
 	@echo "  make lint              Run linters (flake8, pylint)"
@@ -144,10 +146,21 @@ test-coverage:
 	@echo "$(YELLOW)View HTML report: open htmlcov/index.html$(NC)"
 
 test-manual:
-	@echo "$(BLUE)Running manual test scenarios...$(NC)"
-	@echo "$(YELLOW)This runs 17 automated manual test scenarios (~24 min)$(NC)"
+	@echo "$(BLUE)Running core manual test scenarios...$(NC)"
+	@echo "$(YELLOW)This runs 17 automated manual test scenarios (~2.5 hours)$(NC)"
 	./scripts/testing/run_manual_tests.sh
-	@echo "$(GREEN)✓ Manual tests complete$(NC)"
+	@echo "$(GREEN)✓ Core manual tests complete$(NC)"
+
+test-gap:
+	@echo "$(BLUE)Running gap + advanced test scenarios...$(NC)"
+	@echo "$(YELLOW)This runs 11 test scenarios (~3 hours)$(NC)"
+	@echo "$(YELLOW)Gap tests (18-22): env vars, all sources, deferred deletion, crash recovery, registry cleanup$(NC)"
+	@echo "$(YELLOW)Advanced tests (23,25-29): config validation, concurrency, security, performance, integration$(NC)"
+	./scripts/testing/gap-tests/run_gap_tests.sh
+	@echo "$(GREEN)✓ Gap + advanced tests complete$(NC)"
+
+test-all-manual: test-manual test-gap
+	@echo "$(GREEN)✓ All manual tests complete (17 core + 5 gap + 6 advanced = 28 tests)$(NC)"
 
 # ==================== Code Quality ====================
 
@@ -303,10 +316,13 @@ info:
 	@echo "  Docs:          docs/"
 	@echo ""
 	@echo "$(BLUE)Test Breakdown:$(NC)"
-	@echo "  Unit:          249 tests (~5 sec)"
-	@echo "  Integration:   90 tests (~35 sec)"
-	@echo "  E2E:           60 tests (~7.5 min)"
-	@echo "  Manual:        17 scenarios (~24 min)"
+	@echo "  Unit:           249 tests (~5 sec)"
+	@echo "  Integration:    90 tests (~35 sec)"
+	@echo "  E2E:            60 tests (~7.5 min)"
+	@echo "  Manual (core):  17 scenarios (~2.5 hours)"
+	@echo "  Manual (gap):   5 scenarios (~30 min)"
+	@echo "  Manual (adv):   6 scenarios (~2.5 hours)"
+	@echo "  Manual (total): 28 scenarios (~5.5 hours)"
 
 version:
 	@echo "TVM Upload System v2.1.0"

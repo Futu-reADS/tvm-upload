@@ -235,8 +235,8 @@ rm -f /tmp/queue-gap17.json
 rm -f /tmp/registry-gap17.json
 
 # Clean S3 test data
-log_info "Cleaning S3 test data..."
-cleanup_test_s3_data "$VEHICLE_ID" "$S3_BUCKET" "$AWS_PROFILE" "$AWS_REGION" "$TODAY"
+log_info "Cleaning complete vehicle folder from S3..."
+cleanup_complete_vehicle_folder "$VEHICLE_ID" "$S3_BUCKET" "$AWS_PROFILE" "$AWS_REGION"
 
 # Print summary
 print_test_summary

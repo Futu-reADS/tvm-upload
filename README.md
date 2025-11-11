@@ -4,7 +4,7 @@
 
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![AWS China](https://img.shields.io/badge/AWS-China%20Region-orange.svg)](https://www.amazonaws.cn/)
-[![Tests](https://img.shields.io/badge/tests-400%2B%20passing-brightgreen.svg)]()
+[![Tests](https://img.shields.io/badge/tests-426%2B%20passing-brightgreen.svg)]()
 
 ---
 
@@ -92,7 +92,7 @@ All dependencies are defined in `pyproject.toml`:
 |----------|-------------|----------|
 | **[Deployment Guide](docs/deployment_guide.md)** | **START HERE** - Complete vehicle deployment | Operators, DevOps |
 | **[Complete Reference](docs/complete_reference.md)** | All features, configuration, examples | All Users |
-| **[Testing Guide](docs/autonomous_testing_guide.md)** | Running 400+ automated tests | Developers |
+| **[Testing Guide](docs/autonomous_testing_guide.md)** | Running 426+ automated tests (unit/integration/E2E/manual) | Developers |
 | **[GitHub Actions OIDC](docs/github_actions_oidc_setup.md)** | CI/CD setup without stored credentials | DevOps |
 
 ---
@@ -252,27 +252,34 @@ See [Configuration Reference](./docs/configuration_reference.md#pattern) for det
 
 ## 🧪 Testing
 
-**400+ automated tests** covering all functionality:
+**420+ automated tests** covering all functionality:
 
 ```bash
 # Fast local tests (unit + integration)
-./scripts/testing/run_tests.sh fast
-
-# Full suite with coverage
-./scripts/testing/run_tests.sh all --coverage
+make test-fast                  # Unit tests (~5s)
+make test                       # Unit + integration (~40s)
 
 # E2E tests (requires AWS)
-AWS_PROFILE=china ./scripts/testing/run_tests.sh e2e
+make test-e2e                   # E2E tests (~7.5 min)
 
-# Manual test suite (17 scenarios, end-to-end validation)
+# Manual test scenarios
+make test-manual                # 17 core manual tests (~2.5 hours)
+make test-gap                   # 5 gap tests (~30 min)
+make test-all-manual            # All manual tests (~3 hours)
+
+# Or use scripts directly
+./scripts/testing/run_tests.sh fast
+./scripts/testing/run_tests.sh all --coverage
 ./scripts/testing/run_manual_tests.sh
+./scripts/testing/gap-tests/run_gap_tests.sh
 ```
 
 **Test Coverage:**
-- ✅ 249 unit tests (fast, fully mocked)
-- ✅ 90 integration tests (mocked AWS)
-- ✅ 60 E2E tests (real AWS S3)
-- ✅ 17 manual test scenarios
+- ✅ 249 unit tests (fast, fully mocked, ~5s)
+- ✅ 90 integration tests (mocked AWS, ~35s)
+- ✅ 60 E2E tests (real AWS S3, ~7.5min)
+- ✅ 17 core manual test scenarios (~2.5 hours)
+- ✅ 5 gap test scenarios (~30 min)
 - ✅ 90%+ code coverage
 
 See [Testing Guide](docs/autonomous_testing_guide.md) for details.
@@ -372,13 +379,14 @@ tvm-upload/
 │   ├── disk_manager.py     # Disk management
 │   ├── queue_manager.py    # Queue persistence
 │   └── cloudwatch_manager.py
-├── tests/                  # Test suite (400+ tests)
-│   ├── unit/               # Fast unit tests
-│   ├── integration/        # Integration tests
-│   └── e2e/                # End-to-end tests
+├── tests/                  # Test suite (399+ automated tests)
+│   ├── unit/               # 249 fast unit tests
+│   ├── integration/        # 90 integration tests
+│   └── e2e/                # 60 end-to-end tests
 ├── scripts/
 │   ├── deployment/         # install.sh, uninstall.sh, verify_deployment.sh
-│   ├── testing/            # run_tests.sh, run_manual_tests.sh
+│   ├── testing/            # run_tests.sh, manual-tests/ (17 tests)
+│   │   └── gap-tests/      # run_gap_tests.sh (5 tests + 6 advanced tests = 11 tests)
 │   ├── diagnostics/        # Troubleshooting tools
 │   └── lib/                # Shared libraries
 ├── docs/                   # Documentation

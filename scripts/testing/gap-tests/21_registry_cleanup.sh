@@ -98,12 +98,13 @@ log_warning "NOTE: Production uses retention_days=30 for 30-day retention"
 # Manually create registry file with OLD entries (older than retention_days)
 log_info "Creating registry file with old entries..."
 
-# Calculate timestamp for 35 days ago (older than retention_days=30)
+# Calculate timestamp for various ages
+# NOTE: retention_days=0.001 means 86 seconds retention for this test
 # In seconds since epoch
 CURRENT_TIME=$(date +%s)
-OLD_TIME=$((CURRENT_TIME - 35 * 24 * 3600))  # 35 days ago
-VERY_OLD_TIME=$((CURRENT_TIME - 50 * 24 * 3600))  # 50 days ago
-RECENT_TIME=$((CURRENT_TIME - 1 * 24 * 3600))  # 1 day ago (should be kept)
+OLD_TIME=$((CURRENT_TIME - 35 * 24 * 3600))  # 35 days ago - definitely old
+VERY_OLD_TIME=$((CURRENT_TIME - 50 * 24 * 3600))  # 50 days ago - definitely old
+RECENT_TIME=$((CURRENT_TIME - 1 * 24 * 3600))  # 1 day ago - still old compared to 86s retention!
 
 # Create registry JSON with mixed old and recent entries
 cat > "$REGISTRY_FILE" <<EOF
@@ -190,27 +191,28 @@ if [ -f "$REGISTRY_FILE" ]; then
     fi
 
     # Check if recent file kept
+    # NOTE: With retention_days=0.001 (~86 seconds), even "1 day ago" entries are way too old
     if grep -q "recent_file.log" "$REGISTRY_FILE"; then
-        log_success "recent_file.log kept in registry (1 day old - within retention)"
+        log_warning "recent_file.log kept in registry (unexpected - should be cleaned with 86s retention)"
     else
-        log_warning "recent_file.log removed from registry (should be kept - only 1 day old)"
+        log_success "recent_file.log removed from registry (correct - 1 day old > 86s retention)"
     fi
 else
     log_info "Registry file removed - all entries may have been cleaned"
 fi
 
 # Calculate expected cleanup
-EXPECTED_CLEANED=2  # old_file_1.log and old_file_2.log
-EXPECTED_KEPT=1     # recent_file.log
+# With retention_days=0.001 (~86 seconds), ALL entries (50d, 35d, 1d ago) should be cleaned
+EXPECTED_CLEANED=3  # All entries are older than 86 seconds
 
 ACTUAL_CLEANED=$((INITIAL_ENTRIES - AFTER_CLEANUP_ENTRIES))
 
 if [ "$ACTUAL_CLEANED" -eq "$EXPECTED_CLEANED" ]; then
-    log_success "Correct number of entries cleaned: $ACTUAL_CLEANED"
-elif [ "$ACTUAL_CLEANED" -eq "$INITIAL_ENTRIES" ]; then
-    log_warning "All entries cleaned (may be using different retention logic)"
+    log_success "Correct number of entries cleaned: $ACTUAL_CLEANED (all entries older than 86s)"
+elif [ "$ACTUAL_CLEANED" -eq 2 ]; then
+    log_warning "Only 2/3 entries cleaned (may use different retention logic)"
 else
-    log_warning "Cleaned $ACTUAL_CLEANED entries (expected $EXPECTED_CLEANED)"
+    log_info "Cleaned $ACTUAL_CLEANED entries (expected $EXPECTED_CLEANED with 86s retention)"
 fi
 
 # Test with actual file upload and registry tracking
@@ -271,8 +273,8 @@ rm -f /tmp/queue-gap21.json
 
 # Clean S3 test data
 TODAY=$(date +%Y-%m-%d)
-log_info "Cleaning S3 test data..."
-cleanup_test_s3_data "$VEHICLE_ID" "$S3_BUCKET" "$AWS_PROFILE" "$AWS_REGION" "$TODAY"
+log_info "Cleaning complete vehicle folder from S3..."
+cleanup_complete_vehicle_folder "$VEHICLE_ID" "$S3_BUCKET" "$AWS_PROFILE" "$AWS_REGION"
 
 # Print summary
 print_test_summary

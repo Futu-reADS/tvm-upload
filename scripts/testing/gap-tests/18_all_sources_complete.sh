@@ -239,7 +239,8 @@ aws s3 ls "${S3_PREFIX}/" --recursive --profile "$AWS_PROFILE" --region "$AWS_RE
 done
 
 # Total file count verification
-TOTAL_UPLOADED=$(aws s3 ls "${S3_PREFIX}/" --recursive --profile "$AWS_PROFILE" --region "$AWS_REGION" 2>/dev/null | grep -c "\.log" || echo "0")
+# Note: Count all files, not just .log (syslog files don't have .log extension)
+TOTAL_UPLOADED=$(aws s3 ls "${S3_PREFIX}/" --recursive --profile "$AWS_PROFILE" --region "$AWS_REGION" 2>/dev/null | grep -v "^$" | grep -v "PRE" | wc -l || echo "0")
 TOTAL_UPLOADED=$(echo "$TOTAL_UPLOADED" | tr -d '[:space:]')
 EXPECTED_TOTAL=10
 
@@ -305,8 +306,8 @@ rm -f /tmp/queue-gap18.json
 rm -f /tmp/registry-gap18.json
 
 # Clean S3 test data
-log_info "Cleaning S3 test data..."
-cleanup_test_s3_data "$VEHICLE_ID" "$S3_BUCKET" "$AWS_PROFILE" "$AWS_REGION" "$TODAY"
+log_info "Cleaning complete vehicle folder from S3..."
+cleanup_complete_vehicle_folder "$VEHICLE_ID" "$S3_BUCKET" "$AWS_PROFILE" "$AWS_REGION"
 
 # Print summary
 print_test_summary

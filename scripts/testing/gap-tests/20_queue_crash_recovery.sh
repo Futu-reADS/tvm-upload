@@ -124,16 +124,24 @@ else
     log_warning "Queue file not found yet (files may not be queued)"
 fi
 
-# Get service PID - must use the correct pattern to avoid catching parent shell
-SERVICE_PID=$(pgrep -f "python.*src.main.*$VEHICLE_ID" | head -1 || echo "")
-
-if [ -z "$SERVICE_PID" ]; then
-    log_warning "Cannot find service PID using vehicle ID, trying config file pattern..."
-    SERVICE_PID=$(pgrep -f "python.*main.py.*queue-gap20" | head -1 || echo "")
+# Get service PID from PID file (created by start_tvm_service)
+if [ -f /tmp/tvm-service.pid ]; then
+    SERVICE_PID=$(cat /tmp/tvm-service.pid 2>/dev/null || echo "")
+else
+    log_warning "PID file not found, trying process search..."
+    SERVICE_PID=$(pgrep -f "python.*src.main" | head -1 || echo "")
 fi
 
 if [ -z "$SERVICE_PID" ]; then
     log_error "Cannot find service PID - service may not be running"
+    log_info "Checking for any TVM processes:"
+    ps aux | grep -E "python.*main|tvm.*upload" | grep -v grep || true
+    exit 1
+fi
+
+# Verify PID is actually running
+if ! ps -p "$SERVICE_PID" > /dev/null 2>&1; then
+    log_error "PID $SERVICE_PID from PID file is not running"
     log_info "Checking for any TVM processes:"
     ps aux | grep -E "python.*main|tvm.*upload" | grep -v grep || true
     exit 1
@@ -269,8 +277,8 @@ rm -f "$QUEUE_FILE"
 rm -f /tmp/registry-gap20.json
 
 # Clean S3 test data
-log_info "Cleaning S3 test data..."
-cleanup_test_s3_data "$VEHICLE_ID" "$S3_BUCKET" "$AWS_PROFILE" "$AWS_REGION" "$TODAY"
+log_info "Cleaning complete vehicle folder from S3..."
+cleanup_complete_vehicle_folder "$VEHICLE_ID" "$S3_BUCKET" "$AWS_PROFILE" "$AWS_REGION"
 
 # Print summary
 print_test_summary
