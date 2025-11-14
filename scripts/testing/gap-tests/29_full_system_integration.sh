@@ -162,6 +162,7 @@ log_info "PHASE 2: Monitoring initial upload (2 minutes)..."
 sleep 120
 
 QUEUE_SIZE=$(grep -c "filepath" /tmp/queue-gap29.json 2>/dev/null || echo "0")
+QUEUE_SIZE=$(echo "$QUEUE_SIZE" | tr -d '\n' | head -1)
 log_info "Queue size: $QUEUE_SIZE"
 
 # =============================================================================
@@ -202,6 +203,7 @@ while [ $(($(date +%s) - PHASE3_START)) -lt $PHASE3_DURATION ]; do
     # Every minute, report status
     if [ $((FILE_COUNTER % 10)) -eq 0 ]; then
         QUEUE_SIZE=$(grep -c "filepath" /tmp/queue-gap29.json 2>/dev/null || echo "0")
+        QUEUE_SIZE=$(echo "$QUEUE_SIZE" | tr -d '\n' | head -1)
         log_info "Generated: $FILE_COUNTER files | Queue: $QUEUE_SIZE"
     fi
 

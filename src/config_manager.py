@@ -507,6 +507,14 @@ class ConfigManager:
             if not 0 < disk_config["critical_threshold"] < 1:
                 raise ConfigValidationError("disk.critical_threshold must be between 0 and 1")
 
+        # Validate that critical threshold is >= warning threshold
+        if "warning_threshold" in disk_config and "critical_threshold" in disk_config:
+            if disk_config["critical_threshold"] <= disk_config["warning_threshold"]:
+                raise ConfigValidationError(
+                    f"disk.critical_threshold ({disk_config['critical_threshold']}) must be greater than "
+                    f"disk.warning_threshold ({disk_config['warning_threshold']})"
+                )
+
     def _validate_deletion_config(self, deletion_config: Dict[str, Any]) -> None:
         """Validate deletion policy configuration (NEW in v2.0)."""
         # Validate after_upload section

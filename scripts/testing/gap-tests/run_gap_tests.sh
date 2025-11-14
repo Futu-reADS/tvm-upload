@@ -16,7 +16,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Default configuration
 CONFIG_FILE="${1:-config/config.yaml}"
-TEST_VEHICLE_ID="${2:-vehicle-CN-GAP}"
+TEST_VEHICLE_ID="${2:-vehicle-CN-GAP-TEST}"
 
 # Results tracking
 TESTS_PASSED=0
@@ -96,6 +96,7 @@ else
 fi
 
 # Test list (Gap tests 18-22, Advanced tests 23,25-29)
+# NOTE: Test 25 (concurrent operations) moved to end as it's most resource-intensive
 TESTS=(
     "18_all_sources_complete.sh|All 4 Log Sources Simultaneously"
     "19_deferred_deletion.sh|Deferred Deletion (keep_days > 0)"
@@ -103,11 +104,11 @@ TESTS=(
     "21_registry_cleanup.sh|Registry Cleanup After Retention Days"
     "22_env_var_expansion.sh|Environment Variable Path Expansion"
     "23_config_validation.sh|Configuration Validation"
-    "25_concurrent_operations.sh|Concurrent Operations & Race Conditions"
     "26_resource_limits.sh|Resource Limits & Stress Testing"
     "27_security_scenarios.sh|Security Scenarios & Attack Vectors"
     "28_performance_benchmarks.sh|Performance Benchmarks"
     "29_full_system_integration.sh|Full System Integration"
+    "25_concurrent_operations.sh|Concurrent Operations & Race Conditions"
 )
 
 # Run each test
@@ -126,12 +127,23 @@ for test_entry in "${TESTS[@]}"; do
     echo -e "${BLUE}Running: $test_name${NC}"
     echo -e "${BLUE}═══════════════════════════════════════════════════════════════${NC}"
 
-    # Run test
-    if bash "$test_path" "$CONFIG_FILE" "$TEST_VEHICLE_ID"; then
+    # Set timeout based on test (concurrent ops needs longer)
+    TEST_TIMEOUT=600  # 10 minutes default
+    if [[ "$test_file" == "25_concurrent_operations.sh" ]]; then
+        TEST_TIMEOUT=1200  # 20 minutes for concurrent ops
+    fi
+
+    # Run test with timeout
+    if timeout $TEST_TIMEOUT bash "$test_path" "$CONFIG_FILE" "$TEST_VEHICLE_ID"; then
         echo -e "${GREEN}✓ PASSED: $test_name${NC}"
         TESTS_PASSED=$((TESTS_PASSED + 1))
     else
-        echo -e "${RED}✗ FAILED: $test_name${NC}"
+        EXIT_CODE=$?
+        if [ $EXIT_CODE -eq 124 ]; then
+            echo -e "${RED}✗ TIMEOUT: $test_name (exceeded ${TEST_TIMEOUT}s)${NC}"
+        else
+            echo -e "${RED}✗ FAILED: $test_name${NC}"
+        fi
         TESTS_FAILED=$((TESTS_FAILED + 1))
     fi
 done

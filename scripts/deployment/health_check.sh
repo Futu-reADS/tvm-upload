@@ -100,8 +100,8 @@ fi
 print_section "Recent Activity"
 
 if command -v journalctl &> /dev/null && systemctl list-unit-files | grep -q "tvm-upload.service"; then
-    # Check for errors in last 24 hours
-    ERROR_COUNT=$(journalctl -u tvm-upload --since "24 hours ago" 2>/dev/null | grep -i "error" | wc -l)
+    # Check for errors in last 24 hours (look for [ERROR] level logs, not filenames containing "error")
+    ERROR_COUNT=$(journalctl -u tvm-upload --since "24 hours ago" 2>/dev/null | grep "\[ERROR\]" | wc -l)
 
     if [ "$ERROR_COUNT" -eq 0 ]; then
         check_pass "No errors in last 24 hours"

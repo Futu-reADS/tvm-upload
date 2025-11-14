@@ -383,7 +383,9 @@ monitor_queue_drain() {
 
     while [ $(($(date +%s) - start)) -lt $duration ]; do
         if [ -f "$QUEUE_FILE" ]; then
+            # Fix: Ensure queue_size is a single integer, not multi-line
             local queue_size=$(grep -c "filepath" "$QUEUE_FILE" 2>/dev/null || echo "0")
+            queue_size=$(echo "$queue_size" | tr -d '\n' | head -1)
 
             if [ "$queue_size" -gt "$max_queue" ]; then
                 max_queue=$queue_size
@@ -712,7 +714,9 @@ fi
 if [ -f "$REGISTRY_FILE" ]; then
     if python3 -m json.tool "$REGISTRY_FILE" > /dev/null 2>&1; then
         log_success "✓ Registry file integrity maintained"
+        # Fix: Ensure registry count is a single integer, not multi-line
         REGISTRY_ENTRIES=$(grep -c "uploaded_at" "$REGISTRY_FILE" 2>/dev/null || echo "0")
+        REGISTRY_ENTRIES=$(echo "$REGISTRY_ENTRIES" | tr -d '\n' | head -1)
         log_info "Registry entries: $REGISTRY_ENTRIES"
     else
         log_error "✗ Registry file corrupted"

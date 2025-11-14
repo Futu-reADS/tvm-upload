@@ -1,7 +1,7 @@
 # Makefile for TVM Upload System
 # Simplifies common development tasks
 
-.PHONY: help install install-dev install-dev-tools test test-fast test-unit test-integration test-e2e test-all test-coverage test-manual test-gap test-all-manual clean clean-test clean-all lint format check run run-test-config deploy-install deploy-uninstall deploy-verify deploy-health
+.PHONY: help install install-dev install-dev-tools test test-fast test-unit test-integration test-e2e test-all test-coverage test-manual test-gap test-all-manual test-prod-sim-2h test-prod-sim-8h test-prod-sim-24h clean clean-test clean-all lint format check run run-test-config deploy-install deploy-uninstall deploy-verify deploy-health
 
 # Default target
 .DEFAULT_GOAL := help
@@ -49,6 +49,11 @@ help:
 	@echo "  make test-gap          Run 11 gap + advanced test scenarios (~3 hours)"
 	@echo "  make test-all-manual   Run ALL manual tests (core + gap + advanced, ~5.5 hours)"
 	@echo ""
+	@echo "$(GREEN)Production Simulation (Long-Running):$(NC)"
+	@echo "  make test-prod-sim-2h  Run 2-hour production simulation (quick validation)"
+	@echo "  make test-prod-sim-8h  Run 8-hour production simulation (standard pre-production)"
+	@echo "  make test-prod-sim-24h Run 24-hour production simulation (full day, comprehensive)"
+	@echo ""
 	@echo "$(GREEN)Code Quality:$(NC)"
 	@echo "  make lint              Run linters (flake8, pylint)"
 	@echo "  make format            Format code with black"
@@ -73,6 +78,7 @@ help:
 	@echo "  make install-dev && make test-fast"
 	@echo "  make test-all          # Runs all tests with AWS_PROFILE=china"
 	@echo "  make test-e2e          # Runs E2E tests with AWS_PROFILE=china"
+	@echo "  make test-prod-sim-8h  # 8-hour production simulation (recommended pre-deployment)"
 	@echo "  make deploy-verify && make deploy-install"
 
 # ==================== Setup ====================
@@ -161,6 +167,46 @@ test-gap:
 
 test-all-manual: test-manual test-gap
 	@echo "$(GREEN)✓ All manual tests complete (17 core + 5 gap + 6 advanced = 28 tests)$(NC)"
+
+# ==================== Production Simulation Tests ====================
+
+test-prod-sim-2h:
+	@echo "$(BLUE)╔════════════════════════════════════════════════════════════════╗$(NC)"
+	@echo "$(BLUE)║   Production Simulation Test - 2 Hours (Quick Validation)     ║$(NC)"
+	@echo "$(BLUE)╚════════════════════════════════════════════════════════════════╝$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Duration: 2 hours$(NC)"
+	@echo "$(YELLOW)Vehicle ID: VEHICLE-PROD-TEST-2H$(NC)"
+	@echo "$(YELLOW)Cycles: ~1 cycle (100 min per cycle)$(NC)"
+	@echo ""
+	./scripts/testing/gap-tests/run_production_simulation.sh config/config.yaml VEHICLE-PROD-TEST-2H 2
+	@echo "$(GREEN)✓ 2-hour production simulation complete$(NC)"
+
+test-prod-sim-8h:
+	@echo "$(BLUE)╔════════════════════════════════════════════════════════════════╗$(NC)"
+	@echo "$(BLUE)║   Production Simulation Test - 8 Hours (Standard Validation)  ║$(NC)"
+	@echo "$(BLUE)╚════════════════════════════════════════════════════════════════╝$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Duration: 8 hours$(NC)"
+	@echo "$(YELLOW)Vehicle ID: VEHICLE-PROD-TEST-8H$(NC)"
+	@echo "$(YELLOW)Cycles: ~5 cycles (100 min per cycle)$(NC)"
+	@echo "$(YELLOW)Expected files: 20,000 - 40,000$(NC)"
+	@echo ""
+	./scripts/testing/gap-tests/run_production_simulation.sh config/config.yaml VEHICLE-PROD-TEST-8H 8
+	@echo "$(GREEN)✓ 8-hour production simulation complete$(NC)"
+
+test-prod-sim-24h:
+	@echo "$(BLUE)╔════════════════════════════════════════════════════════════════╗$(NC)"
+	@echo "$(BLUE)║   Production Simulation Test - 24 Hours (Full Day Simulation) ║$(NC)"
+	@echo "$(BLUE)╚════════════════════════════════════════════════════════════════╝$(NC)"
+	@echo ""
+	@echo "$(YELLOW)Duration: 24 hours (full day)$(NC)"
+	@echo "$(YELLOW)Vehicle ID: VEHICLE-PROD-TEST-24H$(NC)"
+	@echo "$(YELLOW)Cycles: ~14 cycles (100 min per cycle)$(NC)"
+	@echo "$(YELLOW)Expected files: 60,000 - 120,000$(NC)"
+	@echo ""
+	./scripts/testing/gap-tests/run_production_simulation.sh config/config.yaml VEHICLE-PROD-TEST-24H 24
+	@echo "$(GREEN)✓ 24-hour production simulation complete$(NC)"
 
 # ==================== Code Quality ====================
 

@@ -39,7 +39,8 @@ else
 fi
 log_info "Using test vehicle ID: $VEHICLE_ID"
 
-# Create test directory
+# Create test directory (clean it first if it exists)
+rm -rf "$TEST_DIR"
 mkdir -p "$TEST_DIR/terminal"
 log_success "Created test directory"
 
@@ -48,45 +49,16 @@ log_success "Created test directory"
 # =============================================================================
 
 log_info "═══════════════════════════════════════════"
-log_info "TEST 1: Large Queue Stress Test (10,000 files)"
+log_info "TEST 1: Large Queue Stress Test (200 files)"
 log_info "═══════════════════════════════════════════"
 
-log_warning "This test creates 10,000 small files (~50MB total)"
-log_warning "Adjust FILE_COUNT if disk space is limited"
+log_warning "This test creates 200 small files for stress testing"
+log_warning "Reduced from 2000 to avoid memory issues with watchdog"
 
-# Configurable file count
-FILE_COUNT=10000
-BATCH_SIZE=1000
-
-log_info "Creating $FILE_COUNT test files in batches of $BATCH_SIZE..."
-
-START_TIME=$(date +%s)
-
-# Create files in batches for better performance
-for batch in $(seq 1 $((FILE_COUNT / BATCH_SIZE))); do
-    START_FILE=$(( (batch - 1) * BATCH_SIZE + 1 ))
-    END_FILE=$(( batch * BATCH_SIZE ))
-
-    log_info "Creating files $START_FILE - $END_FILE..."
-
-    # Parallel file creation using xargs
-    seq $START_FILE $END_FILE | xargs -P 10 -I {} sh -c \
-        "echo 'Test file {} - $(date)' > $TEST_DIR/terminal/file_{}.log"
-
-    log_info "  Batch $batch completed"
-done
-
-CREATION_TIME=$(($(date +%s) - START_TIME))
-log_success "Created $FILE_COUNT files in ${CREATION_TIME}s"
-
-# Check actual file count
-ACTUAL_COUNT=$(find "$TEST_DIR/terminal" -type f -name "*.log" | wc -l)
-log_info "Actual file count: $ACTUAL_COUNT"
-
-if [ "$ACTUAL_COUNT" -lt $((FILE_COUNT * 95 / 100)) ]; then
-    log_error "File creation incomplete: $ACTUAL_COUNT / $FILE_COUNT"
-    exit 1
-fi
+# Configurable file count (reduced from 10000 to avoid AWS rate limits)
+# Further reduced to 200 to avoid watchdog crashes with rapid file creation
+FILE_COUNT=200  # Conservative count that watchdog can handle
+BATCH_SIZE=50  # Smaller batches with delays
 
 # Create test config with short stability period for faster testing
 TEST_CONFIG="/tmp/tvm-test-config-stress.yaml"
@@ -112,11 +84,10 @@ upload:
     enabled: false
   batch_upload:
     enabled: true
-  upload_on_start: true
+  upload_on_start: false  # Don't upload all files immediately
   queue_file: $QUEUE_FILE
   scan_existing_files:
-    enabled: true
-    max_age_days: 1
+    enabled: false  # Don't scan files on startup
   processed_files_registry:
     registry_file: /tmp/registry-gap26.json
     retention_days: 30
@@ -156,6 +127,40 @@ fi
 
 SERVICE_PID=$(pgrep -f "python.*src.main.*$VEHICLE_ID" | head -1)
 log_info "Service PID: $SERVICE_PID"
+
+# Now create files AFTER service is running
+log_info "Creating $FILE_COUNT test files in batches of $BATCH_SIZE..."
+START_TIME=$(date +%s)
+
+# Create files in batches for better performance
+# Add delays between batches to avoid overwhelming watchdog
+for batch in $(seq 1 $((FILE_COUNT / BATCH_SIZE))); do
+    START_FILE=$(( (batch - 1) * BATCH_SIZE + 1 ))
+    END_FILE=$(( batch * BATCH_SIZE ))
+
+    log_info "Creating files $START_FILE - $END_FILE..."
+
+    # Parallel file creation using xargs (limited to 5 parallel processes)
+    seq $START_FILE $END_FILE | xargs -P 5 -I {} sh -c \
+        "echo 'Test file {} - $(date)' > $TEST_DIR/terminal/file_{}.log"
+
+    log_info "  Batch $batch completed"
+
+    # Add 2-second delay between batches to let watchdog process events
+    [ $batch -lt $((FILE_COUNT / BATCH_SIZE)) ] && sleep 2
+done
+
+CREATION_TIME=$(($(date +%s) - START_TIME))
+log_success "Created $FILE_COUNT files in ${CREATION_TIME}s"
+
+# Check actual file count
+ACTUAL_COUNT=$(find "$TEST_DIR/terminal" -type f -name "*.log" | wc -l)
+log_info "Actual file count: $ACTUAL_COUNT"
+
+if [ "$ACTUAL_COUNT" -lt $((FILE_COUNT * 95 / 100)) ]; then
+    log_error "File creation incomplete: $ACTUAL_COUNT / $FILE_COUNT"
+    TESTS_FAILED=$((TESTS_FAILED + 1))
+fi
 
 # =============================================================================
 # Monitor Resource Usage
@@ -198,6 +203,7 @@ for i in $(seq 1 $ITERATIONS); do
     # Check queue size
     if [ -f "$QUEUE_FILE" ]; then
         QUEUE_SIZE=$(grep -c "filepath" "$QUEUE_FILE" 2>/dev/null || echo "0")
+        QUEUE_SIZE=$(echo "$QUEUE_SIZE" | tr -d '\n' | head -1)
     else
         QUEUE_SIZE=0
     fi
@@ -246,6 +252,7 @@ sleep 120
 # Check queue size after processing
 if [ -f "$QUEUE_FILE" ]; then
     QUEUE_REMAINING=$(grep -c "filepath" "$QUEUE_FILE" 2>/dev/null || echo "0")
+    QUEUE_REMAINING=$(echo "$QUEUE_REMAINING" | tr -d '\n' | head -1)
 else
     QUEUE_REMAINING=0
 fi

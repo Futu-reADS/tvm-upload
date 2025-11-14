@@ -38,7 +38,8 @@ else
 fi
 log_info "Using test vehicle ID: $VEHICLE_ID"
 
-# Create test directory
+# Create test directory (clean it first if it exists)
+rm -rf "$TEST_DIR"
 mkdir -p "$TEST_DIR/terminal"
 log_success "Created test directory"
 

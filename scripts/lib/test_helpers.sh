@@ -615,12 +615,12 @@ cleanup_complete_vehicle_folder() {
     done
 
     # ========================================================================
-    # SAFETY CHECK 3: Vehicle ID must contain "TEST"
+    # SAFETY CHECK 3: Vehicle ID must contain "TEST" or "PRODSIM"
     # ========================================================================
-    if [[ ! "$vehicle_id" =~ TEST ]]; then
-        log_error "SAFETY BLOCK: Vehicle ID does not contain 'TEST': $vehicle_id"
+    if [[ ! "$vehicle_id" =~ TEST ]] && [[ ! "$vehicle_id" =~ PRODSIM ]]; then
+        log_error "SAFETY BLOCK: Vehicle ID does not contain 'TEST' or 'PRODSIM': $vehicle_id"
         log_warning "This doesn't look like a test vehicle ID. Refusing to delete."
-        log_warning "Test vehicle IDs should follow pattern: vehicle-TEST-*"
+        log_warning "Test vehicle IDs should follow pattern: vehicle-TEST-* or vehicle-*-PRODSIM-*"
         return 1
     fi
 
@@ -659,10 +659,10 @@ cleanup_all_test_folders() {
     local dry_run=${5:-false}  # Optional: set to 'true' for preview only
 
     # ========================================================================
-    # SAFETY CHECK 1: Pattern must contain "TEST"
+    # SAFETY CHECK 1: Pattern must contain "TEST" or "PRODSIM"
     # ========================================================================
-    if [[ ! "$vehicle_pattern" =~ TEST ]]; then
-        log_error "SAFETY BLOCK: Pattern does not contain 'TEST': $vehicle_pattern"
+    if [[ ! "$vehicle_pattern" =~ TEST ]] && [[ ! "$vehicle_pattern" =~ PRODSIM ]]; then
+        log_error "SAFETY BLOCK: Pattern does not contain 'TEST' or 'PRODSIM': $vehicle_pattern"
         log_warning "Refusing to search for non-test vehicles"
         return 1
     fi

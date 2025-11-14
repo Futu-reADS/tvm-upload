@@ -675,9 +675,10 @@ class FileMonitor:
                         f"(skipping duplicate mark)"
                     )
                 else:
-                    logger.warning(
-                        f"File marked as processed but callback returned False: {file_path.name} "
-                        f"(possible race condition or batch upload)"
+                    # In batch upload mode, callback returns False to prevent duplicate marking
+                    # This is EXPECTED behavior, not an error
+                    logger.debug(
+                        f"File already marked as processed (batch upload mode): {file_path.name}"
                     )
                 continue  # ← Skip marking
 
