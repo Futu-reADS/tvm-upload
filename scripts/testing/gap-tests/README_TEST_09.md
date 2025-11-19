@@ -1,8 +1,8 @@
-# Test 30: Production Simulation - Campus Vehicle Operation
+# Test 9: Production Simulation - Campus Vehicle Operation
 
 ## Overview
 
-**Test 30** is a comprehensive long-running test that simulates real-world campus vehicle deployment scenarios. It runs continuously for 2-24 hours (configurable) and tests the system under realistic operational conditions.
+**Test 9** (formerly Test 30) is a comprehensive long-running test that simulates real-world campus vehicle deployment scenarios. It runs continuously for 2-24 hours (configurable) and tests the system under realistic operational conditions.
 
 ## Purpose
 
@@ -97,7 +97,7 @@ Each cycle runs through 5 phases:
 ./scripts/testing/gap-tests/run_production_simulation.sh config/config.yaml
 
 # Or run directly
-./scripts/testing/gap-tests/30_production_simulation.sh config/config.yaml vehicle-TEST 2
+./scripts/testing/gap-tests/09_production_simulation.sh config/config.yaml vehicle-TEST 2
 ```
 
 ### Custom Duration
@@ -111,7 +111,7 @@ Each cycle runs through 5 phases:
 
 ### Parameters
 ```bash
-./scripts/testing/gap-tests/30_production_simulation.sh <config_file> <vehicle_id> <duration_hours>
+./scripts/testing/gap-tests/09_production_simulation.sh <config_file> <vehicle_id> <duration_hours>
 ```
 
 - `config_file`: Path to config.yaml (default: config/config.yaml)
@@ -317,20 +317,19 @@ aws s3 rm s3://t01logs/vehicle-PROD-SIM-TIMESTAMP/ --recursive --profile china -
 ## Integration with Test Suite
 
 ### Standalone Test
-Test 30 is **NOT** included in `make test-gap` or `make test-all-manual` because:
-- It's too long (2-24 hours)
-- It's resource-intensive
-- It requires sudo access
-- It manipulates network settings
+Test 9 is included in `make test-gap` but will timeout on the default 10-minute limit. For full execution, use the dedicated runner:
 
-### Running Test 30
 ```bash
-# Use dedicated runner
+# Use dedicated runner (recommended)
 ./scripts/testing/gap-tests/run_production_simulation.sh
 
-# Or add to Makefile for convenience (optional)
-make test-production-sim  # If added to Makefile
+# Or use Makefile targets
+make test-prod-sim-2h   # 2-hour quick validation
+make test-prod-sim-8h   # 8-hour standard validation
+make test-prod-sim-24h  # 24-hour comprehensive validation
 ```
+
+**Note**: Due to its long duration (2-24 hours), this test is best run separately, not as part of the full test suite.
 
 ## Recommended Testing Strategy
 
@@ -368,6 +367,7 @@ The test is designed to find issues that short tests miss. Failures here are **g
 
 ---
 
-**Test 30 Author**: Claude (Anthropic)
-**Last Updated**: 2025-11-11
+**Test 9 Author**: Claude (Anthropic)
+**Last Updated**: 2025-11-14
 **Test Duration Options**: 2h (quick), 8h (standard), 24h (comprehensive)
+**Note**: Formerly numbered as Test 30, renumbered to Test 9 after removal of redundant tests 25 and 28

@@ -24,6 +24,7 @@ source "${SCRIPT_DIR}/../../lib/test_helpers.sh"
 CONFIG_FILE="${1:-config/config.yaml}"
 TEST_VEHICLE_ID="${2}"
 TEST_DURATION_HOURS="${3:-2}"  # Default 2 hours
+SKIP_PROMPTS="${4:-false}"      # Set to "true" to skip all prompts
 TEST_DIR="/tmp/tvm-production-sim"
 SERVICE_LOG="/tmp/tvm-service-prod-sim.log"
 METRICS_LOG="/tmp/tvm-metrics-prod-sim.log"
@@ -50,11 +51,22 @@ log_warning "   • Fill disk to critical levels"
 log_warning "   • Run for $TEST_DURATION_HOURS hours continuously"
 log_info ""
 
-# Confirm sudo access
-if ! sudo -n true 2>/dev/null; then
-    log_warning "This test requires sudo access for network manipulation"
-    log_info "Please enter sudo password:"
-    sudo true || exit 1
+# Confirm sudo access - check if the specific commands we need work without password
+SUDO_WORKS=true
+if ! sudo -n iptables -L > /dev/null 2>&1; then
+    SUDO_WORKS=false
+fi
+
+if [ "$SUDO_WORKS" = "false" ]; then
+    if [ "$SKIP_PROMPTS" = "true" ]; then
+        log_error "This test requires passwordless sudo for iptables/tc commands."
+        log_error "Run this once: sudo ./scripts/deployment/setup_test_sudo.sh"
+        exit 1
+    else
+        log_warning "This test requires sudo access for network manipulation"
+        log_info "Please enter sudo password (or run ./scripts/deployment/setup_test_sudo.sh for passwordless):"
+        sudo true || exit 1
+    fi
 fi
 
 # Parse configuration

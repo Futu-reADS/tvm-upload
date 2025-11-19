@@ -20,7 +20,7 @@ help:
 	@echo "  make install           Install in production mode"
 	@echo "  make install-dev       Install with test dependencies"
 	@echo "  make install-dev-tools Install linters, formatters & pre-commit hooks"
-	@echo ""
+	@echo ""e
 	@echo "$(YELLOW)What Gets Installed:$(NC)"
 	@echo "  Package         | install | install-dev | install-dev-tools"
 	@echo "  ----------------|---------|-------------|------------------"
@@ -46,8 +46,8 @@ help:
 	@echo "  make test-all          Run ALL tests including E2E (AWS_PROFILE=china)"
 	@echo "  make test-coverage     Run tests with HTML coverage report"
 	@echo "  make test-manual       Run 17 core manual test scenarios (~2.5 hours)"
-	@echo "  make test-gap          Run 11 gap + advanced test scenarios (~3 hours)"
-	@echo "  make test-all-manual   Run ALL manual tests (core + gap + advanced, ~5.5 hours)"
+	@echo "  make test-gap          Run 9 gap + advanced test scenarios (~2 hours)"
+	@echo "  make test-all-manual   Run ALL manual tests (core + gap + advanced, ~4.5 hours)"
 	@echo ""
 	@echo "$(GREEN)Production Simulation (Long-Running):$(NC)"
 	@echo "  make test-prod-sim-2h  Run 2-hour production simulation (quick validation)"
@@ -159,14 +159,16 @@ test-manual:
 
 test-gap:
 	@echo "$(BLUE)Running gap + advanced test scenarios...$(NC)"
-	@echo "$(YELLOW)This runs 11 test scenarios (~3 hours)$(NC)"
-	@echo "$(YELLOW)Gap tests (18-22): env vars, all sources, deferred deletion, crash recovery, registry cleanup$(NC)"
-	@echo "$(YELLOW)Advanced tests (23,25-29): config validation, concurrency, security, performance, integration$(NC)"
+	@echo "$(YELLOW)This runs 9 test scenarios (~2 hours)$(NC)"
+	@echo "$(YELLOW)Tests 1-5: All sources, deferred deletion, crash recovery, registry cleanup, env vars$(NC)"
+	@echo "$(YELLOW)Tests 6-9: Config validation, security, full integration, production sim$(NC)"
+	@echo "$(YELLOW)Note: Tests 25 (concurrent), 26 (resource limits), 28 (performance) removed$(NC)"
+	@echo "$(YELLOW)      Test 9 (production simulation) provides superior coverage for all removed tests$(NC)"
 	./scripts/testing/gap-tests/run_gap_tests.sh
 	@echo "$(GREEN)✓ Gap + advanced tests complete$(NC)"
 
 test-all-manual: test-manual test-gap
-	@echo "$(GREEN)✓ All manual tests complete (17 core + 5 gap + 6 advanced = 28 tests)$(NC)"
+	@echo "$(GREEN)✓ All manual tests complete (17 core + 9 gap/advanced = 26 tests)$(NC)"
 
 # ==================== Production Simulation Tests ====================
 
@@ -179,7 +181,12 @@ test-prod-sim-2h:
 	@echo "$(YELLOW)Vehicle ID: VEHICLE-PROD-TEST-2H$(NC)"
 	@echo "$(YELLOW)Cycles: ~1 cycle (100 min per cycle)$(NC)"
 	@echo ""
-	./scripts/testing/gap-tests/run_production_simulation.sh config/config.yaml VEHICLE-PROD-TEST-2H 2
+	@if ! sudo -n true 2>/dev/null; then \
+		echo "$(YELLOW)Note: This test requires passwordless sudo. Run once:$(NC)"; \
+		echo "$(YELLOW)  sudo ./scripts/deployment/setup_test_sudo.sh$(NC)"; \
+		echo ""; \
+	fi
+	./scripts/testing/gap-tests/run_production_simulation.sh config/config.yaml VEHICLE-PROD-TEST-2H 2 true
 	@echo "$(GREEN)✓ 2-hour production simulation complete$(NC)"
 
 test-prod-sim-8h:
@@ -192,7 +199,12 @@ test-prod-sim-8h:
 	@echo "$(YELLOW)Cycles: ~5 cycles (100 min per cycle)$(NC)"
 	@echo "$(YELLOW)Expected files: 20,000 - 40,000$(NC)"
 	@echo ""
-	./scripts/testing/gap-tests/run_production_simulation.sh config/config.yaml VEHICLE-PROD-TEST-8H 8
+	@if ! sudo -n true 2>/dev/null; then \
+		echo "$(YELLOW)Note: This test requires passwordless sudo. Run once:$(NC)"; \
+		echo "$(YELLOW)  sudo ./scripts/deployment/setup_test_sudo.sh$(NC)"; \
+		echo ""; \
+	fi
+	./scripts/testing/gap-tests/run_production_simulation.sh config/config.yaml VEHICLE-PROD-TEST-8H 8 true
 	@echo "$(GREEN)✓ 8-hour production simulation complete$(NC)"
 
 test-prod-sim-24h:
@@ -205,7 +217,12 @@ test-prod-sim-24h:
 	@echo "$(YELLOW)Cycles: ~14 cycles (100 min per cycle)$(NC)"
 	@echo "$(YELLOW)Expected files: 60,000 - 120,000$(NC)"
 	@echo ""
-	./scripts/testing/gap-tests/run_production_simulation.sh config/config.yaml VEHICLE-PROD-TEST-24H 24
+	@if ! sudo -n true 2>/dev/null; then \
+		echo "$(YELLOW)Note: This test requires passwordless sudo. Run once:$(NC)"; \
+		echo "$(YELLOW)  sudo ./scripts/deployment/setup_test_sudo.sh$(NC)"; \
+		echo ""; \
+	fi
+	./scripts/testing/gap-tests/run_production_simulation.sh config/config.yaml VEHICLE-PROD-TEST-24H 24 true
 	@echo "$(GREEN)✓ 24-hour production simulation complete$(NC)"
 
 # ==================== Code Quality ====================
@@ -366,9 +383,8 @@ info:
 	@echo "  Integration:    90 tests (~35 sec)"
 	@echo "  E2E:            60 tests (~7.5 min)"
 	@echo "  Manual (core):  17 scenarios (~2.5 hours)"
-	@echo "  Manual (gap):   5 scenarios (~30 min)"
-	@echo "  Manual (adv):   6 scenarios (~2.5 hours)"
-	@echo "  Manual (total): 28 scenarios (~5.5 hours)"
+	@echo "  Manual (gap):   9 scenarios (~2 hours)"
+	@echo "  Manual (total): 26 scenarios (~4.5 hours)"
 
 version:
 	@echo "TVM Upload System v2.1.0"

@@ -1,7 +1,7 @@
 # TVM Log Upload System - Deployment Guide
 
-**Version:** 2.7
-**Last Updated:** 2025-11-10
+**Version:** 2.8
+**Last Updated:** 2025-11-14
 **Target Audience:** Vehicle deployment technicians
 
 ---
@@ -116,6 +116,8 @@ df -h /
 - Ubuntu: 22.04 or higher
 - Python: 3.10.x or higher
 - pip3: any recent version (e.g., 22.0+)
+- Node.js: 20.x or higher (if JS tools are used)
+- npm: 10.x or higher (if JS tools are used)
 - Network: Successful ping response
 - Disk: At least 10GB available
 
@@ -154,6 +156,14 @@ python3 --version
 # Check pip3 is installed
 pip3 --version
 # Expected: pip 22.x or higher
+
+# Check Node.js version (if using any JS tools)
+node --version
+# Expected: Node.js 20.x or higher (LTS version recommended)
+
+# Check npm version
+npm --version
+# Expected: npm 10.x or higher
 
 # Check disk space (need at least 10GB free)
 df -h / | grep -E '^/|Avail'
@@ -215,6 +225,8 @@ echo "Environment Setup Summary:"
 echo "-------------------------"
 echo "Python version: $(python3 --version)"
 echo "pip3 version: $(pip3 --version | cut -d' ' -f2)"
+echo "Node.js version: $(node --version 2>/dev/null || echo 'Not installed (OK if not needed)')"
+echo "npm version: $(npm --version 2>/dev/null || echo 'Not installed (OK if not needed)')"
 echo "AWS CLI version: $(aws --version 2>&1 | cut -d' ' -f1)"
 echo "Disk space: $(df -h / | awk 'NR==2 {print $4}')"
 echo ""
@@ -230,6 +242,10 @@ echo "-------------------------"
 | AWS CLI conflict | `KeyError: 'opsworkscm'` when running `aws configure` | Run Step 0c to upgrade local AWS CLI |
 | Old Python | `Python 3.8` or lower | Upgrade to Python 3.10+ or use different system |
 | Missing pip3 | `pip3: command not found` | Install: `sudo apt install python3-pip` |
+| Old Node.js | `Node.js 16.x` or lower | Install Node.js 20+ using nvm or NodeSource |
+| Node version mismatch | npm commands fail with compatibility errors | Use `nvm use 20` or reinstall Node.js LTS |
+| Missing npm | `npm: command not found` | Install: `sudo apt install npm` or use nvm |
+| npm permission errors | `EACCES` errors when installing packages | Use `npm config set prefix ~/.npm-global` and add to PATH |
 | Network issues | Cannot ping AWS China | Check WiFi/firewall settings |
 | Disk space low | Less than 10GB free | Clean up disk space or use different partition |
 
@@ -436,7 +452,139 @@ aws help
 
 ---
 
-#### 0.3 Environment Summary
+#### 0.3 Node.js and npm Version Verification (If Required)
+
+**⚠️ NOTE:** This step is only required if you're using JavaScript tools or if your deployment scripts require Node.js/npm. The core TVM upload system is Python-based and does not require Node.js.
+
+**Step 1: Check if Node.js/npm are required**
+
+```bash
+# Check if Node.js is installed
+node --version 2>/dev/null || echo "Node.js not installed"
+
+# Check if npm is installed
+npm --version 2>/dev/null || echo "npm not installed"
+```
+
+**Step 2: Verify versions (if installed)**
+
+```bash
+# Check Node.js version
+node --version
+# Expected: v20.x.x or higher (LTS version recommended)
+
+# Check npm version
+npm --version
+# Expected: 10.x.x or higher
+```
+
+**Step 3: Handle version mismatches**
+
+**If Node.js version is too old (< 20.x):**
+
+**Option A: Install using nvm (Node Version Manager) - RECOMMENDED:**
+
+```bash
+# Install nvm
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+
+# Reload shell configuration
+source ~/.bashrc
+# Or for zsh: source ~/.zshrc
+
+# Install Node.js 20 LTS
+nvm install 20
+
+# Set as default
+nvm use 20
+nvm alias default 20
+
+# Verify installation
+node --version
+# Expected: v20.x.x
+
+npm --version
+# Expected: 10.x.x or higher
+```
+
+**Option B: Install from NodeSource repository:**
+
+```bash
+# Remove old Node.js (if installed via apt)
+sudo apt remove -y nodejs npm
+
+# Install prerequisites (curl is needed for NodeSource setup)
+sudo apt install -y curl
+
+# Add NodeSource repository for Node.js 20.x
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+
+# Install Node.js (this includes npm automatically)
+sudo apt install -y nodejs
+
+# Verify installation
+node --version  # Should show v20.x.x
+npm --version   # Should show v10.x.x
+```
+
+**Step 4: Fix npm permission errors (if encountered)**
+
+**Problem:** `EACCES` permission denied errors when installing npm packages globally
+
+**Solution:**
+
+```bash
+# Configure npm to use a user-level directory
+mkdir -p ~/.npm-global
+npm config set prefix ~/.npm-global
+
+# Add to PATH (add this to ~/.bashrc or ~/.profile)
+echo 'export PATH=~/.npm-global/bin:$PATH' >> ~/.bashrc
+source ~/.bashrc
+
+# Verify npm now works without sudo
+npm install -g npm@latest
+npm --version
+```
+
+**Step 5: Verify Node.js/npm work correctly**
+
+```bash
+# Test Node.js
+node -e "console.log('Node.js works!');"
+# Expected: "Node.js works!"
+
+# Test npm
+npm --version
+# Expected: Version number without errors
+
+# Check npm installation location
+which npm
+# Expected: /home/YOUR_USERNAME/.nvm/versions/node/v20.x.x/bin/npm
+#       or: /home/YOUR_USERNAME/.npm-global/bin/npm
+#       or: /usr/bin/npm (if installed via apt)
+```
+
+**Common Node.js/npm Issues:**
+
+| Issue | Symptom | Solution |
+|-------|---------|----------|
+| Old Node.js version | `node --version` shows v18.x or lower | Use nvm to install Node.js 20+ (see Option A above) |
+| npm version mismatch | npm commands fail with compatibility warnings | Run `npm install -g npm@latest` |
+| Permission errors | `EACCES` when installing packages | Configure user-level npm directory (see Step 4 above) |
+| Command not found | `node: command not found` or `npm: command not found` | Install Node.js using nvm or NodeSource (requires curl) |
+| Multiple Node versions | Different versions in different terminals | Use nvm to manage versions consistently |
+| npm cache issues | Package installation fails randomly | Run `npm cache clean --force` |
+| Missing curl | Cannot download nvm or NodeSource setup | Install with `sudo apt install -y curl` |
+
+**When to skip this section:**
+- If your deployment doesn't require Node.js/npm
+- If you're only using Python components
+- If Node.js/npm are already at correct versions
+
+---
+
+#### 0.4 Environment Summary
 
 Run this to see a complete summary:
 
@@ -445,6 +593,8 @@ echo "Environment Setup Summary:"
 echo "-------------------------"
 echo "Python: $(python3 --version)"
 echo "pip3: $(pip3 --version | cut -d' ' -f2)"
+echo "Node.js: $(node --version 2>/dev/null || echo 'Not installed')"
+echo "npm: $(npm --version 2>/dev/null || echo 'Not installed')"
 echo "AWS CLI: $(aws --version 2>&1)"
 echo "AWS location: $(which aws)"
 echo "Disk free: $(df -h / | awk 'NR==2 {print $4}')"
@@ -1007,6 +1157,106 @@ pip3 install --user --upgrade awscli
 
 ---
 
+### Problem: Node.js or npm version issues
+
+**Symptoms:**
+- `node: command not found` or `npm: command not found`
+- npm commands fail with compatibility warnings or errors
+- `EACCES` permission denied when installing npm packages
+- Version mismatch errors: "This version of npm requires Node.js X.X.X or higher"
+
+**Root cause:** Outdated Node.js/npm versions, multiple installations, or permission issues.
+
+**Diagnose:**
+
+```bash
+# Check current versions
+node --version
+npm --version
+
+# Check for multiple installations
+which -a node
+which -a npm
+
+# Check npm permissions
+npm config get prefix
+```
+
+**Solution 1: Install/upgrade Node.js using nvm (RECOMMENDED):**
+
+```bash
+# Install prerequisites
+sudo apt install -y curl
+
+# Install nvm (if not already installed)
+curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
+
+# Reload shell
+source ~/.bashrc
+
+# Install Node.js 20 LTS
+nvm install 20
+nvm use 20
+nvm alias default 20
+
+# Verify
+node --version  # Should show v20.x.x
+npm --version   # Should show v10.x.x or higher
+```
+
+**Solution 2: Fix npm permission errors:**
+
+```bash
+# Configure npm to use user directory
+mkdir -p ~/.npm-global
+npm config set prefix ~/.npm-global
+
+# Add to PATH
+echo 'export PATH=~/.npm-global/bin:$PATH' >> ~/.bashrc
+source ~/.bashrc
+
+# Update npm
+npm install -g npm@latest
+```
+
+**Solution 3: Install from NodeSource (alternative):**
+
+```bash
+# Remove old version
+sudo apt remove -y nodejs npm
+
+# Install prerequisites
+sudo apt install -y curl
+
+# Add NodeSource repository for Node.js 20
+curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
+
+# Install Node.js (includes npm automatically)
+sudo apt install -y nodejs
+
+# Verify
+node --version  # Should show v20.x.x
+npm --version   # Should show v10.x.x
+```
+
+**Verify the fix:**
+
+```bash
+# Test Node.js works
+node -e "console.log('Node.js works!');"
+
+# Test npm works
+npm --version
+
+# Check locations
+which node
+which npm
+```
+
+**Prevention:** Run Step 0.3 (Node.js and npm Version Verification) during deployment setup!
+
+---
+
 ### Problem: Service won't start
 
 **Diagnose:**
@@ -1275,10 +1525,11 @@ ls -lh /var/log/syslog*
 
 ---
 
-**Version:** 2.7
-**Last Updated:** 2025-11-10
+**Version:** 2.8
+**Last Updated:** 2025-11-14
 
 ### Changelog
+- **v2.8** (2025-11-14): Added Node.js and npm version verification and troubleshooting - includes Step 0.3 with detailed Node.js/npm setup using nvm or NodeSource, permission error fixes, version mismatch resolution, and dedicated troubleshooting section for Node.js/npm issues
 - **v2.7** (2025-11-10): **CRITICAL UPDATE** - Added comprehensive Step 0: Environment Setup & Verification to prevent AWS CLI conflicts (KeyError: 'opsworkscm'), Python version issues, and dependency conflicts. Added detailed troubleshooting for AWS CLI version mismatches. Updated deployment checklist and quick deployment guide.
 - **v2.6** (2025-11-05): Clarified Steps 7 & 8 as optional verification (not mandatory setup), moved immediate logrotate command to Appendix A (testing only), improved deployment overview
 - **v2.5** (2025-11-05): Improved formatting - alternate methods now use collapsible sections for clearer main vs. alternative paths

@@ -1,13 +1,13 @@
 # TVM Upload System - Manual Testing Guide
 
-> **Note:** This guide documents manual testing procedures for key features. For the complete automated test suite (17 core tests + 5 gap tests + 6 advanced tests = 28 tests, ~5.5 hours total), see `scripts/testing/run_manual_tests.sh` and `scripts/testing/gap-tests/run_gap_tests.sh`, or refer to the [Autonomous Testing Guide](autonomous_testing_guide.md).
+> **Note:** This guide documents manual testing procedures for key features. For the complete automated test suite (17 core tests + 10 gap/advanced tests = 27 tests, ~4.5-5 hours total), see `scripts/testing/run_manual_tests.sh` and `scripts/testing/gap-tests/run_gap_tests.sh`, or refer to the [Autonomous Testing Guide](autonomous_testing_guide.md).
 
 ## 📋 Table of Contents
 1. [Pre-requisites](#pre-requisites)
 2. [Test Environment Setup](#test-environment-setup)
 3. [Core Manual Tests (Tests 1-17)](#core-manual-tests-tests-1-17)
 4. [Gap Tests (Tests 18-22)](#gap-tests-tests-18-22)
-5. [Advanced Tests (Tests 23, 25-29)](#advanced-tests-tests-23-25-29)
+5. [Advanced Tests (Tests 6-10)](#advanced-tests-tests-6-10)
 6. [Verification Checklist](#verification-checklist)
 7. [Troubleshooting](#troubleshooting)
 
@@ -1042,22 +1042,23 @@ Verify environment variables in config paths are expanded correctly.
 
 ---
 
-## Advanced Tests (Tests 23, 25-29)
+## Advanced Tests (Tests 6-10)
 
-These tests cover advanced scenarios including configuration validation, concurrency, security, performance benchmarking, and full system integration. Run with:
+These tests cover advanced scenarios including configuration validation, resource limits, security, full system integration, and production simulation. Run with:
 ```bash
 cd scripts/testing/gap-tests
-./23_config_validation.sh config/config.yaml
-./25_concurrent_operations.sh config/config.yaml
-./26_resource_limits.sh config/config.yaml
-./27_security_scenarios.sh config/config.yaml
-./28_performance_benchmarks.sh config/config.yaml
-./29_full_system_integration.sh config/config.yaml
+./06_config_validation.sh config/config.yaml
+./07_resource_limits.sh config/config.yaml
+./08_security_scenarios.sh config/config.yaml
+./09_full_system_integration.sh config/config.yaml
+./10_production_simulation.sh config/config.yaml vehicle-TEST 2  # 2-hour simulation
 ```
+
+**Note**: Tests 25 (concurrent operations) and 28 (performance benchmarks) have been removed as redundant. Test 10 (production simulation) provides superior validation for performance, concurrency, and stability.
 
 ---
 
-## 🔵 TEST 23: Configuration Validation (10 min)
+## 🔵 TEST 6: Configuration Validation (10 min)
 
 ### Purpose
 Verify comprehensive configuration validation with clear, actionable error messages.
@@ -1077,7 +1078,7 @@ Verify comprehensive configuration validation with clear, actionable error messa
 ### Steps
 Run the automated test script:
 ```bash
-./scripts/testing/gap-tests/23_config_validation.sh config/config.yaml
+./scripts/testing/gap-tests/06_config_validation.sh config/config.yaml
 ```
 
 The script will test 20+ invalid configuration scenarios and verify:

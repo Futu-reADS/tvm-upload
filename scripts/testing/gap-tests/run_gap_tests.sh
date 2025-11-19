@@ -21,7 +21,7 @@ TEST_VEHICLE_ID="${2:-vehicle-CN-GAP-TEST}"
 # Results tracking
 TESTS_PASSED=0
 TESTS_FAILED=0
-TESTS_TOTAL=11
+TESTS_TOTAL=9
 
 # Print header
 echo -e "${BLUE}╔════════════════════════════════════════════════════════════════╗${NC}"
@@ -95,20 +95,19 @@ else
     echo ""
 fi
 
-# Test list (Gap tests 18-22, Advanced tests 23,25-29)
-# NOTE: Test 25 (concurrent operations) moved to end as it's most resource-intensive
+# Test list (renumbered 1-9, tests 25, 26, 28 removed)
+# Tests removed: 25 (concurrent operations), 26 (resource limits), 28 (performance benchmarks)
+# Test 9 (production simulation) provides superior validation for performance, resources, and stability
 TESTS=(
-    "18_all_sources_complete.sh|All 4 Log Sources Simultaneously"
-    "19_deferred_deletion.sh|Deferred Deletion (keep_days > 0)"
-    "20_queue_crash_recovery.sh|Queue Recovery After Crash"
-    "21_registry_cleanup.sh|Registry Cleanup After Retention Days"
-    "22_env_var_expansion.sh|Environment Variable Path Expansion"
-    "23_config_validation.sh|Configuration Validation"
-    "26_resource_limits.sh|Resource Limits & Stress Testing"
-    "27_security_scenarios.sh|Security Scenarios & Attack Vectors"
-    "28_performance_benchmarks.sh|Performance Benchmarks"
-    "29_full_system_integration.sh|Full System Integration"
-    "25_concurrent_operations.sh|Concurrent Operations & Race Conditions"
+    "01_all_sources_complete.sh|All 4 Log Sources Simultaneously"
+    "02_deferred_deletion.sh|Deferred Deletion (keep_days > 0)"
+    "03_queue_crash_recovery.sh|Queue Recovery After Crash"
+    "04_registry_cleanup.sh|Registry Cleanup After Retention Days"
+    "05_env_var_expansion.sh|Environment Variable Path Expansion"
+    "06_config_validation.sh|Configuration Validation"
+    "07_security_scenarios.sh|Security Scenarios & Attack Vectors"
+    "08_full_system_integration.sh|Full System Integration"
+    "09_production_simulation.sh|Production Simulation (2+ hours)"
 )
 
 # Run each test
@@ -127,10 +126,10 @@ for test_entry in "${TESTS[@]}"; do
     echo -e "${BLUE}Running: $test_name${NC}"
     echo -e "${BLUE}═══════════════════════════════════════════════════════════════${NC}"
 
-    # Set timeout based on test (concurrent ops needs longer)
+    # Set timeout based on test (production simulation needs longer)
     TEST_TIMEOUT=600  # 10 minutes default
-    if [[ "$test_file" == "25_concurrent_operations.sh" ]]; then
-        TEST_TIMEOUT=1200  # 20 minutes for concurrent ops
+    if [[ "$test_file" == "09_production_simulation.sh" ]]; then
+        TEST_TIMEOUT=14400  # 4 hours for production simulation (default 2 hours + buffer)
     fi
 
     # Run test with timeout

@@ -1,5 +1,5 @@
 #!/bin/bash
-# Run Production Simulation Test (Test 30)
+# Run Production Simulation Test (Test 9)
 # This is a long-running test separate from the main test suite
 
 set -e
@@ -18,6 +18,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 CONFIG_FILE="${1:-config/config.yaml}"
 TEST_VEHICLE_ID="${2:-vehicle-CN-PRODSIM}"
 TEST_DURATION_HOURS="${3:-2}"  # Default 2 hours
+SKIP_PROMPTS="${4:-false}"      # Set to "true" to skip prompts (requires passwordless sudo)
 
 echo -e "${BLUE}╔════════════════════════════════════════════════════════════════╗${NC}"
 echo -e "${BLUE}║     TVM Upload System - Production Simulation Test            ║${NC}"
@@ -43,14 +44,19 @@ echo "   • $((TEST_DURATION_HOURS * 2))GB+ free disk space"
 echo "   • Stable system for entire duration"
 echo ""
 
-# Confirm
-read -p "Do you want to continue? (y/N) " -n 1 -r
-echo
-echo ""
+# Confirm (skip if SKIP_PROMPTS is true)
+if [ "$SKIP_PROMPTS" != "true" ]; then
+    read -p "Do you want to continue? (y/N) " -n 1 -r
+    echo
+    echo ""
 
-if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-    echo -e "${YELLOW}Test cancelled by user${NC}"
-    exit 0
+    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
+        echo -e "${YELLOW}Test cancelled by user${NC}"
+        exit 0
+    fi
+else
+    echo -e "${GREEN}Auto-confirming (SKIP_PROMPTS=true)${NC}"
+    echo ""
 fi
 
 # Check for running TVM services
@@ -63,11 +69,22 @@ if [ -n "$RUNNING_SERVICES" ]; then
     echo ""
     echo -e "${YELLOW}To continue, I will stop all running TVM services.${NC}"
     echo ""
-    read -p "Do you want to continue? (y/N) " -n 1 -r
-    echo
-    echo ""
 
-    if [[ $REPLY =~ ^[Yy]$ ]]; then
+    if [ "$SKIP_PROMPTS" != "true" ]; then
+        read -p "Do you want to continue? (y/N) " -n 1 -r
+        echo
+        echo ""
+        AUTO_STOP=false
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            AUTO_STOP=true
+        fi
+    else
+        echo -e "${GREEN}Auto-confirming service stop (SKIP_PROMPTS=true)${NC}"
+        echo ""
+        AUTO_STOP=true
+    fi
+
+    if [ "$AUTO_STOP" = "true" ]; then
         echo -e "${GREEN}Stopping services...${NC}"
 
         # Check if systemd service is running
@@ -118,7 +135,7 @@ echo -e "${BLUE}Starting Production Simulation Test${NC}"
 echo -e "${BLUE}═══════════════════════════════════════════════════════════════${NC}"
 echo ""
 
-if bash "$SCRIPT_DIR/30_production_simulation.sh" "$CONFIG_FILE" "$TEST_VEHICLE_ID" "$TEST_DURATION_HOURS"; then
+if bash "$SCRIPT_DIR/09_production_simulation.sh" "$CONFIG_FILE" "$TEST_VEHICLE_ID" "$TEST_DURATION_HOURS" "$SKIP_PROMPTS"; then
     echo ""
     echo -e "${GREEN}╔════════════════════════════════════════════════════════════════╗${NC}"
     echo -e "${GREEN}║      PRODUCTION SIMULATION TEST PASSED! ✓                      ║${NC}"
